@@ -1,3 +1,5 @@
+var crypto = require('crypto');
+
 /**
  * Hash objects represent the sha1 of string content,
  * with methods useful to DHT calculations.

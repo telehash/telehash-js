@@ -1,16 +1,19 @@
+var dgram = require('dgram');
+var slib = require('./switch');
+
 // high level exported functions
 
 // seed({seeds:['1.2.3.4:5678]}) - optional arg to give custom seeds, otherwise uses defaults
-exports.seed = seed;
+exports.seed = doSeed;
 
 // listen({id:'asdf'}, function(telex){}) - give an id to listen to on the dHT, callback fires whenever incoming telexes arrive to it
-exports.listen = listen;
+exports.listen = doListen;
 
 // connect({id:'asdf', ...}, function(telex){}) - id to connect to, other data is sent along
-exports.connect = connect;
+exports.connect = doConnect;
 
 // send('ip:port', {...}) - sends the given telex to the target ip:port, will attempt to find it and punch through any NATs, etc, but is lossy, no guarantees/confirmations
-exports.send = send;
+exports.send = doSend;
 
 // init({port:5678}) - must be called first, optional args to bind udp socket to
 exports.init = self;
@@ -27,36 +30,56 @@ function self(arg)
     _self = {};
     if(!arg) arg = {};
 
+    // set up switch master callbacks
+    slib.setCallbacks({data:doData, send:doSend});
+
+    // udp socket
+    _self.server = dgram.createSocket("udp4", incoming);
+
     // If bind port is not specified, pick a random open port.
-    port = arg.port ? parseInt(arg.port) : 0;
+    _self.server.bind(arg.port ? parseInt(arg.port) : 0);
 
-    self.server = dgram.createSocket("udp4", incoming);
-
+    // TODO start timer to monitor all switches and destruct any over thresholds and not in buckets
     return _self;
 }
 
 // process incoming datagram
 function incoming(msg, rinfo)
 {
+    var from = rinfo.address + ":" + rinfo.port;
+    try {
+        var t = JSON.parse(msg.toString());
+    } catch(E) {
+        return console.error("failed to parse "+msg.length+" bytes from "+from);
+    }
+
+    slib.getSwitch(from).
     // get sender ipp, find switch and deliver to it's incoming
+    console.error(msg);
 }
 
-function seed(arg)
+// process a validated telex that has data, commands, etc to be handled
+function doData(telex)
 {
 
 }
 
-function listen(arg)
+function doSeed(arg)
 {
 
 }
 
-function connect(arg)
+function doListen(arg)
 {
 
 }
 
-function send(arg)
+function doConnect(arg)
+{
+
+}
+
+function doSend(arg)
 {
 
 }

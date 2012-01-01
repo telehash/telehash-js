@@ -30,14 +30,14 @@ function self(arg)
     _self = {};
     if(!arg) arg = {};
 
-    // set up switch master callbacks
-    slib.setCallbacks({data:doData, send:doSend});
-
     // udp socket
     _self.server = dgram.createSocket("udp4", incoming);
 
     // If bind port is not specified, pick a random open port.
     _self.server.bind(arg.port ? parseInt(arg.port) : 0);
+
+    // set up switch master callbacks
+    slib.setCallbacks({data:doData, sock:_self.server});
 
     // TODO start timer to monitor all switches and destruct any over thresholds and not in buckets
     return _self;
@@ -48,14 +48,13 @@ function incoming(msg, rinfo)
 {
     var from = rinfo.address + ":" + rinfo.port;
     try {
-        var t = JSON.parse(msg.toString());
+        var telex = JSON.parse(msg.toString());
     } catch(E) {
         return console.error("failed to parse "+msg.length+" bytes from "+from);
     }
 
-    slib.getSwitch(from).
-    // get sender ipp, find switch and deliver to it's incoming
-    console.error(msg);
+    console.log(from+"\t"+msg.length);
+    slib.getSwitch(from).process(telex);
 }
 
 // process a validated telex that has data, commands, etc to be handled
@@ -66,7 +65,7 @@ function doData(telex)
 
 function doSeed(arg)
 {
-
+    // set up timer to maintain bucket list, flag active switches to keep
 }
 
 function doListen(arg)
@@ -79,7 +78,9 @@ function doConnect(arg)
 
 }
 
-function doSend(arg)
+function doSend(to, telex)
 {
-
+    // TODO need to check switch first, if its open, via (pop), etc
+    var s = slib.getSwitch(to);
+    s.send(telex);
 }

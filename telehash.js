@@ -37,7 +37,7 @@ function self(arg)
     _self.server.bind(arg.port ? parseInt(arg.port) : 0);
 
     // set up switch master callbacks
-    slib.setCallbacks({data:doData, sock:_self.server});
+    slib.setCallbacks({data:doData, sock:_self.server, news:doNews});
 
     // TODO start timer to monitor all switches and destruct any over thresholds and not in buckets
     return _self;
@@ -54,13 +54,19 @@ function incoming(msg, rinfo)
     }
 
     console.log(from+"\t"+msg.length);
-    slib.getSwitch(from).process(telex);
+    slib.getSwitch(from).process(telex, msg.length);
 }
 
 // process a validated telex that has data, commands, etc to be handled
 function doData(telex)
 {
 
+}
+
+function doNews(s, telex)
+{
+    // if we're seeded n don't have enough active, say hi to EVERYONE!
+    // if we're actively listening, and this is closest yet, ask it immediately
 }
 
 function doSeed(arg)

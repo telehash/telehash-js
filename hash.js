@@ -6,11 +6,25 @@ var crypto = require('crypto');
  * @constructor
  */
 function Hash(value) {
-    if (value != undefined) {
+    if(value == undefined) value = "";
+    if(value.length == 40) this.digest = hex2buf(value);
+    // if failed still, just treat as a string
+    if (!this.digest) {
         var hashAlgorithm = crypto.createHash("SHA1");
         hashAlgorithm.update(value);
         this.digest = new Buffer(hashAlgorithm.digest("base64"), "base64");
     }
+}
+
+function hex2buf(str)
+{
+    var buf = new Buffer(20);
+    for (var i = 0; i < str.length / 2; i ++) {
+        var byte = parseInt(str.substr(i * 2, 2), 16);
+        if (isNaN(byte)) return null;
+        buf[i] = byte;
+    }
+    return buf;
 }
 
 /**

@@ -9,8 +9,8 @@ var timers = {
 // global hash of all known switches by ipp or hash
 var network = {};
 
-// callbacks must be set first, and must have .data({telex for app}) and .send() being udp socket send
-var master = {data:function(){}, sock:{send:function(){}}};
+// callbacks must be set first, and must have .data({telex for app}) and .send() being udp socket send, news(switch) for new switch creation
+var master = {data:function(){}, sock:{send:function(){}}, news:function(){}};
 exports.setCallbacks = function(m)
 {
     master = m;
@@ -53,15 +53,23 @@ function Switch(ipp, via)
     this.end = this.hash.toString();
     this.via = via; // optionally, which switch introduced us
     this.tCleanup = setTimeout(this.timerCleanup, timers.cleanup*1000);
+    master.news(this);
     return this;
 }
 exports.Switch = Switch;
 
 
 // process incoming telex from this switch
-Switch.prototype.process = function(telex)
+Switch.prototype.process = function(telex, rawlen)
 {
+    // basic header tracking
+    if(!this.BR) this.BR = 0;
+    this.BR += rawlen;
+
+    // do all the integrity and line validation stuff
     if(!validate(this, telex)) return;
+
+    // process serially per switch
     telex._ = this; // async eats this
     if(!this.queue) this.queue = async.queue(worker, 1);
     this.queue.push(telex);
@@ -69,11 +77,51 @@ Switch.prototype.process = function(telex)
 
 function worker(telex, callback)
 {
-    var s = telex._; delete telex._; // repair
-    // once handshake, activate
-    console.error(s.ipp+"\t"+JSON.stringify(telex));
-    s.send({hello:'world'});
+    var s = telex._; delete telex._; // get owning switch, repair
+console.error(s.ipp+"\t"+JSON.stringify(telex));
+//s.send({hello:'world'});
+
+    // track some basics
+    this.BRin = (telex._br) ? parseInt(telex._br) : undefined;
+
+    // process reactionables!
+    if(telex['+end']) doEnd(s, new hash.Hash(telex['+end']), parseInt(telex['_hop']));
+    if(Array.isArray(telex['.see'])) doSee(s, telex['.see']);
+    if(s.active && Array.isArray(telex['.tap'])) doTap(s, telex['.tap']);
+
+    // if there's any signals, check for matching taps to relay to
+    if(Object.keys(telex).some(function(x){ return x[0] == '+' }) && !(parseInt(telex['_hop']) >= 4)) doSignals(s, telex);
+
+    // if there's any raw data, send to master
+    if(Object.keys(telex).some(function(x){ return (x[0] != '+' && x[0] != '.' && x[0] != '_') })) master.data(s, telex);
+
     callback();
+}
+
+function doEnd(s, end, hop)
+{
+    if(h)
+}
+
+function doSee(s, see)
+{
+    see.forEach(function(ipp){
+        if(network[ipp]) return;
+        new Switch(ipp, s.ipp);
+    });
+}
+
+function doTap(s, tap)
+{
+    // do some validation?
+    // todo: index these much faster
+    s.rules = tap;
+}
+
+function doSignals(s, telex)
+{
+    // find any rules and match, relay just the signals
+    // TODO, check our master.NAT rule, if it matches, parse the th:ipp and send them an empty telex to pop!
 }
 
 Switch.prototype.send = function(telex)
@@ -118,6 +166,12 @@ Switch.prototype.timerInactive = function()
     // if not in use, not active, destruct
 }
 
+// keepalives
+Switch.prototype.timerActive = function()
+{
+    // if tap/natted, add to any existing outgoing taps or create one
+    // reset timer based on last send n max wait
+}
 Switch.prototype.destruct = function()
 {
     // delete self, if active try to send goodbye

@@ -5,14 +5,19 @@ var crypto = require('crypto');
  * with methods useful to DHT calculations.
  * @constructor
  */
-function Hash(value) {
+function Hash(value, hex) {
     if(value == undefined) value = "";
-    if(value.length == 40) this.digest = hex2buf(value);
+    if(hex) this.digest = hex2buf(hex);
     // if failed still, just treat as a string
     if (!this.digest) {
         var hashAlgorithm = crypto.createHash("SHA1");
         hashAlgorithm.update(value);
         this.digest = new Buffer(hashAlgorithm.digest("base64"), "base64");
+    }
+    this.nibbles = [];
+    for (var i = 0; i < this.digest.length; i++) {
+        this.nibbles[this.nibbles.length] = this.digest[i] >> 4;
+        this.nibbles[this.nibbles.length] = this.digest[i] & 0xf;
     }
 }
 
@@ -38,23 +43,22 @@ function byte2hex(d) {
 exports.Hash = Hash
 
 /**
- * Get the hash as geometrically "far" as possible from this one.
+ * Get the string hash as geometrically "far" as possible from this one.
  * That would be the logical inverse, every bit flipped.
  */
 Hash.prototype.far = function() {
-    var result = new Hash();
-    result.digest = new Buffer(this.digest.length);
+    var result = [];
     for (var i = 0; i < this.digest.length; i++) {
-        result.digest[i] = this.digest[i] ^= 0xff;
+        result[i] = byte2hex(this.digest[i] ^ 0xff);
     }
-    return result;
+    return result.join("");
 }
 
 /**
  * Logical bitwise 'or' this hash with another.
  */
 Hash.prototype.or = function(h) {
-    if (isString(h)) { h = new Hash(h); }
+    if (typeof h == 'string') { h = new Hash(h); }
 
     var result = new Hash();
     result.digest = new Buffer(this.digest.length);
@@ -68,8 +72,6 @@ Hash.prototype.or = function(h) {
  * Comparator for hash objects.
  */
 Hash.prototype.cmp = function(h) {
-    if (isString(h)) { h = new Hash(h); }
-
     for (var i = 0; i < this.digest.length; i++) {
         var d = this.digest[i] - h.digest[i];
         if (d != 0) {
@@ -79,28 +81,14 @@ Hash.prototype.cmp = function(h) {
     return 0;
 }
 
-Hash.prototype.nibbles = function() {
-    var result = [];
-    for (var i = 0; i < this.digest.length; i++) {
-        result[result.length] = this.digest[i] >> 4;
-        result[result.length] = this.digest[i] & 0xf;
-    }
-    return result;
-}
-
 /**
  * XOR distance between two sha1 hex hashes, 159 is furthest bit, 0 is closest bit, -1 is same hash
  */
 Hash.prototype.distanceTo = function(h) {
-    if (isString(h)) { h = new Hash(h); }
-
-    var nibbles = this.nibbles();
-    var hNibbles = h.nibbles()
-
     var sbtab = [-1,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3];
     var ret = 156;
-    for (var i = 0; i < nibbles.length; i++) {
-        var diff = nibbles[i] ^ hNibbles[i];
+    for (var i = 0; i < this.nibbles.length; i++) {
+        var diff = this.nibbles[i] ^ h.nibbles[i];
         if (diff) {
             return ret + sbtab[diff];
         }
@@ -124,6 +112,5 @@ Hash.prototype.toString = function() {
  * Test if two hashes are equal.
  */
 Hash.prototype.equals = function(h) {
-    var hstr = isString(h) ? h : h.toString();
-    return toString() == hstr;
+    return this.toString() == h.toString();
 }

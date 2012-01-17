@@ -1,10 +1,6 @@
 var async = require('async');
 var hlib = require('./hash');
 
-// default timer settings, in seconds
-var timers = {
-    cleanup: 65,
-}
 
 // global hash of all known switches by ipp or hash
 var network = {};
@@ -56,7 +52,6 @@ function Switch(ipp, via)
     network[this.ipp] = this;
     this.end = this.hash.toString();
     this.via = via; // optionally, which switch introduced us
-    this.tCleanup = setTimeout(this.timerCleanup, timers.cleanup*1000);
     master.news(this);
     return this;
 }
@@ -72,6 +67,14 @@ Switch.prototype.process = function(telex, rawlen)
     // basic header tracking
     if(!this.BR) this.BR = 0;
     this.BR += rawlen;
+    if(telex._br) {
+        this.BRin = parseInt(telex._br);
+        if(this.BRin < 0) delete this.line; // negativity is intentionally signalled line drop (experimental)
+    }
+
+    // timer tracking
+    this.ATrecv = Date.now();
+    delete this.ATexpected;
 
     // process serially per switch
     telex._ = this; // async eats this
@@ -127,8 +130,10 @@ function doSignals(s, telex)
     // TODO, check our master.NAT rule, if it matches, parse the th:ipp and send them an empty telex to pop!
 }
 
-Switch.prototype.send = function(telex)
+// send telex to switch, arg.ephemeral === true means don't have to send _ring
+Switch.prototype.send = function(telex, arg)
 {
+    // TODO track last "expected to respond" to help determine if it's not responsive, this.ATexpected = Date.now() + 10000;
     // check bytes sent vs received and drop if too much so we don't flood
     if(!this.Bsent) this.Bsent = 0;
     if(this.Bsent - this.BRin > 10000) {
@@ -139,7 +144,9 @@ Switch.prototype.send = function(telex)
     if(!this.ring) this.ring = Math.floor((Math.random() * 32768) + 1);
 
     telex._to = this.ipp;
-    (this.active) ? telex._line = this.line : telex._ring = this.ring;
+
+    // only ring/line if active
+    if(this.active) this.line ? telex._line = this.line : telex._ring = this.ring;
 
     // send the bytes we've received, if any
     if(this.BR) telex._br = this.BRout = this.BR;
@@ -163,31 +170,24 @@ Switch.prototype.send = function(telex)
     master.sock.send(msg, 0, msg.length, this.port, this.ip);
 }
 
-// clean up
-Switch.prototype.timerInactive = function()
+// necessary utility to see if the switch is in a known healthy state
+Switch.prototype.healthy = function()
 {
-    // if not in use, not active, destruct
+    if(!this.ATrecv) return false; // no packet, no love
+    if(this.ATexpected < Date.now()) return false; // missed expectations
+    if(this.Bsent - this.BRin > 10000) return false; // more than 10k hasn't been acked
+    return true; // <3 everyone else
 }
 
-// keepalives
-Switch.prototype.timerActive = function()
+// destroy/drop
+Switch.prototype.drop = function()
 {
-    // if tap/natted, add to any existing outgoing taps or create one
-    // reset timer based on last send n max wait
-}
-Switch.prototype.destruct = function()
-{
-    // delete self, if active try to send goodbye
-    clearTimeout(this.tCleanup);
+    if(this.healthy()) this.send({_br:-10000});
+    // delete main reference to self, should auto-GC if no others
     delete network[this.ipp];
     // if meshed, remove all back references
 }
 
-function activate(s)
-{
-    s.active = true;
-    // adjust timers
-}
 
 // make sure this telex is valid coming from this switch, and twiddle our bits
 function validate(s, telex)

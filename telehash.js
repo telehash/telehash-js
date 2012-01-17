@@ -35,11 +35,13 @@ function getSelf(arg)
 
     // If bind port is not specified, pick a random open port.
     self.server.bind(self.port ? parseInt(self.port) : 0);
+    // TODO save local IP/PORT for NAT detection
 
     // set up switch master callbacks
     slib.setCallbacks({data:doData, sock:self.server, news:doNews});
 
-    // TODO start timer to monitor all switches and destruct any over thresholds and not in buckets
+    // TODO start timer to monitor all switches and drop any over thresholds and not in buckets
+
     return self;
 }
 
@@ -57,6 +59,7 @@ function incoming(msg, rinfo)
     // if we're seeded and don't know our identity yet, save it!
     if(self.seedCB && !self.me && telex._to) {
         self.me = slib.getSwitch(telex._to);
+        // TODO if me.ipp != local ipp from socket, set NAT mode (ping 1min vs 10min)
         clearTimeout(self.seedTimeout);
         self.seedCB();
     }
@@ -81,6 +84,8 @@ function doNews(s)
 
 function doSeed(callback)
 {
+    if(self && self.me) return callback(); // already seeded
+
     // set up timer to maintain bucket list, flag active switches to keep
     getSelf().seedCB = callback;
     // in 10 seconds, error out if nothing yet!
@@ -93,11 +98,13 @@ function doSeed(callback)
         var hash = new hlib.Hash(ipp);
         doSend(ipp, {'+end':hash.far()});
     });
+
+    // set up bucket maintenance, which activates switches we want to keep around
 }
 
 function doListen(arg, callback)
 {
-
+    // tap with timer
 }
 
 function doConnect(arg, callback)

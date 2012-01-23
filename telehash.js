@@ -108,6 +108,7 @@ function doSeed(callback)
     });
 
     // TODO, get local IP addresses for non-NAT detection!
+    // http://stackoverflow.com/questions/3653065/get-local-ip-address-in-node-js
 }
 
 function doListen(arg, callback)

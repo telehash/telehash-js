@@ -19,6 +19,9 @@ exports.connect = doConnect;
 // send('ip:port', {...}) - sends the given telex to the target ip:port, will attempt to find it and punch through any NATs, etc, but is lossy, no guarantees/confirmations
 exports.send = doSend;
 
+// as expected
+exports.shutdown = doShutdown;
+
 // internals
 
 var self;
@@ -34,13 +37,14 @@ function getSelf(arg)
     self.server = dgram.createSocket("udp4", incoming);
 
     // If bind port is not specified, pick a random open port.
-    self.server.bind(self.port ? parseInt(self.port) : 0);
-    // TODO save local IP/PORT for NAT detection
+    self.server.bind(self.port ? parseInt(self.port) : 0, self.ip || '0.0.0.0');
+    self.nat = true; // better safe default
 
     // set up switch master callbacks
     slib.setCallbacks({data:doData, sock:self.server, news:doNews});
 
-    // TODO start timer to monitor all switches and drop any over thresholds and not in buckets
+    // start timer to monitor all switches and drop any over thresholds and not in buckets
+    self.scanTimeout = setInterval(scan, 25000); // every 25sec, so that it runs 2x in <60 (if behind a NAT to keep mappings alive)
 
     return self;
 }
@@ -57,11 +61,13 @@ function incoming(msg, rinfo)
 
     console.log("<--\t"+from+"\t"+msg.toString());
     // if we're seeded and don't know our identity yet, save it!
-    if(self.seedCB && !self.me && telex._to) {
+    if(self.seeding && !self.me && telex._to) {
         self.me = slib.getSwitch(telex._to);
+        self.me.self = true; // flag to switch to not send to itself
         // TODO if me.ipp != local ipp from socket, set NAT mode (ping 1min vs 10min)
         clearTimeout(self.seedTimeout);
-        self.seedCB();
+        delete self.seedTimeout;
+        self.seeding();
     }
     slib.getSwitch(from).process(telex, msg.length);
 }
@@ -84,14 +90,16 @@ function doNews(s)
 
 function doSeed(callback)
 {
-    if(self && self.me) return callback(); // already seeded
+    if(!callback) callback = function(){};
+    if(self && self.seeding) return callback(); // already seeded
 
     // set up timer to maintain bucket list, flag active switches to keep
-    getSelf().seedCB = callback;
+    getSelf().seeding = callback;
     // in 10 seconds, error out if nothing yet!
     self.seedTimeout = setTimeout(function(){
-        self.seedCB("timeout");
-        delete self.seedCB;
+        self.seeding("timeout");
+        delete self.seeding;
+        delete self.seedTimeout;
     }, 10000);
     // loop all seeds, asking for furthest end from them to get the most diverse responses!
     self.seeds.forEach(function(ipp){
@@ -99,12 +107,13 @@ function doSeed(callback)
         doSend(ipp, {'+end':hash.far()});
     });
 
-    // set up bucket maintenance, which activates switches we want to keep around
+    // TODO, get local IP addresses for non-NAT detection!
 }
 
 function doListen(arg, callback)
 {
     // tap with timer
+    // set self.listens{}
 }
 
 function doConnect(arg, callback)
@@ -117,4 +126,50 @@ function doSend(to, telex)
     // TODO need to check switch first, if its open, via (pop), etc
     var s = slib.getSwitch(to);
     s.send(telex);
+}
+
+function doShutdown()
+{
+    clearTimeout(self.scanTimeout);
+    if(self.seedTimeout) {
+        self.seeding("shutdown"); // a callback still waiting?!
+        delete self.seedTimeout;
+    }
+    // drop all switches
+    slib.getSwitches().forEach(function(s){ s.drop() });
+    self.server.close();
+    self = undefined;
+}
+
+// scan all known switches regularly to keep a good network map alive and trim the rest
+function scan()
+{
+    var all = slib.getSwitches();
+
+    // first just cull any not healthy, easy enough
+    all.forEach(function(s){
+        if(!s.healthy()) s.drop();
+    });
+
+    // if only us or nobody around, and we were seeded at one point, try again!
+    if(all.length <= 1 && self.seeding && !self.seedTimeout)
+    {
+        delete self.seeding;
+        if(self.me) self.me.drop(); // this will be stale if offline
+        delete self.me;
+        return doSeed();
+    }
+
+    // not seeding
+    if(!self.seeding || !self.me) return;
+
+    // TODO for any self.listens, ping top 5 nearest
+
+    // TODO overall, ping first X of each bucket
+    all.sort(function(a, b){
+        return self.me.hash.distanceTo(a.hash) - self.me.hash.distanceTo(b.hash);
+    });
+
+    // TODO for congested buckets have a sort preference towards stable, and have a max cap and drop rest (to help avoid a form of local flooding)
+
 }

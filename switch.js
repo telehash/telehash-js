@@ -37,7 +37,7 @@ function getNear(endh, s, num)
     // for not just sort all, TODO use mesh, also can use a dirty list mixed with mesh
     if(!num) num = 5;
     var x = Object.keys(network).sort(function(a, b){
-        return endh.distanceTo(network[a].hash) - endh.distanceTo(network[a].hash);
+        return endh.distanceTo(network[a].hash) - endh.distanceTo(network[b].hash);
     });
     return x.slice(0, num);
 }
@@ -52,6 +52,7 @@ function Switch(ipp, via)
     network[this.ipp] = this;
     this.end = this.hash.toString();
     this.via = via; // optionally, which switch introduced us
+    this.ATinit = Date.now();
     master.news(this);
     return this;
 }
@@ -74,7 +75,10 @@ Switch.prototype.process = function(telex, rawlen)
 
     // timer tracking
     this.ATrecv = Date.now();
+
+    // responses mean healthy
     delete this.ATexpected;
+    delete this.misses;
 
     // process serially per switch
     telex._ = this; // async eats this
@@ -109,6 +113,7 @@ function doEnd(s, end)
     s.send({_see:near});
 }
 
+// automatically turn every new ipp into a switch, important for getNear being useful too
 function doSee(s, see)
 {
     see.forEach(function(ipp){
@@ -133,7 +138,14 @@ function doSignals(s, telex)
 // send telex to switch, arg.ephemeral === true means don't have to send _ring
 Switch.prototype.send = function(telex, arg)
 {
-    // TODO track last "expected to respond" to help determine if it's not responsive, this.ATexpected = Date.now() + 10000;
+    if(this.self) return; // flag to not send to ourselves!
+
+    // if last time we sent there was an expected response and never got it, count it as a drop for health check
+    if(this.ATexpected < Date.now()) this.misses = this.misses + 1 || 1;
+    delete this.ATexpected;
+    // if we expect a reponse, in 10sec we should count it as a drop if nothing
+    if(telex['+end'] || telex['.tap']) this.ATexpected = Date.now() + 10000;
+
     // check bytes sent vs received and drop if too much so we don't flood
     if(!this.Bsent) this.Bsent = 0;
     if(this.Bsent - this.BRin > 10000) {
@@ -173,8 +185,10 @@ Switch.prototype.send = function(telex, arg)
 // necessary utility to see if the switch is in a known healthy state
 Switch.prototype.healthy = function()
 {
+    if(this.self) return true; // we're always healthy haha
+    if(this.ATinit > (Date.now() - 10000)) return true; // new switches are healthy for 10 seconds!
     if(!this.ATrecv) return false; // no packet, no love
-    if(this.ATexpected < Date.now()) return false; // missed expectations
+    if(this.drops > 2) return false; // three strikes
     if(this.Bsent - this.BRin > 10000) return false; // more than 10k hasn't been acked
     return true; // <3 everyone else
 }

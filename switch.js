@@ -68,10 +68,12 @@ Switch.prototype.process = function(telex, rawlen)
     // basic header tracking
     if(!this.BR) this.BR = 0;
     this.BR += rawlen;
-    if(telex._br) {
-        this.BRin = parseInt(telex._br);
-        if(this.BRin < 0) delete this.line; // negativity is intentionally signalled line drop (experimental)
-    }
+    // they can't send us that much more than what we've told them to, bad!
+    if(this.BRout && this.BR - this.BRout > 12000) return;
+    this.BRin = (telex._br) ? parseInt(telex._br) : undefined;
+    if(this.BRin < 0) delete this.line; // negativity is intentionally signalled line drop (experimental)
+
+    // TODO, if no ATrecv yet but we sent only a single +end last (dialing) and a +pop request for this ip, this could be a NAT pingback and we should re-send our dial immediately
 
     // timer tracking
     this.ATrecv = Date.now();
@@ -81,7 +83,7 @@ Switch.prototype.process = function(telex, rawlen)
     delete this.misses;
 
     // process serially per switch
-    telex._ = this; // async eats this
+    telex._ = this; // async eats 'this'
     if(!this.queue) this.queue = async.queue(worker, 1);
     this.queue.push(telex);
 }
@@ -90,13 +92,10 @@ function worker(telex, callback)
 {
     var s = telex._; delete telex._; // get owning switch, repair
 
-    // track some basics
-    this.BRin = (telex._br) ? parseInt(telex._br) : undefined;
-
     // process reactionables!
     if(telex['+end'] && (!telex._hop || parseInt(telex._hop) == 0)) doEnd(s, new hlib.Hash(null, telex['+end']));
     if(Array.isArray(telex['.see'])) doSee(s, telex['.see']);
-    if(s.active && Array.isArray(telex['.tap'])) doTap(s, telex['.tap']);
+    if(Array.isArray(telex['.tap'])) doTap(s, telex['.tap']);
 
     // if there's any signals, check for matching taps to relay to
     if(Object.keys(telex).some(function(x){ return x[0] == '+' }) && !(parseInt(telex['_hop']) >= 4)) doSignals(s, telex);
@@ -157,8 +156,8 @@ Switch.prototype.send = function(telex, arg)
 
     telex._to = this.ipp;
 
-    // only ring/line if active
-    if(this.active) this.line ? telex._line = this.line : telex._ring = this.ring;
+    // always try to handshake in case we need to talk again
+    this.line ? telex._line = this.line : telex._ring = this.ring;
 
     // send the bytes we've received, if any
     if(this.BR) telex._br = this.BRout = this.BR;
@@ -204,81 +203,54 @@ Switch.prototype.drop = function()
 
 
 // make sure this telex is valid coming from this switch, and twiddle our bits
-function validate(s, telex)
+function validate(s, t)
 {
-    // doo stuff
-    return true;
-/*
     // first, if it's been more than 10 seconds after a line opened,
     // be super strict, no more ringing allowed, _line absolutely required
-    if (line.lineat > 0 && time() - line.lineat > 10) {
-        if (t._line != line.line) {
-            return false;
-        }
-    }
+    if (s.ATline && s.ATline + 10 < Date.now() && t._line != s.line) return false;
 
     // second, process incoming _line
     if (t._line) {
-        if (line.ringout <= 0) {
-            return false;
-        }
+        // can't get a _line w/o having sent a _ring
+        if(s.ring == undefined) return false;
 
         // be nice in what we accept, strict in what we send
         t._line = parseInt(t._line);
 
         // must match if exist
-        if (line.line && t._line != line.line) {
-            return false;
-        }
+        if (s.line && t._line != s.line) return false;
 
         // must be a product of our sent ring!!
-        if (t._line % line.ringout != 0) {
-            return false;
-        }
+        if (t._line % s.ring != 0) return false;
 
         // we can set up the line now if needed
-        if(line.lineat == 0) {
-            line.ringin = t._line / line.ringout; // will be valid if the % = 0 above
-            line.line = t._line;
-            line.lineat = time();
+        if(!s.line) {
+            s.ringin = t._line / s.ring; // will be valid if the % = 0 above
+            s.line = t._line;
+            s.ATline = Date.now();
         }
     }
 
-    // last, process any incoming _ring's (remember, could be out of order, after a _line)
+    // last, process any incoming _ring's (remember, could be out of order after a _line and still be valid)
     if (t._ring) {
+        // be nice in what we accept, strict in what we send
+        t._ring = parseInt(t._ring);
+
         // already had a ring and this one doesn't match, should be rare
-        if (line.ringin && t._ring != line.ringin) {
-            return false;
-        }
+        if (s.ringin && t._ring != s.ringin) return false;
 
         // make sure within valid range
-        if (t._ring <= 0 || t._ring > 32768) {
-            return false;
-        }
+        if (t._ring <= 0 || t._ring > 32768) return false;
 
         // we can set up the line now if needed
-        if (line.lineat == 0) {
-            line.ringin = t._ring;
-            line.line = line.ringin * line.ringout;
-            line.lineat = time();
+        if (s.ATline == 0) {
+            s.ringin = t._ring;
+            if(!s.ring) s.ring = Math.floor((Math.random() * 32768) + 1);
+            s.line = s.ringin * s.ring;
+            s.ATline = Date.now();
         }
     }
 
-    // we're valid at this point, line or otherwise, track bytes
-    console.log([
-        "\tBR ", line.ipp, " [", line.br, " += ",
-        br, "] DIFF ", (line.bsent - t._br)].join(""));
-    line.br += br;
-    line.brin = t._br;
-
-    // they can't send us that much more than what we've told them to, bad!
-    if (line.br - line.brout > 12000) {
-        return false;
-    }
-
-    // XXX if this is the first seenat,
-    // if we were dialing we might need to re-send our telex as this could be a nat open pingback
-    line.seenat = time();
+    // we're valid at this point, line or otherwise
     return true;
-*/
 }

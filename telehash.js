@@ -151,6 +151,7 @@ function scan()
     all.forEach(function(s){
         if(!s.healthy()) s.drop();
     });
+    all = slib.getSwitches();
 
     // if only us or nobody around, and we were seeded at one point, try again!
     if(all.length <= 1 && self.seeding && !self.seedTimeout)
@@ -171,6 +172,24 @@ function scan()
         return self.me.hash.distanceTo(a.hash) - self.me.hash.distanceTo(b.hash);
     });
 
-    // TODO for congested buckets have a sort preference towards stable, and have a max cap and drop rest (to help avoid a form of local flooding)
+    // create array of arrays (buckets) based on distance from self (the heart of kademlia)
+    var distance = self.me.hash.distanceTo(all[0].hash); // first bucket
+    var buckets = [];
+    var bucket = [];
+    all.forEach(function(s){
+        var d2 = self.me.hash.distanceTo(s.hash);
+        if(d2 == distance) return bucket.push(s);
+        distance = d2;
+        buckets.push(bucket);
+        bucket = [];
+    });
 
+    // TODO for congested buckets have a sort preference towards stable, and have a max cap and drop rest (to help avoid a form of local flooding)
+    // for now, ping everyone!
+    buckets.forEach(function(bucket){
+        bucket.forEach(function(s){
+            if(s.ATsent > Date.now() - 30) return; // don't need to ping if already sent them something in the last 30sec
+            s.send({"+end":self.me.end}); // TODO, best dht mesh balance is probably to generate a random hash this distance away, but greedy +end of us is always smart/safe
+        })
+    });
 }

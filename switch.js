@@ -162,7 +162,11 @@ Switch.prototype.send = function(telex, arg)
     // send the bytes we've received, if any
     if(this.BR) telex._br = this.BRout = this.BR;
 
-    var msg = new Buffer(JSON.stringify(telex)+'\n', "utf8"); // \n is nice for testing w/ netcat
+    var json = new Buffer(JSON.stringify(telex)+'\n', "utf8"); // \n is nice for testing w/ netcat
+    // create actual packet with length first
+    var msg = new Buffer(json.length+2);
+    msg.writeInt16BE(json.length,0);
+    json.copy(msg,2);
 
     if(msg.length > 1400) console.error("WARNING, large datagram might not survive MTU "+msg.length);
 

@@ -1,14 +1,9 @@
-var slib = require("./switch");
-
-//var s = new slib.Switch("1.2.3.4:5678");
-//console.log(s);
 
 var th = require("./telehash");
-th.init({port:42424});
-th.seed(function(err){
-    if(err) return console.error("seeding error: "+err);
-    console.log("seeded!");
-})
+var keypair = require(process.argv[2]);
+
+var test = th.listen("test", keypair);
+console.log(test.address);
 
 var hash = require("./hash");
 var a = new hash.Hash(null, "a9993e364706816aba3e25717850c26c9cd0d89d");

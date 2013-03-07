@@ -18,40 +18,38 @@ rsa-json > client.json
 
 Then start up the operator:
 ``` js
-var telehash = require("telehash");
+var tele = require("telehash");
+var opkeys = require("./operator.json"); // loads the keypair
 
-// first create the operator and start it
-var operator = require("./operator.json"); // loads the keypair
-operator.space = "testing.private"; // sets what space to be an operator for
-var ophash = telehash.hashname(operator);
-ophash.listen({port:42424}); // can provide a {port:1234, ip:5.6.7.8} argument, listens to *:random by default
-console.log("operator address is ", ophash.address);
+// start a new hashname in the given space with these keys, listen on this specific port
+var operator = tele.hashname("testing.private", opkeys, {port:42424});
+console.log("operator address is ", operator.address);
 
 // operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
 // this is typically done via a key-value store or other means dynamically, here we only have one
-var client = require("./client.json");
-client.space = "testing.private";
-var chash = telehash.hashname(client);
-ophash.lookup(function(hashname, callback){
-	if (hashname === chash.hashname) return callback(null, chash.public);
+var ckeys = require("./client.json");
+var chash = tele.hash(ckeys.public+"testing.private").toString();
+operator.lookup(function(hashname, callback){
+	if (hashname === chash) return callback(null, ckeys.public);
 	callback("not found");
 });
 ```
 
 Now start the test client:
 ``` js
-var telehash = require("telehash");
+var tele = require("telehash");
+var ckeys = require("./client.json");
 
-// load the operator address for our space
-telehash.space("testing.private", ["address printed above"]);
+// start up our client hashname
+var client = tele.hashname("testing.private", ckeys);
+console.log("client address is ", operator.address);
 
-// start the test client
-var client = require("./client.json");
-client.space = "testing.private";
-var chash = telehash.hashname(client);
-chash.listen();
-chash.spacer(function(err){
-	if (err) console.log("failed to join our space", err);
-	else console.log("great, we're connected! our address is", chash.address);
+// provide the operator(s) for this hashname
+client.operators(["address from above"]);
+
+// ask for ourselves, which will query the operator
+client.who(client.hashname, "testing.private", function(err, key){
+	if (err) console.log("failed to find our hashname in this space", err);
+	else console.log("great, we're connected! our address is", client.address);
 });
 ```

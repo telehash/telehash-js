@@ -1,23 +1,21 @@
 var dgram = require('dgram');
 var os = require('os');
-var hash = require('./hash').Hash;
+var dhash = require('./dhash').Hash;
 
-// just combines the name of a space and a public key into a hashname
-exports.makeHashname = function(space, key)
+exports.hash = function(string)
 {
-  if(!space || !key) return undefined;
-  return new hash(space+key).toString();
+  return new dhash(string);
 }
 
 // start a hashname listening and ready to go
-exports.listen = function(space, keys, args)
+exports.hashname = function(space, keys, args)
 {
   if(!space || !keys || !keys.public || !keys.private) return undefined;
   if(!args) args = {};
 
   // configure defaults
-  var self = {space:space, keys:keys};
-  self.hashname = exports.makeHashname(space, keys.public);
+  var self = {space:space, keys:keys, cb:{}};
+  self.hashname = new dhash(keys.public+space).toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
   self.port = parseInt(args.port) || 0;
@@ -45,6 +43,9 @@ exports.listen = function(space, keys, args)
     if(better) self.ip = better;
   }
   self.address = [self.hashname, self.ip, self.port].join(",");
+
+  // set up methods (personal prefernce to do this explicitly vs. prototype pattern)
+  self.lookup = function(callback) { this.cb.lookup = callback }
 
   return self;
 }

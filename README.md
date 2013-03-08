@@ -6,50 +6,59 @@ Every "actor" within telehash is called a `hashname` which is an RSA keypair lis
 
 # From Scratch
 
-To create an entire standalone setup you'll need a space with at least one operator and one hashname for them to connect to each other.  A space should be identified with a fully qualified hostname or for private/testing ones use "****.private".
+To create an entire standalone setup you'll need a space with at least one operator and one hashname for them to connect to each other.  A space should be identified with a fully qualified hostname or for private/testing ones use "****.private".  These examples are also included in the demo folder.
 
-Start by generating two RSA keypairs, [rsa-json](http://github.com/substack/rsa-json) make this really easy:
+Start by generating two RSA keypairs:
 
-```
-npm install -g rsa-json
-rsa-json > operator.json
-rsa-json > client.json
+``` js
+var fs = require('fs');
+var tele = require("../telehash");
+var opkeys = tele.createKeys();
+fs.writeFileSync("./operator.json", JSON.stringify(opkeys, null, 4));
+var ckeys = tele.createKeys();
+fs.writeFileSync("./client.json", JSON.stringify(ckeys, null, 4));
 ```
 
 Then start up the operator:
 ``` js
-var tele = require("telehash");
+var tele = require("../telehash");
 var opkeys = require("./operator.json"); // loads the keypair
 
 // start a new hashname in the given space with these keys, listen on this specific port
-var operator = tele.hashname("testing.private", opkeys, {port:42424});
+var operator = tele.hashname("testing.private", opkeys.private, {port:42424});
 console.log("operator address is ", operator.address);
 
 // operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
 // this is typically done via a key-value store or other means dynamically, here we only have one
 var ckeys = require("./client.json");
-var chash = tele.hash(ckeys.public+"testing.private").toString();
-operator.lookup(function(hashname, callback){
-	if (hashname === chash) return callback(null, ckeys.public);
+var chashname = tele.hash(ckeys.public+"testing.private").toString();
+operator.myLookup(function(hashname, callback){
+	if (hashname === chashname) return callback(null, ckeys.public);
 	callback("not found");
 });
 ```
 
 Now start the test client:
 ``` js
-var tele = require("telehash");
+var fs = require("fs");
+var tele = require("../telehash");
+
+// what is our operator, pass in or replace this value
+var opaddress = process.argv[2];
+
+// load up our private key
 var ckeys = require("./client.json");
 
-// start up our client hashname
-var client = tele.hashname("testing.private", ckeys);
-console.log("client address is ", operator.address);
+// start up our client hashname in the same space
+var client = tele.hashname("testing.private", ckeys.private);
 
 // provide the operator(s) for this hashname
-client.operators(["address from above"]);
+client.setOperators([opaddress]);
 
 // ask for ourselves, which will query the operator
-client.who(client.hashname, "testing.private", function(err, key){
-	if (err) console.log("failed to find our hashname in this space", err);
-	else console.log("great, we're connected! our address is", client.address);
+client.doWho(client.hashname, function(err, pubkey){
+	if(err) return console.log("failed to find our hashname in this space:", err);
+	if(pubkey !== ckeys.public) return console.log("odd, our keys didn't match"); 
+	console.log("great, we're connected! our address is", client.address);
 });
 ```

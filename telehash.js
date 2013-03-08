@@ -27,7 +27,7 @@ exports.hashname = function(space, privateKey, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {space:space, cb:{}, operators:[], watch:{}};
+  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, seen:{}};
   // parse/validate the private key
   try {
     self.ukey = ursa.coercePrivateKey(privateKey);
@@ -69,6 +69,7 @@ exports.hashname = function(space, privateKey, args)
   self.myLookup = function(callback) { this.cb.lookup = callback };
   self.setOperators = function(operators) { this.operators = operators.map(parseAddress) || [] };
   self.doWho = function(hn, callback) { who(this, hn, callback) };
+  self.doLine = function(hn, callback) { line(this, hn, callback) };
 
   return self;
 }
@@ -77,19 +78,73 @@ exports.hashname = function(space, privateKey, args)
 function who(self, hn, callback)
 {
   var key;
-  async.forEachSeries(self.operators, function(op, cbOps){
-    var body = new Buffer(JSON.stringify({hashname:hn, from:self.hashname, to:op.hashname, space:self.space, x:Date.now()+10000}));
-    var js = {sig:self.ukey.hashAndSign("md5", body).toString("base64")};
-    js.who = new dhash(js.sig).toString();
-    keywatch(self, js.who, function(err, value){
+  // ask operators sequentially in random order
+  async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOps){
+    var packet = {js:{}}
+    addSignature(self, packet, {hashname:hn, to:op.hashname}, "who");
+    keywatch(self, packet.js.who, function(err, value){
       if(value) key = value;
       cbOps(value); // stops async when we get a value
     });
-    send(self, op, encode(js, body));
+    send(self, op, encode(packet));
   }, function(){
     if(!key) return callback("not found");
     callback(null, key);
   });
+}
+
+// shared way to add a signature to any packet
+function addSignature(self, packet, base, type)
+{
+  base.from = self.hashname;
+  base.space = self.space;
+  base.x = Date.now() + 10000;
+  packet.body = new Buffer(JSON.stringify(base));
+  packet.js.sig = self.ukey.hashAndSign("md5", packet.body).toString("base64");
+  if(type) packet.js[type] = new dhash(packet.js.sig).toString();  
+}
+
+// send via a line or open one if needed
+function sendLine(self, to, packet)
+{
+  if(self.lines[to.hashname])
+  {
+    packet.js.line = self.lines[to.hashname].line;
+    return send(self, to, encode(packet));
+  }
+
+  // no line yet, open one and store tracking value
+  addSignature(self, packet, {to:to.hashname}, "open");
+  self.lines[to.hashname] = {line:packet.js.open, at:Date.now()};
+  send(self, to, packet);
+}
+
+// ask operators for an address (TODO: use the DHT)
+function seek(self, hash)
+{
+  // take a random max of three operators and ask them all
+  self.operators.sort(function(){ return Math.random()-0.5; }).slice(0,3).forEach(function(op){
+    var packet = {js:{seek:hash}};
+    sendLine(self, op, packet);
+  });
+}
+
+// open a line to this hashname
+function line(self, hn, callback)
+{
+  // might have it already
+  if(self.lines[hn]) return callback(null, true);
+
+  // we don't know this hn, ask the operators and watch for an answer
+  keywatch(self, "seeking "+hn, function(err, value){
+    if(err) return callback(err);
+    // send an empty line packet to establish it
+    var to = parseAddress(value);
+    var packet = {js:{seek:hn}};
+    sendLine(self, to, packet);
+    callback(null, true);
+  });
+  seek(self, hn);
 }
 
 function keywatch(self, key, callback)
@@ -120,16 +175,16 @@ function parseAddress(str)
   return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2])};
 }
 
-// create a wire writeable packet
-function encode(js, body)
+// create a wire writeable buffer from a packet
+function encode(packet)
 {
-  debug("ENCODING", js, body && body.length);
-  var jsbuf = new Buffer(JSON.stringify(js), "utf8");
-  if(typeof body === "string") body = new Buffer(body, "utf8");
-  body = body || new Buffer(0);
+  debug("ENCODING", packet.js, packet.body && packet.body.length);
+  var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
+  if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
+  packet.body = packet.body || new Buffer(0);
   var len = new Buffer(2);
   len.writeInt16BE(jsbuf.length, 0);
-  return Buffer.concat([len, jsbuf, body]);
+  return Buffer.concat([len, jsbuf, packet.body]);
 }
 
 // decode a packet from a buffer
@@ -191,7 +246,7 @@ function inWho(self, packet)
     var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
     for(var i = 0; i < chunks.length; i++)
     {
-      send(self, packet.from, encode({key:packet.js.who, seq:i}, chunks[i]));
+      send(self, packet.from, encode({js:{key:packet.js.who, seq:i}, body:chunks[i]}));
     }
   }
   

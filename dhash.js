@@ -8,6 +8,13 @@ exports.isSHA1 = function(str)
   if(str.replace(/[a-f0-9]+/i, "").length !== 0) return false;
   return true;
 }
+
+// convenience
+exports.quick = function(str)
+{
+  return crypto.createHash("sha1").update(str).digest('hex');
+}
+
 /**
  * Hash objects represent the sha1 of string content,
  * with methods useful to DHT calculations.

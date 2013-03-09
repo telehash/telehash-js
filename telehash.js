@@ -2,15 +2,15 @@ var dgram = require("dgram");
 var os = require("os");
 var async = require("async");
 var ursa = require("ursa")
-var dhash = require("./dhash").Hash;
+var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
-var debug = function(){}; // switch to console.log to enable
+var debug = console.log; //function(){}; // switch to console.log to enable
 
 exports.hash = function(string)
 {
-  return new dhash(string);
+  return new dhash.Hash(string);
 }
 
 // simple handy wrapper utility to make a new keypair
@@ -36,7 +36,7 @@ exports.hashname = function(space, privateKey, args)
     warn("couldn't parse key:", E);
     return undefined;
   };
-  self.hashname = new dhash(self.pubkey+space).toString();
+  self.hashname = new dhash.Hash(self.pubkey+space).toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
   self.port = parseInt(args.port) || 0;
@@ -66,10 +66,17 @@ exports.hashname = function(space, privateKey, args)
   self.address = [self.hashname, self.ip, self.port].join(",");
 
   // set up methods (personal prefernce to do this explicitly vs. prototype pattern)
-  self.myLookup = function(callback) { this.cb.lookup = callback };
-  self.setOperators = function(operators) { this.operators = operators.map(parseAddress) || [] };
-  self.doWho = function(hn, callback) { who(this, hn, callback) };
-  self.doLine = function(hn, callback) { line(this, hn, callback) };
+  self.myLookup = function(callback) { self.cb.lookup = callback };
+  self.setOperators = function(addresses) {
+    if(!Array.isArray(addresses)) return;
+    self.operators = addresses.map(function(address){
+      var op = seen(self, address);
+      op.operator = true;
+      return op.hashname;
+    });
+  };
+  self.doWho = function(hn, callback) { who(self, hn, callback) };
+  self.doLine = function(hn, callback) { line(self, hn, callback) };
 
   return self;
 }
@@ -80,13 +87,15 @@ function who(self, hn, callback)
   var key;
   // ask operators sequentially in random order
   async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOps){
+    var op = seen(self, op);
     var packet = {js:{}}
     addSignature(self, packet, {hashname:hn, to:op.hashname}, "who");
     keywatch(self, packet.js.who, function(err, value){
       if(value) key = value;
+      seen(self, hn).pubkey = value; // cache all public keys we get back
       cbOps(value); // stops async when we get a value
     });
-    send(self, op, encode(packet));
+    send(self, op, packet);
   }, function(){
     if(!key) return callback("not found");
     callback(null, key);
@@ -101,31 +110,43 @@ function addSignature(self, packet, base, type)
   base.x = Date.now() + 10000;
   packet.body = new Buffer(JSON.stringify(base));
   packet.js.sig = self.ukey.hashAndSign("md5", packet.body).toString("base64");
-  if(type) packet.js[type] = new dhash(packet.js.sig).toString();  
+  if(type) packet.js[type] = new dhash.Hash(packet.js.sig).toString();  
 }
 
-// send via a line or open one if needed
-function sendLine(self, to, packet)
+// just a get-or-create wrapper to consistently initialize
+function getLine(self, hn)
 {
-  if(self.lines[to.hashname])
-  {
-    packet.js.line = self.lines[to.hashname].line;
-    return send(self, to, encode(packet));
-  }
+  if(self.lines[hn]) return self.lines[hn];
 
-  // no line yet, open one and store tracking value
-  addSignature(self, packet, {to:to.hashname}, "open");
-  self.lines[to.hashname] = {line:packet.js.open, at:Date.now()};
-  send(self, to, packet);
+  self.lines[hn] = {at:Date.now()};
+  return self.lines[hn];
 }
 
-// ask operators for an address (TODO: use the DHT)
+// add the proper line or open+signature
+function addLine(self, to, packet)
+{
+  if(to.line) return packet.js.line = to.line;
+
+  // no matter what we have to sign it now (in case the first packet was dropped)
+  addSignature(self, packet, {to:to.hashname}, "open");
+  
+  // if we already sent an open value, always use that one for tracking
+  if(to.open) packet.js.open = to.open;
+  else to.open = packet.js.open; // save for any subsequent packets
+}
+
+// ask open lines for an address
 function seek(self, hash)
 {
-  // take a random max of three operators and ask them all
-  self.operators.sort(function(){ return Math.random()-0.5; }).slice(0,3).forEach(function(op){
+  // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
+  var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3);
+  
+  // ask them all
+  ask.forEach(function(hn){
+    var to = seen(self, hn);
     var packet = {js:{seek:hash}};
-    sendLine(self, op, packet);
+    addLine(self, to, packet);
+    send(self, to, packet);
   });
 }
 
@@ -133,17 +154,24 @@ function seek(self, hash)
 function line(self, hn, callback)
 {
   // might have it already
-  if(self.lines[hn]) return callback(null, true);
+  if(self.lines[hn]) return callback();
 
-  // we don't know this hn, ask the operators and watch for an answer
-  keywatch(self, "seeking "+hn, function(err, value){
+  function good(to){
+    var packet = {js:{seek:to.hashname}};
+    addLine(self, to, packet);
+    send(self, to, packet);
+    callback();
+  }
+
+  // operators we already have an address for
+  if(seen(self, hn).operator) return good(seen(self, hn));
+
+  // we don't know this hn, seek it and watch for an answer
+  keywatch(self, "see "+hn, function(err, address){
     if(err) return callback(err);
-    // send an empty line packet to establish it
-    var to = parseAddress(value);
-    var packet = {js:{seek:hn}};
-    sendLine(self, to, packet);
-    callback(null, true);
+    good(seen(self, address));
   });
+
   seek(self, hn);
 }
 
@@ -159,20 +187,7 @@ function keywatch(self, key, callback)
     callback(err, value);
   }
   
-  self.watch[key] = {done:done, parts:[]};
-}
-
-// wiring wrapper
-function send(self, to, buf)
-{
-  self.server.send(buf, 0, buf.length, to.port, to.ip);
-}
-
-// just parse the "60518c1c11dc0452be71a7118a43ab68e3451b82,172.16.42.34,65148" format
-function parseAddress(str)
-{
-  var parts = str.split(",");
-  return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2])};
+  return self.watch[key] = {done:done, parts:[]};
 }
 
 // create a wire writeable buffer from a packet
@@ -185,6 +200,32 @@ function encode(packet)
   var len = new Buffer(2);
   len.writeInt16BE(jsbuf.length, 0);
   return Buffer.concat([len, jsbuf, packet.body]);
+}
+
+// just parse the "60518c1c11dc0452be71a7118a43ab68e3451b82,172.16.42.34,65148" format
+function parseAddress(str)
+{
+  var parts = str.split(",");
+  return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2]), address:str};
+}
+
+// track every hashname we know about
+function seen(self, to)
+{
+  if(typeof to === "string") to = parseAddress(to);
+  var ret = self.seen[to.hashname];
+  if(!ret) {
+    ret = self.seen[to.hashname] = to;
+    ret.at = Date.now();
+  }
+  return ret;
+}
+
+// wiring wrapper
+function send(self, to, packet)
+{
+  var buf = encode(packet);
+  self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
 // decode a packet from a buffer
@@ -213,13 +254,86 @@ function incoming(self, packet)
 {
   debug("INCOMING", self.hashname, "packet from", packet.from, packet.js, packet.body && packet.body.length);
   
+  packet.ignore = {}; // which keys have been "processed"
   if(packet.js.who) inWho(self, packet);
   if(packet.js.key) inKey(self, packet);
+  if(packet.js.open || packet.js.line) inLine(self, packet);
+
+  // these behave differently if there's a line
+  if(packet.js.see) inSee(self, packet);
+  if(packet.js.seek) inSeek(self, packet);
+
+  // only proceed if there's a line
+  if(!packet.line) return inAny(self, packet);
   
+  // only proceed if there's a stream
+  if(!packet.stream) return inAny(self, packet);
+  
+}
+
+// return a see to anyone closer
+function inSeek(self, packet)
+{
+  packet.ignore.seek = true;
+  if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
+
+  // we must be able to verify or trust the requestor
+  if(!packet.line && !self.lines[packet.js.via]) return warn("invalid seek, no line or via from", packet.from);
+
+  // construct response
+  var answer = {js:{see:[]}};
+  if(packet.line) addLine(self, answer); // if a line is present add it
+  else answer.js.via = self.hashname;
+
+  // now see if we have anyone to recommend
+  if(packet.js.seek === self.hashname) answer.js.see.push(self.address);
+  if(self.lines[packet.js.seek]) answer.js.see.push(self.lines[packet.js.seek].address);
+  
+  send(self, packet.from, answer);
+}
+
+// any packet can have a .see, anything might want to know
+function inSee(self, packet)
+{
+  packet.ignore.see = true;
+  if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
+  
+  // TODO verify request if no line
+
+  packet.js.see.forEach(function(address){
+    var see = seen(self, address);
+    see.via = packet.from;
+    // check if anyone is waiting for this one specifically
+    var watch = self.watch["see "+see.hashname];
+    if(watch) watch.done(null, see);
+    // TODO also check anyone watching for ones closer to recurse
+  });
+}
+
+function inAny(self, packet)
+{
+  // optionally send it up to the app if there's any data that isn't processed yet
+}
+
+function inLine(self, packet)
+{
+  packet.ignore.open = packet.ignore.line = true;
+
+  if(packet.js.open)
+  {
+    // need to validate signature, may need to go fetch key!
+    // if we're op lookup key
+  }
+
+  // a matching line is required
+  var watch = self.watch["line "+packet.js.line];
+  if(!watch) return warn("unknown incoming line from:", packet.from);
+  packet.line = watch.line;
 }
 
 function inKey(self, packet)
 {
+  packet.ignore.key = true;
   var watch = self.watch[packet.js.key];
   if(!watch) return warn("unknown key from", packet.from);
 
@@ -232,12 +346,13 @@ function inKey(self, packet)
 
   // check if it's a valid public key yet
   var key = watch.parts.join("");
-  try { ursa.coercePublicKey(key) } catch(E) { return warn(E)};
+  try { ursa.coercePublicKey(key) } catch(E) { return warn(E) };
   watch.done(null, key);
 }
 
 function inWho(self, packet)
 {
+  packet.ignore.who = true;
   try { packet.body = JSON.parse(packet.body.toString()) } catch(E) { return warn("invalid body from", packet.from); }
   
   function valued(err, key)
@@ -246,7 +361,7 @@ function inWho(self, packet)
     var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
     for(var i = 0; i < chunks.length; i++)
     {
-      send(self, packet.from, encode({js:{key:packet.js.who, seq:i}, body:chunks[i]}));
+      send(self, packet.from, {js:{key:packet.js.who, seq:i}, body:chunks[i]});
     }
   }
   

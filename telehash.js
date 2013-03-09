@@ -90,7 +90,7 @@ function who(self, hn, callback)
     var op = seen(self, op);
     var packet = {js:{}}
     addSignature(self, packet, {hashname:hn, to:op.hashname}, "who");
-    keywatch(self, packet.js.who, function(err, value){
+    keywatch(self, "key "+packet.js.who, function(err, value){
       if(value) key = value;
       seen(self, hn).pubkey = value; // cache all public keys we get back
       cbOps(value); // stops async when we get a value
@@ -113,21 +113,14 @@ function addSignature(self, packet, base, type)
   if(type) packet.js[type] = dhash.quick(packet.js.sig);  
 }
 
-// just a get-or-create wrapper to consistently initialize
-function getLine(self, hn)
-{
-  if(self.lines[hn]) return self.lines[hn];
-
-  self.lines[hn] = {at:Date.now()};
-  return self.lines[hn];
-}
-
 // combine the incoming/outgoing open values to make a line and save it
 function setLine(self, hn)
 {
   // line is the hash of the two opens joined in sorted order
   hn.line = dhash.quick([hn.opened, hn.open].sort().join(""));
   self.lines[hn.line] = hn;
+  var watch = self.watch["line "+hn.hashname];
+  if(watch) watch.done();
   return hn.line;
 }
 
@@ -156,10 +149,10 @@ function seek(self, hash)
 {
   // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
   var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3);
-  
+
   // ask them all
-  ask.forEach(function(hn){
-    var to = seen(self, hn);
+  ask.forEach(function(line){
+    var to = self.lines[line];
     var packet = {js:{seek:hash}};
     addLine(self, to, packet);
     send(self, to, packet);
@@ -173,10 +166,15 @@ function line(self, hn, callback)
   if(self.lines[hn]) return callback();
 
   function good(to){
+    if(to.line) return callback();
+
+    // only callback when it's fully open
+    keywatch(self, "line "+hn, callback);
+
+    // this triggers a response to make the line open
     var packet = {js:{seek:to.hashname}};
     addLine(self, to, packet);
     send(self, to, packet);
-    callback();
   }
 
   // operators we already have an address for
@@ -209,7 +207,7 @@ function keywatch(self, key, callback)
 // create a wire writeable buffer from a packet
 function encode(packet)
 {
-  debug("ENCODING", packet.js, packet.body && packet.body.length);
+  debug("ENCODING", packet.js, packet.body && packet.body.toString(), "\n");
   var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
   if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
   packet.body = packet.body || new Buffer(0);
@@ -233,6 +231,10 @@ function seen(self, to)
   if(!ret) {
     ret = self.seen[to.hashname] = to;
     ret.at = Date.now();
+  }else if(!ret.ip){
+    // add ip/port if not set
+    ret.ip = to.ip;
+    ret.port = to.port;
   }
   return ret;
 }
@@ -241,6 +243,7 @@ function seen(self, to)
 function send(self, to, packet)
 {
   var buf = encode(packet);
+  if(!to.ip || !(to.port > 0)) return warn("invalid address", to);
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
@@ -307,7 +310,7 @@ function inSeek(self, packet)
 
   // now see if we have anyone to recommend
   if(packet.js.seek === self.hashname) answer.js.see.push(self.address);
-  if(self.lines[packet.js.seek]) answer.js.see.push(self.lines[packet.js.seek].address);
+  if(self.seen[packet.js.seek] && self.seen[packet.js.seek].line) answer.js.see.push(self.seen[packet.js.seek].address);
   
   send(self, packet.from, answer); // send to the source ip:port, could be different than the line which is ok
 }
@@ -322,7 +325,7 @@ function inSee(self, packet)
 
   packet.js.see.forEach(function(address){
     var see = seen(self, address);
-    see.via = packet.from;
+    see.via = packet.line;
     // check if anyone is waiting for this one specifically
     var watch = self.watch["see "+see.hashname];
     if(watch) watch.done(null, see);
@@ -361,9 +364,10 @@ function inOpen(self, packet, callback)
       return callback(warn("crypto failed open for", packet.from, E));
     }
 
-    // make sure our values are updated
+    // make sure our values are correct/current
     from.ip = packet.from.ip;
     from.port = packet.from.port;
+    from.address = [from.hashname, from.ip, from.port].join(",");
     from.pubkey = pubkey;
     from.opened = packet.js.open;
     // in case it's a new open, replacing old line
@@ -403,7 +407,7 @@ function inLine(self, packet)
 function inKey(self, packet)
 {
   packet.ignore.key = true;
-  var watch = self.watch[packet.js.key];
+  var watch = self.watch["key "+packet.js.key];
   if(!watch) return warn("unknown key from", packet.from);
 
   // some sanity checks
@@ -422,10 +426,13 @@ function inKey(self, packet)
 function inWho(self, packet)
 {
   packet.ignore.who = true;
-  try { packet.body = JSON.parse(packet.body.toString()) } catch(E) { return warn("invalid body from", packet.from); }
+  var body;
+  try { body = JSON.parse(packet.body.toString()) } catch(E) { return warn("invalid body from", packet.from); }
   
   function valued(err, key)
   {
+    if(err || !key) return warn("key lookup fail for", body.hashname, err);
+
     // split into 1k chunks max
     var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
     for(var i = 0; i < chunks.length; i++)
@@ -434,6 +441,6 @@ function inWho(self, packet)
     }
   }
   
-  if(packet.body.hashname === self.hashname) return valued(null, self.pubkey);
-  if(self.cb.lookup) return self.cb.lookup(packet.body.hashname, valued);
+  if(body.hashname === self.hashname) return valued(null, self.pubkey);
+  if(self.cb.lookup) return self.cb.lookup(body.hashname, valued);
 }

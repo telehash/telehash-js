@@ -110,7 +110,7 @@ function addSignature(self, packet, base, type)
   base.x = Date.now() + 10000;
   packet.body = new Buffer(JSON.stringify(base));
   packet.js.sig = self.ukey.hashAndSign("md5", packet.body).toString("base64");
-  if(type) packet.js[type] = new dhash.Hash(packet.js.sig).toString();  
+  if(type) packet.js[type] = dhash.quick(packet.js.sig);  
 }
 
 // just a get-or-create wrapper to consistently initialize
@@ -122,6 +122,15 @@ function getLine(self, hn)
   return self.lines[hn];
 }
 
+// combine the incoming/outgoing open values to make a line and save it
+function setLine(self, hn)
+{
+  // line is the hash of the two opens joined in sorted order
+  hn.line = dhash.quick([hn.opened, hn.open].sort().join(""));
+  self.lines[hn.line] = hn;
+  return hn.line;
+}
+
 // add the proper line or open+signature
 function addLine(self, to, packet)
 {
@@ -129,7 +138,14 @@ function addLine(self, to, packet)
 
   // no matter what we have to sign it now (in case the first packet was dropped)
   addSignature(self, packet, {to:to.hashname}, "open");
-  
+
+  // now, if they sent us an open and this is our first response, calculate the line and send it
+  if(to.opened) {
+    to.open = packet.js.open;
+    packet.js.line = setLine(self, to);
+    return;
+  }
+
   // if we already sent an open value, always use that one for tracking
   if(to.open) packet.js.open = to.open;
   else to.open = packet.js.open; // save for any subsequent packets
@@ -257,18 +273,22 @@ function incoming(self, packet)
   packet.ignore = {}; // which keys have been "processed"
   if(packet.js.who) inWho(self, packet);
   if(packet.js.key) inKey(self, packet);
-  if(packet.js.open || packet.js.line) inLine(self, packet);
-
-  // these behave differently if there's a line
-  if(packet.js.see) inSee(self, packet);
-  if(packet.js.seek) inSeek(self, packet);
-
-  // only proceed if there's a line
-  if(!packet.line) return inAny(self, packet);
   
-  // only proceed if there's a stream
-  if(!packet.stream) return inAny(self, packet);
-  
+  // opens may have to be async validated before continuing
+  inOpen(self, packet, function(){
+
+    if(packet.js.line) inLine(self, packet);
+
+    // these behave differently if there's a line
+    if(packet.js.see) inSee(self, packet);
+    if(packet.js.seek) inSeek(self, packet);
+
+    // only proceed if there's a line
+    if(!packet.line) return inAny(self, packet);
+
+    // only proceed if there's a stream
+    if(!packet.stream) return inAny(self, packet);    
+  });;
 }
 
 // return a see to anyone closer
@@ -282,14 +302,14 @@ function inSeek(self, packet)
 
   // construct response
   var answer = {js:{see:[]}};
-  if(packet.line) addLine(self, answer); // if a line is present add it
+  if(packet.line) addLine(self, packet.line, answer); // if a line is present add it
   else answer.js.via = self.hashname;
 
   // now see if we have anyone to recommend
   if(packet.js.seek === self.hashname) answer.js.see.push(self.address);
   if(self.lines[packet.js.seek]) answer.js.see.push(self.lines[packet.js.seek].address);
   
-  send(self, packet.from, answer);
+  send(self, packet.from, answer); // send to the source ip:port, could be different than the line which is ok
 }
 
 // any packet can have a .see, anything might want to know
@@ -315,20 +335,56 @@ function inAny(self, packet)
   // optionally send it up to the app if there's any data that isn't processed yet
 }
 
-function inLine(self, packet)
+// see if there's an open to process async
+function inOpen(self, packet, callback)
 {
-  packet.ignore.open = packet.ignore.line = true;
+  if(!packet.js.open) return callback();
 
-  if(packet.js.open)
+  packet.ignore.open = true;
+
+  // first, parse the body
+  try { packet.body = JSON.parse(packet.body.toString()) } catch(E) { return callback(warn("invalid body from", packet.from)); }
+  var from = seen(self, packet.body.from);
+
+  // where we handle validation
+  function keyed(err, pubkey)
   {
-    // need to validate signature, may need to go fetch key!
-    // if we're op lookup key
+    if(!pubkey) return callback(warn("line request but couldn't find the public key for", packet.body.from, err));
+
+    // TODO validate packet.js.sig against packet.body
+    
+    // make sure our values are updated
+    from.ip = packet.from.ip;
+    from.port = packet.from.port;
+    from.pubkey = pubkey;
+    from.opened = packet.js.open;
+    delete from.line; // in case it's a new open, replacing old line
+
+    // if we've already sent an open, calculate line now
+    if(from.open) setLine(self, from);
+    
+    // the line is open for this packet
+    packet.line = from;
+
+    return callback();
   }
 
+  // see if we have the key already by chance
+  if(from.pubkey) return keyed(null, from.pubkey);
+
+  // if we are the operator or have a lookup function, use that
+  if(self.cb.lookup) return self.cb.lookup(packet.body.from, keyed);
+
+  // go ask an operator
+  who(self, packet.body.from, keyed);
+}
+
+function inLine(self, packet)
+{
+  packet.ignore.line = true;
   // a matching line is required
-  var watch = self.watch["line "+packet.js.line];
-  if(!watch) return warn("unknown incoming line from:", packet.from);
-  packet.line = watch.line;
+  packet.line = self.lines[packet.js.line];
+  if(!packet.line) return warn("unknown line from", packet.from);
 }
 
 function inKey(self, packet)

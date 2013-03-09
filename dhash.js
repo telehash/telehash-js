@@ -1,5 +1,13 @@
 var crypto = require('crypto');
 
+// just return true/false if it's at least the format of a sha1
+exports.isSHA1 = function(str)
+{
+  if(typeof str !== "string") return false;
+  if(str.length !== 40) return false;
+  if(str.replace(/[a-f0-9]+/i, "").length !== 0) return false;
+  return true;
+}
 /**
  * Hash objects represent the sha1 of string content,
  * with methods useful to DHT calculations.

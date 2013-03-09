@@ -343,22 +343,35 @@ function inOpen(self, packet, callback)
   packet.ignore.open = true;
 
   // first, parse the body
-  try { packet.body = JSON.parse(packet.body.toString()) } catch(E) { return callback(warn("invalid body from", packet.from)); }
-  var from = seen(self, packet.body.from);
+  var body;
+  try { body = JSON.parse(packet.body.toString()) } catch(E) { return callback(warn("invalid body from", packet.from)); }
+  var from = seen(self, body.from);
 
   // where we handle validation
   function keyed(err, pubkey)
   {
-    if(!pubkey) return callback(warn("line request but couldn't find the public key for", packet.body.from, err));
+    if(!pubkey) return callback(warn("line request but couldn't find the public key for", from.hashname, err));
 
-    // TODO validate packet.js.sig against packet.body
-    
+    // validate packet.js.sig against packet.body
+    try {
+      var ukey = ursa.coercePublicKey(pubkey);
+      valid = ukey.hashAndVerify("md5", packet.body, packet.js.sig, "base64");
+      if(!valid) return callback(warn("invalid open signature from:", packet.from));
+    }catch(E){
+      return callback(warn("crypto failed open for", packet.from, E));
+    }
+
     // make sure our values are updated
     from.ip = packet.from.ip;
     from.port = packet.from.port;
     from.pubkey = pubkey;
     from.opened = packet.js.open;
-    delete from.line; // in case it's a new open, replacing old line
+    // in case it's a new open, replacing old line
+    if(from.line)
+    {
+      delete from.line
+      delete from.open;      
+    }
 
     // if we've already sent an open, calculate line now
     if(from.open) setLine(self, from);
@@ -373,10 +386,10 @@ function inOpen(self, packet, callback)
   if(from.pubkey) return keyed(null, from.pubkey);
 
   // if we are the operator or have a lookup function, use that
-  if(self.cb.lookup) return self.cb.lookup(packet.body.from, keyed);
+  if(self.cb.lookup) return self.cb.lookup(from.hashname, keyed);
 
   // go ask an operator
-  who(self, packet.body.from, keyed);
+  who(self, from.hashname, keyed);
 }
 
 function inLine(self, packet)

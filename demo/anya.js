@@ -21,5 +21,5 @@ client.doWho(client.hashname, function(err, pubkey){
 	client.doLine(opaddress.split(",")[0], function(err){
   	if(err) return console.log("failed to open line:", err);
 	  console.log("line opened");
-	})
+	});
 });

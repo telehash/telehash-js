@@ -152,10 +152,7 @@ function seek(self, hash)
 
   // ask them all
   ask.forEach(function(line){
-    var to = self.lines[line];
-    var packet = {js:{seek:hash}};
-    addLine(self, to, packet);
-    send(self, to, packet);
+    send(self, self.lines[line], {js:{seek:hash}});
   });
 }
 
@@ -205,9 +202,20 @@ function keywatch(self, key, callback)
 }
 
 // create a wire writeable buffer from a packet
-function encode(packet)
+function encode(self, to, packet)
 {
+  // if there's a line and it's not added, add it, convenience
+  if(to.line && !packet.js.line) addLine(self, to, packet);
+
+  // if there's no line/sig, always add extra identifiers
+  if(!packet.js.line && !packet.js.sig) {
+    if(to.via) packet.js.via = to.via.hashname;
+    packet.js.to = to.hashname;
+    packet.js.from = self.hashname;      
+  }
+  
   debug("ENCODING", packet.js, packet.body && packet.body.toString(), "\n");
+
   var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
   if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
   packet.body = packet.body || new Buffer(0);
@@ -226,6 +234,13 @@ function parseAddress(str)
   }
   var parts = str.split(",");
   return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2]), address:str};
+}
+
+function updateAddress(hn, ip, port)
+{
+  hn.ip = ip;
+  hn.port = port;
+  hn.address = [hn.hashname, hn.ip, hn.port].join(",");
 }
 
 // track every hashname we know about
@@ -251,20 +266,8 @@ function send(self, to, packet)
 {
   if(!to.ip || !(to.port > 0)) return warn("invalid address", to);
 
-  // if there's a line and it's not added, add it, convenience
-  if(to.line && !packet.js.line) addLine(self, to, packet);
+  var buf = encode(self, to, packet);
 
-  // if there's no line but we know the recipient via someone, always add it
-  if(!to.line && to.via) {
-    packet.js.via = to.via.hashname;
-    // unsigned packets require these too
-    if(!packet.js.sig)
-    {
-      packet.js.to = to.hashname;
-      packet.js.from = self.hashname;      
-    }
-  }
-  
   // track some stats
   to.sent ? to.sent++ : to.sent = 1;
   to.sentAt = Date.now();
@@ -279,7 +282,6 @@ function send(self, to, packet)
     send(self, to.via, {js:{pop:[[to.hashname,to.ip,to.port].join(",")]}});
   }
 
-  var buf = encode(packet);
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
@@ -309,59 +311,95 @@ function incoming(self, packet)
 {
   debug("INCOMING", self.hashname, "packet from", packet.from, packet.js, packet.body && packet.body.length);
 
-  // anon packets have a to that must be validated
-  if(packet.js.to)
-  {
-    if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
-    delete packet.js.to;
-  }
+  // signed packets must be verified first
+  if(packet.js.sig) return inSig(self, packet);
 
   // which keys have been "processed"
   packet.ignore = {};
 
+  // make sure any to is us (for multihosting)
+  if(packet.js.to)
+  {
+    if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
+    packet.ignore.to = true;
+  }
+
+  // any via must be validated as someone we're connected to
+  if(packet.js.via)
+  {
+    var via = seen(self, packet.js.via);
+    if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
+    packet.via = via;
+    packet.ignore.via = true;
+  }
+
   // these are all the ad-hoc packet types
-  if(packet.js.via) inVia(self, packet);
-  if(packet.js.sig) inSig(self, packet);
   if(packet.js.who) inWho(self, packet);
   if(packet.js.key) inKey(self, packet);
   if(packet.js.popped) inPopped(self, packet);
-  
-  // opens may have to be async validated before continuing
-  checkOpen(self, packet, function(){
 
-    if(packet.js.line) inLine(self, packet);
+  // work on any line stuff
+  if(packet.js.open) inOpen(self, packet);
+  if(packet.js.line) inLine(self, packet);
 
-    // these require a line, via, or signature
-    if(packet.line || packet.via || packet.signed)
-    {
-      if(packet.js.see) inSee(self, packet);
-      if(packet.js.seek) inSeek(self, packet);
-      if(packet.js.pop) inPop(self, packet);      
-    }
+  // these require a verified or trusted sender
+  if(packet.from.hashname || packet.via)
+  {
+    if(packet.js.see) inSee(self, packet);
+    if(packet.js.seek) inSeek(self, packet);
+    if(packet.js.pop) inPop(self, packet);      
+  }
 
-    // only proceed if there's a line
-    if(!packet.line) return inAny(self, packet);
+  // only proceed if there's a line
+  if(!packet.from.line) return inAny(self, packet);
 
-    if(packet.js.popping) inPopping(self, packet);
+  // these are line-only things
+  if(packet.js.popping) inPopping(self, packet);
 
-    // only proceed if there's a stream
-    if(!packet.stream) return inAny(self, packet);    
-  });;
+  // only proceed if there's a stream
+  if(!packet.stream) return inAny(self, packet);    
+
 }
 
-// just validate any sig if possible, convenience
+// any signature must be validated, or the packet dropped
 function inSig(self, packet)
 {
-  packet.ignore.sig = true;
-  // TODO validate if key, set packet.signed = hn;
-}
+  // decode the body as a packet so we can examine it
+  var signed = decode(packet.body);
+  if(!dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
+  var from = seen(self, signed.js.from);
 
-// validate any via
-function inVia(self, packet)
-{
-  packet.ignore.via = true;
-  packet.via = self.lines[packet.js.via];
-  if(!packet.via) return warn("invalid via of", packet.js.via, "from", packet.from);
+  // where we handle validation if/when there's a key
+  function keyed(err, pubkey)
+  {
+    if(!pubkey) return warn("signed packet, no public key for", from.hashname, "from", packet.from, err);
+
+    // validate packet.js.sig against packet.body
+    try {
+      var ukey = ursa.coercePublicKey(pubkey);
+      valid = ukey.hashAndVerify("md5", packet.body, packet.js.sig, "base64");
+      if(!valid) return warn("invalid signature from:", packet.from);
+    }catch(E){
+      return warn("crypto failed for", packet.from, E);
+    }
+
+    // make sure our values are correct/current
+    updateAddress(from, packet.from.ip, packet.from.port);
+    from.pubkey = pubkey;
+
+    // process body as a new packet with a real from
+    signed.from = from;
+    incoming(self, signed);
+  }
+
+  // see if we have the key already by chance
+  if(from.pubkey) return keyed(null, from.pubkey);
+
+  // if we are the operator or have a lookup function, use that
+  if(self.cb.lookup) return self.cb.lookup(from.hashname, keyed);
+
+  // go ask an operator
+  who(self, from.hashname, keyed);
 }
 
 // NAT is open
@@ -400,7 +438,6 @@ function inPop(self, packet)
     var pop = seen(self, address);
     if(!pop.line) return warn("pop requested for", address, "but no line, from", packet.from);
     var popping = {js:{popping:[packet.js.from, packet.from.ip, packet.from.port].join(',')}};
-    addLine(self, pop, popping);
     send(self, pop, popping);
   });
 }
@@ -411,16 +448,13 @@ function inSeek(self, packet)
   packet.ignore.seek = true;
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
-  // construct response
-  var answer = {js:{see:[]}};
-  if(packet.line) addLine(self, packet.line, answer); // if a line is present add it
-  else answer.js.via = self.hashname;
-
   // now see if we have anyone to recommend
+  var answer = {js:{see:[]}};
   if(packet.js.seek === self.hashname) answer.js.see.push(self.address);
   if(self.seen[packet.js.seek] && self.seen[packet.js.seek].line) answer.js.see.push(self.seen[packet.js.seek].address);
+  // TODO DHT distance sort into .see
   
-  send(self, packet.from, answer); // send to the source ip:port, could be different than the line which is ok
+  send(self, packet.from, answer);
 }
 
 // any packet can have a .see, anything might want to know
@@ -429,10 +463,10 @@ function inSee(self, packet)
   packet.ignore.see = true;
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
   
-  // line/sig or via required
-  var via = packet.line || packet.signed;
-  if(!via) via = seen(self, packet.js.via);
-  if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
+  // to trust a .see, we just need to know who they are or that we've sent them something
+  var via = packet.from;
+  if(!via.hashname) via = seen(packet.js.from); // ephemeral responses only have a from
+  if(!packet.from.hashname && !(via.sent > 0)) return warn("incoming see from someone unknown", packet.from);
 
   packet.js.see.forEach(function(address){
     var see = seen(self, address);
@@ -449,62 +483,26 @@ function inAny(self, packet)
   // optionally send it up to the app if there's any data that isn't processed yet
 }
 
-// see if there's an open to process async
-function checkOpen(self, packet, callback)
+// try to open a line
+function inOpen(self, packet)
 {
-  if(!packet.js.open) return callback();
-
   packet.ignore.open = true;
 
-  // first, parse the body
-  var body;
-  try { body = JSON.parse(packet.body.toString()) } catch(E) { return callback(warn("invalid body from", packet.from)); }
-  var from = seen(self, body.from);
+  // if the from isn't verified, bail
+  if(!packet.from.hashname) return warn("unsigned open from", packet.from);
 
-  // where we handle validation
-  function keyed(err, pubkey)
+  // store the open value for line generation
+  packet.from.opened = packet.js.open;
+
+  // in case it's a new open, replacing old line
+  if(packet.from.line)
   {
-    if(!pubkey) return callback(warn("line request but couldn't find the public key for", from.hashname, err));
-
-    // validate packet.js.sig against packet.body
-    try {
-      var ukey = ursa.coercePublicKey(pubkey);
-      valid = ukey.hashAndVerify("md5", packet.body, packet.js.sig, "base64");
-      if(!valid) return callback(warn("invalid open signature from:", packet.from));
-    }catch(E){
-      return callback(warn("crypto failed open for", packet.from, E));
-    }
-
-    // make sure our values are correct/current
-    from.ip = packet.from.ip;
-    from.port = packet.from.port;
-    from.address = [from.hashname, from.ip, from.port].join(",");
-    from.pubkey = pubkey;
-    from.opened = packet.js.open;
-    // in case it's a new open, replacing old line
-    if(from.line)
-    {
-      delete from.line
-      delete from.open;      
-    }
-
-    // if we've already sent an open, calculate line now
-    if(from.open) setLine(self, from);
-    
-    // the line is open for this packet
-    packet.line = from;
-
-    return callback();
+    delete packet.from.line
+    delete packet.from.open;      
   }
-
-  // see if we have the key already by chance
-  if(from.pubkey) return keyed(null, from.pubkey);
-
-  // if we are the operator or have a lookup function, use that
-  if(self.cb.lookup) return self.cb.lookup(from.hashname, keyed);
-
-  // go ask an operator
-  who(self, from.hashname, keyed);
+  
+  // consider the line open
+  packet.line = packet.from;
 }
 
 function inLine(self, packet)

@@ -14,6 +14,10 @@ exports.quick = function(str)
 {
   return crypto.createHash("sha1").update(str).digest('hex');
 }
+exports.random = function(seed)
+{
+  return crypto.createHash("sha1").update(seed+(Math.random()*Date.now()).toString()).digest('hex');
+}
 
 /**
  * Hash objects represent the sha1 of string content,

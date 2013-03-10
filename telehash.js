@@ -82,17 +82,17 @@ exports.hashname = function(space, privateKey, args)
 }
 
 // perform a who request
-function who(self, hn, callback)
+function who(self, hashname, callback)
 {
   var key;
   // ask operators sequentially in random order
   async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOps){
     var op = seen(self, op);
-    var packet = {js:{}}
-    addSignature(self, packet, {hashname:hn, to:op.hashname}, "who");
-    keywatch(self, "key "+packet.js.who, function(err, value){
+    var packet = {js:{who:hashname}};
+    packet.sign = true;
+    keywatch(self, "key "+hashname, function(err, value){
       if(value) key = value;
-      seen(self, hn).pubkey = value; // cache all public keys we get back
+      seen(self, hashname).pubkey = value; // cache all public keys we get back
       cbOps(value); // stops async when we get a value
     });
     send(self, op, packet);
@@ -100,17 +100,6 @@ function who(self, hn, callback)
     if(!key) return callback("not found");
     callback(null, key);
   });
-}
-
-// shared way to add a signature to any packet
-function addSignature(self, packet, base, type)
-{
-  base.from = self.hashname;
-  base.space = self.space;
-  base.x = Date.now() + 10000;
-  packet.body = new Buffer(JSON.stringify(base));
-  packet.js.sig = self.ukey.hashAndSign("md5", packet.body).toString("base64");
-  if(type) packet.js[type] = dhash.quick(packet.js.sig);  
 }
 
 // combine the incoming/outgoing open values to make a line and save it
@@ -129,19 +118,14 @@ function addLine(self, to, packet)
 {
   if(to.line) return packet.js.line = to.line;
 
-  // no matter what we have to sign it now (in case the first packet was dropped)
-  addSignature(self, packet, {to:to.hashname}, "open");
+  if(!to.open) to.open = dhash.quick(); // random secret key
 
   // now, if they sent us an open and this is our first response, calculate the line and send it
-  if(to.opened) {
-    to.open = packet.js.open;
-    packet.js.line = setLine(self, to);
-    return;
-  }
+  if(to.opened) return packet.js.line = setLine(self, to);
 
-  // if we already sent an open value, always use that one for tracking
-  if(to.open) packet.js.open = to.open;
-  else to.open = packet.js.open; // save for any subsequent packets
+  // set our open value and flag to be signed
+  packet.js.open = to.open;
+  packet.sign = true;
 }
 
 // ask open lines for an address
@@ -205,13 +189,14 @@ function keywatch(self, key, callback)
 function encode(self, to, packet)
 {
   // if there's a line and it's not added, add it, convenience
-  if(to.line && !packet.js.line) addLine(self, to, packet);
+  if(to.line) packet.js.line = to.line;
 
-  // if there's no line/sig, always add extra identifiers
-  if(!packet.js.line && !packet.js.sig) {
+  // if there's no line and not signed, always add extra identifiers
+  if(!packet.js.line) {
     if(to.via) packet.js.via = to.via.hashname;
     packet.js.to = to.hashname;
-    packet.js.from = self.hashname;      
+    packet.js.from = self.hashname;
+    if(packet.sign) packet.js.x = Date.now() + 10*1000; // add timeout for signed packets
   }
   
   debug("ENCODING", packet.js, packet.body && packet.body.toString(), "\n");
@@ -267,6 +252,16 @@ function send(self, to, packet)
   if(!to.ip || !(to.port > 0)) return warn("invalid address", to);
 
   var buf = encode(self, to, packet);
+
+  // if this packet is to be signed, wrap it and do that
+  if(packet.sign)
+  {
+    var signed = {js:{}};
+    signed.body = buf;
+    signed.js.sig = self.ukey.hashAndSign("md5", buf).toString("base64");
+    buf = encode(self, to, signed);
+    packet = signed;
+  }
 
   // track some stats
   to.sent ? to.sent++ : to.sent = 1;

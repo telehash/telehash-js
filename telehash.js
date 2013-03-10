@@ -219,6 +219,11 @@ function encode(packet)
 // just parse the "60518c1c11dc0452be71a7118a43ab68e3451b82,172.16.42.34,65148" format
 function parseAddress(str)
 {
+  if(typeof str !== "string")
+  {
+    warn("invalid address", str);
+    return {};
+  }
   var parts = str.split(",");
   return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2]), address:str};
 }
@@ -227,6 +232,8 @@ function parseAddress(str)
 function seen(self, to)
 {
   if(typeof to === "string") to = parseAddress(to);
+  if(typeof to !== "object") return {}; // could be bad data, empty object allows for .X checks
+  if(to.hashname === self.hashname) return self; // so we can check === self
   var ret = self.seen[to.hashname];
   if(!ret) {
     ret = self.seen[to.hashname] = to;
@@ -239,11 +246,40 @@ function seen(self, to)
   return ret;
 }
 
-// wiring wrapper
+// wiring wrapper, to may be ephemeral (just ip+port, or usually a hashname object)
 function send(self, to, packet)
 {
-  var buf = encode(packet);
   if(!to.ip || !(to.port > 0)) return warn("invalid address", to);
+
+  // if there's a line and it's not added, add it, convenience
+  if(to.line && !packet.js.line) addLine(self, to, packet);
+
+  // if there's no line but we know the recipient via someone, always add it
+  if(!to.line && to.via) {
+    packet.js.via = to.via.hashname;
+    // unsigned packets require these too
+    if(!packet.js.sig)
+    {
+      packet.js.to = to.hashname;
+      packet.js.from = self.hashname;      
+    }
+  }
+  
+  // track some stats
+  to.sent ? to.sent++ : to.sent = 1;
+  to.sentAt = Date.now();
+
+  // if there's a hashname, this is the best place to handle clearing the pop'd state on any send
+  if(to.hashname && to.popping) delete to.popping;
+
+  // special, first packet + nat + via'd, send a pop too
+  if(to.via && to.sent === 1 && self.nat)
+  {
+    to.popping = packet; // cache first packet for possible resend
+    send(self, to.via, {js:{pop:[[to.hashname,to.ip,to.port].join(",")]}});
+  }
+
+  var buf = encode(packet);
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
@@ -272,26 +308,101 @@ function decode(buf)
 function incoming(self, packet)
 {
   debug("INCOMING", self.hashname, "packet from", packet.from, packet.js, packet.body && packet.body.length);
-  
-  packet.ignore = {}; // which keys have been "processed"
+
+  // anon packets have a to that must be validated
+  if(packet.js.to)
+  {
+    if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
+    delete packet.js.to;
+  }
+
+  // which keys have been "processed"
+  packet.ignore = {};
+
+  // these are all the ad-hoc packet types
+  if(packet.js.via) inVia(self, packet);
+  if(packet.js.sig) inSig(self, packet);
   if(packet.js.who) inWho(self, packet);
   if(packet.js.key) inKey(self, packet);
+  if(packet.js.popped) inPopped(self, packet);
   
   // opens may have to be async validated before continuing
-  inOpen(self, packet, function(){
+  checkOpen(self, packet, function(){
 
     if(packet.js.line) inLine(self, packet);
 
-    // these behave differently if there's a line
-    if(packet.js.see) inSee(self, packet);
-    if(packet.js.seek) inSeek(self, packet);
+    // these require a line, via, or signature
+    if(packet.line || packet.via || packet.signed)
+    {
+      if(packet.js.see) inSee(self, packet);
+      if(packet.js.seek) inSeek(self, packet);
+      if(packet.js.pop) inPop(self, packet);      
+    }
 
     // only proceed if there's a line
     if(!packet.line) return inAny(self, packet);
 
+    if(packet.js.popping) inPopping(self, packet);
+
     // only proceed if there's a stream
     if(!packet.stream) return inAny(self, packet);    
   });;
+}
+
+// just validate any sig if possible, convenience
+function inSig(self, packet)
+{
+  packet.ignore.sig = true;
+  // TODO validate if key, set packet.signed = hn;
+}
+
+// validate any via
+function inVia(self, packet)
+{
+  packet.ignore.via = true;
+  packet.via = self.lines[packet.js.via];
+  if(!packet.via) return warn("invalid via of", packet.js.via, "from", packet.from);
+}
+
+// NAT is open
+function inPopped(self, packet)
+{
+  packet.ignore.popped = true;
+  
+  var popped = seen(self, packet.js.from);
+  if(!popped.popping) return warn("popped when not popping", packet.js.popped, "from", packet.from);
+  
+  // make sure we use the ip/port we received from (could be different)
+  popped.ip = packet.from.ip;
+  popped.port = packet.from.port;
+  
+  // resend the first packet, this clears .popping too
+  send(self, popped, popped.popping);
+}
+
+// someone's trying to connect to us
+function inPopping(self, packet)
+{
+  packet.ignore.popping = true;
+  var to = seen(self, packet.js.popping);
+  if((Date.now() - to.sentAt) < 60*1000) return; // we already sent them something recently
+  send(self, to, {js:{popped:true, to:to.hashname, from:self.hashname}});
+}
+
+// be the middleman to help NAT hole punch
+function inPop(self, packet)
+{
+  packet.ignore.pop = packet.ignore.from = true;
+  if(!Array.isArray(packet.js.pop) || packet.js.pop.length == 0) return warn("invalid pop of", packet.js.pop, "from", packet.from);
+  if(!dhash.isSHA1(packet.js.from)) return warn("invalid pop from of", packet.js.from, "from", packet.from);
+
+  packet.js.pop.forEach(function(address){
+    var pop = seen(self, address);
+    if(!pop.line) return warn("pop requested for", address, "but no line, from", packet.from);
+    var popping = {js:{popping:[packet.js.from, packet.from.ip, packet.from.port].join(',')}};
+    addLine(self, pop, popping);
+    send(self, pop, popping);
+  });
 }
 
 // return a see to anyone closer
@@ -299,9 +410,6 @@ function inSeek(self, packet)
 {
   packet.ignore.seek = true;
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
-
-  // we must be able to verify or trust the requestor
-  if(!packet.line && !self.lines[packet.js.via]) return warn("invalid seek, no line or via from", packet.from);
 
   // construct response
   var answer = {js:{see:[]}};
@@ -321,11 +429,14 @@ function inSee(self, packet)
   packet.ignore.see = true;
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
   
-  // TODO verify request if no line
+  // line/sig or via required
+  var via = packet.line || packet.signed;
+  if(!via) via = seen(self, packet.js.via);
+  if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
 
   packet.js.see.forEach(function(address){
     var see = seen(self, address);
-    see.via = packet.line;
+    see.via = via;
     // check if anyone is waiting for this one specifically
     var watch = self.watch["see "+see.hashname];
     if(watch) watch.done(null, see);
@@ -339,7 +450,7 @@ function inAny(self, packet)
 }
 
 // see if there's an open to process async
-function inOpen(self, packet, callback)
+function checkOpen(self, packet, callback)
 {
   if(!packet.js.open) return callback();
 

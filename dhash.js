@@ -9,14 +9,11 @@ exports.isSHA1 = function(str)
   return true;
 }
 
-// convenience
+// convenience, sha1 hash of arg, or random if none
 exports.quick = function(str)
 {
+  if(!str) return crypto.randomBytes(20).toString("hex");
   return crypto.createHash("sha1").update(str).digest('hex');
-}
-exports.random = function(seed)
-{
-  return crypto.createHash("sha1").update(seed+(Math.random()*Date.now()).toString()).digest('hex');
 }
 
 /**

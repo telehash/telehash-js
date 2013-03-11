@@ -87,6 +87,12 @@ exports.hashname = function(space, privateKey, args)
 // perform a who request
 function who(self, hashname, callback)
 {
+  // this will add the callback to any outstanding who requests
+  var watch = keywatch(self, "who "+hashname, callback, 10*1000);
+  
+  // don't perform another request if there's already one running
+  if(watch.callbacks.length > 1) return;
+
   var key;
   // ask operators sequentially in random order
   async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOps){
@@ -95,13 +101,12 @@ function who(self, hashname, callback)
     packet.sign = true;
     keywatch(self, "key "+hashname, function(err, value){
       if(value) key = value;
-      seen(self, hashname).pubkey = value; // cache all public keys we get back
       cbOps(value); // stops async when we get a value
-    });
+    }, 3*1000); // smaller timeout for operators, they should be fast
     send(self, op, packet);
   }, function(){
-    if(!key) return callback("not found");
-    callback(null, key);
+    if(!key) return watch.done("not found");
+    watch.done(null, key);
   });
 }
 
@@ -109,7 +114,8 @@ function who(self, hashname, callback)
 function queueLine(self, packet)
 {
   if(packet) self.lineq.push(packet);
-  debug("scanning line queue length", self.lineq.length);
+  if(self.lineq.length == 0) return;
+  debug("scanning line queue of length", self.lineq.length);
   var q = self.lineq;
   self.lineq = [];
   q.forEach(function(queued){
@@ -192,19 +198,30 @@ function line(self, hn, callback)
   seek(self, hn);
 }
 
-function keywatch(self, key, callback)
+function keywatch(self, key, callback, tout)
 {
-  var timeout = setTimeout(function(){done("timeout")}, REQUEST_TIMEOUT);
+  var watch = self.watch[key];
+
+  // if a watch is running, just add this to the callback list
+  if(watch) {
+    watch.callbacks.push(callback);
+    return watch;
+  }
+
+  // start a new watch
+  var timeout = setTimeout(function(){done("timeout")}, tout || REQUEST_TIMEOUT);
   function done(err, value)
   {
     if(!timeout) return; // re-entered by accident if answer came after timeout
     clearTimeout(timeout);
     timeout = false;
     delete self.watch[key];
-    callback(err, value);
+    watch.callbacks.forEach(function(cb){ cb(err, value); });
   }
-  
-  return self.watch[key] = {done:done, parts:[]};
+
+  var watch = self.watch[key] = {done:done, callbacks:[], parts:[]};
+  watch.callbacks.push(callback);
+  return watch;
 }
 
 // create a wire writeable buffer from a packet
@@ -332,8 +349,8 @@ function incoming(self, packet)
 {
   debug("INCOMING", self.hashname, packet.id, "packet from", packet.from, packet.js, packet.body && packet.body.length);
 
-  // signed packets must be verified first
-  if(packet.js.sig) return inSig(self, packet);
+  // signed packets must be processed and verified straight away
+  if(packet.js.sig) inSig(self, packet);
 
   // make sure any to is us (for multihosting)
   if(packet.js.to)
@@ -342,18 +359,10 @@ function incoming(self, packet)
     delete packet.js.to;
   }
 
-  // any via must be validated as someone we're connected to
-  if(packet.js.via)
-  {
-    var via = seen(self, packet.js.via);
-    if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
-    packet.via = via;
-    delete packet.js.via;
-  }
-
-  // these are all the ad-hoc packet types
-  if(packet.js.who) inWho(self, packet);
+  // "key" responses are always public and trusted since they are self-verifiable
   if(packet.js.key) inKey(self, packet);
+
+  // these are only valid when requested, no trust needed
   if(packet.js.popped) inPopped(self, packet);
 
   // new line creation
@@ -368,16 +377,37 @@ function incoming(self, packet)
     delete packet.js.line;
   }
 
-  // these require a verified or trusted sender
-  if(packet.from.hashname || packet.via)
+  // any via must be validated as someone we're connected to
+  if(packet.js.via)
   {
-    if(packet.js.see) inSee(self, packet);
-    if(packet.js.seek) inSeek(self, packet);
-    if(packet.js.pop) inPop(self, packet);      
+    var via = seen(self, packet.js.via);
+    if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
+    packet.via = via;
+    delete packet.js.via;
+  }
+  
+  // make sure there's something to do yet (signed packets usually fall through here empty)
+  if(Object.keys(packet.js) == 0) return debug("empty packet done", packet.id);
+
+  // make sure we know the sender before passing
+  if(!packet.from.hashname)
+  {
+    if(!dhash.isSHA1(packet.js.from)) return warn("missing from hashname", packet.js.from, "from", packet.from);
+    packet.from.hashname = packet.js.from; // for the "to" on answers
   }
 
-  // only proceed if there's a line
-  if(!packet.from.line) return inAny(self, packet);
+  // answer who/see here so we have the best from info to decide if we care
+  if(packet.js.who) inWho(self, packet);
+  if(packet.js.see) inSee(self, packet);
+
+  // everything else must have some level of from trust!
+  if(!packet.line && !packet.signed && !packet.via) return inAny(self, packet);
+
+  if(packet.js.seek) inSeek(self, packet);
+  if(packet.js.pop) inPop(self, packet);      
+
+  // now, only proceed if there's a line
+  if(!packet.line) return inAny(self, packet);
 
   // these are line-only things
   if(packet.js.popping) inPopping(self, packet);
@@ -387,14 +417,21 @@ function incoming(self, packet)
 
 }
 
-// any signature must be validated, or the packet dropped
+// any signature must be validated and then the body processed
 function inSig(self, packet)
 {
   // decode the body as a packet so we can examine it
   var signed = decode(packet.body);
+  var sig = packet.js.sig;
+  var body = packet.body;
+  delete packet.js.sig;
+  delete packet.js.body;
   signed.id = packet.id + (packet.id * .1);
-  if(!dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
+  if(!signed.js || !dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
   var from = seen(self, signed.js.from);
+
+  // if a signed packet has a key, it might be the one for this signature, so process it :)
+  if(signed.js.key) inKey(self, signed);
 
   // where we handle validation if/when there's a key
   function keyed(err, pubkey)
@@ -404,7 +441,7 @@ function inSig(self, packet)
     // validate packet.js.sig against packet.body
     try {
       var ukey = ursa.coercePublicKey(pubkey);
-      valid = ukey.hashAndVerify("md5", packet.body, packet.js.sig, "base64");
+      valid = ukey.hashAndVerify("md5", body, sig, "base64");
       if(!valid) return warn("invalid signature from:", packet.from);
     }catch(E){
       return warn("crypto failed for", packet.from, E);
@@ -415,7 +452,7 @@ function inSig(self, packet)
     from.pubkey = pubkey;
 
     // process body as a new packet with a real from
-    signed.from = from;
+    signed.signed = signed.from = from;
     incoming(self, signed);
   }
 
@@ -535,9 +572,10 @@ function inOpen(self, packet)
 
 function inKey(self, packet)
 {
-  var watch = self.watch["key "+packet.js.key];
-  if(!watch) return warn("unknown key from", packet.from);
+  var hashname = packet.js.key;
   delete packet.js.key;
+  var watch = self.watch["key "+hashname];
+  if(!watch) return warn("unknown key", hashname, "from", packet.from);
 
   // some sanity checks
   if(!packet.body) return warn("missing key body from", packet.from);
@@ -546,9 +584,13 @@ function inKey(self, packet)
 
   watch.parts[seq] = packet.body.toString("utf8");
 
-  // check if it's a valid public key yet
+  // check if it's a valid public key yet, bail if not
   var key = watch.parts.join("");
-  try { ursa.coercePublicKey(key) } catch(E) { return warn(E) };
+  try { ursa.coercePublicKey(key) } catch(E) { return; };
+  
+  // have a key, validate it's for this hashname!
+  if(hashname !== dhash.quick(key+self.space)) return warn("key+space hashname mismatch", hashname, "from", packet.from);
+  seen(self, hashname).pubkey = key; // save all public keys we get back
   watch.done(null, key);
 }
 

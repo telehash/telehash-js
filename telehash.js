@@ -27,7 +27,7 @@ exports.hashname = function(space, privateKey, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, seen:{}};
+  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}};
   // parse/validate the private key
   try {
     self.ukey = ursa.coercePrivateKey(privateKey);
@@ -43,10 +43,13 @@ exports.hashname = function(space, privateKey, args)
 
 
   // udp socket
+  var counter = 1;
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     var packet = decode(msg);
     if(!packet) return warn("failed to decode a packet from", rinfo.address, rinfo.port, msg.toString());
     packet.from = {ip:rinfo.address, port:rinfo.port};
+    packet.id = counter++;
+    packet.at = Date.now();
     incoming(self, packet);
   });
   self.server.bind(self.port, self.ip);
@@ -102,6 +105,20 @@ function who(self, hashname, callback)
   });
 }
 
+// scan through the queue of packets with an unknown line, and add one
+function queueLine(self, packet)
+{
+  if(packet) self.lineq.push(packet);
+  debug("scanning line queue length", self.lineq.length);
+  var q = self.lineq;
+  self.lineq = [];
+  q.forEach(function(queued){
+    if(self.lines[queued.js.line]) return incoming(self, queued);
+    if(Date.now() - queued.at < 10*1000) return self.lineq.push(queued);
+    warn("dropping expired unknown line packet from", queued.from);
+  });
+}
+
 // combine the incoming/outgoing open values to make a line and save it
 function setLine(self, hn)
 {
@@ -110,6 +127,7 @@ function setLine(self, hn)
   self.lines[hn.line] = hn;
   var watch = self.watch["line "+hn.hashname];
   if(watch) watch.done();
+  queueLine(self); // trigger a scan now
   return hn.line;
 }
 
@@ -118,10 +136,14 @@ function addLine(self, to, packet)
 {
   if(to.line) return packet.js.line = to.line;
 
-  if(!to.open) to.open = dhash.quick(); // random secret key
+  // if we've both sent opens, switch to the line
+  if(to.open && to.opened) return packet.js.line = setLine(self, to);
 
-  // now, if they sent us an open and this is our first response, calculate the line and send it
-  if(to.opened) return packet.js.line = setLine(self, to);
+  // gen a random secret open if it's the first time
+  if(!to.open){
+    to.open = dhash.quick();
+    if(to.opened) setLine(self, to); // save the line
+  }
 
   // set our open value and flag to be signed
   packet.js.open = to.open;
@@ -188,15 +210,19 @@ function keywatch(self, key, callback)
 // create a wire writeable buffer from a packet
 function encode(self, to, packet)
 {
-  // if there's a line and it's not added, add it, convenience
-  if(to.line) packet.js.line = to.line;
+  // signed packets are special, everything else gets common things added
+  if(!packet.js.sig)
+  {
+    // if we need a line and it's not added, add it, convenience
+    if(to.line || to.opened) addLine(self, to, packet);
 
-  // if there's no line and not signed, always add extra identifiers
-  if(!packet.js.line) {
-    if(to.via) packet.js.via = to.via.hashname;
-    packet.js.to = to.hashname;
-    packet.js.from = self.hashname;
-    if(packet.sign) packet.js.x = Date.now() + 10*1000; // add timeout for signed packets
+    // if there's no line, always add extra identifiers
+    if(!packet.js.line) {
+      if(to.via) packet.js.via = to.via.hashname;
+      packet.js.to = to.hashname;
+      packet.js.from = self.hashname;
+      if(packet.sign) packet.js.x = Date.now() + 10*1000; // add timeout for signed packets
+    }    
   }
   
   debug("ENCODING", packet.js, packet.body && packet.body.toString(), "\n");
@@ -254,7 +280,7 @@ function send(self, to, packet)
   var buf = encode(self, to, packet);
 
   // if this packet is to be signed, wrap it and do that
-  if(packet.sign)
+  if(packet.sign && !packet.js.line)
   {
     var signed = {js:{}};
     signed.body = buf;
@@ -304,19 +330,16 @@ function decode(buf)
 // figure out what this packet is and have some fun
 function incoming(self, packet)
 {
-  debug("INCOMING", self.hashname, "packet from", packet.from, packet.js, packet.body && packet.body.length);
+  debug("INCOMING", self.hashname, packet.id, "packet from", packet.from, packet.js, packet.body && packet.body.length);
 
   // signed packets must be verified first
   if(packet.js.sig) return inSig(self, packet);
-
-  // which keys have been "processed"
-  packet.ignore = {};
 
   // make sure any to is us (for multihosting)
   if(packet.js.to)
   {
     if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
-    packet.ignore.to = true;
+    delete packet.js.to;
   }
 
   // any via must be validated as someone we're connected to
@@ -325,7 +348,7 @@ function incoming(self, packet)
     var via = seen(self, packet.js.via);
     if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
     packet.via = via;
-    packet.ignore.via = true;
+    delete packet.js.via;
   }
 
   // these are all the ad-hoc packet types
@@ -333,9 +356,17 @@ function incoming(self, packet)
   if(packet.js.key) inKey(self, packet);
   if(packet.js.popped) inPopped(self, packet);
 
-  // work on any line stuff
+  // new line creation
   if(packet.js.open) inOpen(self, packet);
-  if(packet.js.line) inLine(self, packet);
+
+  // incoming lines can happen out of order or before their open is verified, queue them
+  if(packet.js.line)
+  {
+    // a matching line is required
+    packet.line = packet.from = self.lines[packet.js.line];
+    if(!packet.line) return queueLine(self, packet);
+    delete packet.js.line;
+  }
 
   // these require a verified or trusted sender
   if(packet.from.hashname || packet.via)
@@ -361,6 +392,7 @@ function inSig(self, packet)
 {
   // decode the body as a packet so we can examine it
   var signed = decode(packet.body);
+  signed.id = packet.id + (packet.id * .1);
   if(!dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
   var from = seen(self, signed.js.from);
 
@@ -400,10 +432,9 @@ function inSig(self, packet)
 // NAT is open
 function inPopped(self, packet)
 {
-  packet.ignore.popped = true;
-  
+  delete packet.js.popped;
   var popped = seen(self, packet.js.from);
-  if(!popped.popping) return warn("popped when not popping", packet.js.popped, "from", packet.from);
+  if(!popped.popping) return warn("popped when not popping from", packet.from);
   
   // make sure we use the ip/port we received from (could be different)
   popped.ip = packet.from.ip;
@@ -416,16 +447,15 @@ function inPopped(self, packet)
 // someone's trying to connect to us
 function inPopping(self, packet)
 {
-  packet.ignore.popping = true;
   var to = seen(self, packet.js.popping);
+  delete packet.js.popping;
   if((Date.now() - to.sentAt) < 60*1000) return; // we already sent them something recently
-  send(self, to, {js:{popped:true, to:to.hashname, from:self.hashname}});
+  send(self, to, {js:{popped:true}});
 }
 
 // be the middleman to help NAT hole punch
 function inPop(self, packet)
 {
-  packet.ignore.pop = packet.ignore.from = true;
   if(!Array.isArray(packet.js.pop) || packet.js.pop.length == 0) return warn("invalid pop of", packet.js.pop, "from", packet.from);
   if(!dhash.isSHA1(packet.js.from)) return warn("invalid pop from of", packet.js.from, "from", packet.from);
 
@@ -435,12 +465,12 @@ function inPop(self, packet)
     var popping = {js:{popping:[packet.js.from, packet.from.ip, packet.from.port].join(',')}};
     send(self, pop, popping);
   });
+  delete packet.js.pop;
 }
 
 // return a see to anyone closer
 function inSeek(self, packet)
 {
-  packet.ignore.seek = true;
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
@@ -449,13 +479,13 @@ function inSeek(self, packet)
   if(self.seen[packet.js.seek] && self.seen[packet.js.seek].line) answer.js.see.push(self.seen[packet.js.seek].address);
   // TODO DHT distance sort into .see
   
+  delete packet.js.seek;
   send(self, packet.from, answer);
 }
 
 // any packet can have a .see, anything might want to know
 function inSee(self, packet)
 {
-  packet.ignore.see = true;
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
   
   // to trust a .see, we just need to know who they are or that we've sent them something
@@ -465,12 +495,13 @@ function inSee(self, packet)
 
   packet.js.see.forEach(function(address){
     var see = seen(self, address);
-    see.via = via;
+    if(see !== via) see.via = via;
     // check if anyone is waiting for this one specifically
     var watch = self.watch["see "+see.hashname];
     if(watch) watch.done(null, see);
     // TODO also check anyone watching for ones closer to recurse
   });
+  delete packet.js.see;
 }
 
 function inAny(self, packet)
@@ -481,13 +512,14 @@ function inAny(self, packet)
 // try to open a line
 function inOpen(self, packet)
 {
-  packet.ignore.open = true;
-
   // if the from isn't verified, bail
   if(!packet.from.hashname) return warn("unsigned open from", packet.from);
 
   // store the open value for line generation
   packet.from.opened = packet.js.open;
+
+  // if we've sent one already, set the line open
+  if(packet.from.open && packet.from.opened) setLine(self, packet.from);
 
   // in case it's a new open, replacing old line
   if(packet.from.line)
@@ -498,21 +530,14 @@ function inOpen(self, packet)
   
   // consider the line open
   packet.line = packet.from;
-}
-
-function inLine(self, packet)
-{
-  packet.ignore.line = true;
-  // a matching line is required
-  packet.line = self.lines[packet.js.line];
-  if(!packet.line) return warn("unknown line from", packet.from);
+  delete packet.js.open;
 }
 
 function inKey(self, packet)
 {
-  packet.ignore.key = true;
   var watch = self.watch["key "+packet.js.key];
   if(!watch) return warn("unknown key from", packet.from);
+  delete packet.js.key;
 
   // some sanity checks
   if(!packet.body) return warn("missing key body from", packet.from);
@@ -529,10 +554,8 @@ function inKey(self, packet)
 
 function inWho(self, packet)
 {
-  packet.ignore.who = true;
-  var body;
-  try { body = JSON.parse(packet.body.toString()) } catch(E) { return warn("invalid body from", packet.from); }
-  
+  // TODO - do we care to enforce signature validation?
+
   function valued(err, key)
   {
     if(err || !key) return warn("key lookup fail for", body.hashname, err);
@@ -545,6 +568,8 @@ function inWho(self, packet)
     }
   }
   
-  if(body.hashname === self.hashname) return valued(null, self.pubkey);
-  if(self.cb.lookup) return self.cb.lookup(body.hashname, valued);
+  if(packet.js.who === self.hashname) return valued(null, self.pubkey);
+  if(self.cb.lookup) return self.cb.lookup(packet.js.who, valued);
+  
+  delete packet.js.who;
 }

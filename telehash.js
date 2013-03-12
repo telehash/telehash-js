@@ -78,14 +78,23 @@ exports.hashname = function(space, privateKey, args)
       return op.hashname;
     });
   };
-  self.doWho = function(hn, callback) { who(self, hn, callback) };
-  self.doLine = function(hn, callback) { line(self, hn, callback) };
+  self.doWho = function(hn, callback) { doWho(self, hn, callback) };
+  self.doLine = function(hn, callback) { doLine(self, hn, callback) };
+  self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
 
   return self;
 }
 
+// open a stream to the given hashname
+function doStream(self, hashname, callback)
+{
+  var to = seen(self, hashname);
+  if(!to.line) return undefined;
+  if(!to.streams) to.streams = {};  
+}
+
 // perform a who request
-function who(self, hashname, callback)
+function doWho(self, hashname, callback)
 {
   // this will add the callback to any outstanding who requests
   var watch = keywatch(self, "who "+hashname, callback, 10*1000);
@@ -169,7 +178,7 @@ function seek(self, hash)
 }
 
 // open a line to this hashname
-function line(self, hn, callback)
+function doLine(self, hn, callback)
 {
   // might have it already
   if(self.lines[hn]) return callback();
@@ -463,7 +472,7 @@ function inSig(self, packet)
   if(self.cb.lookup) return self.cb.lookup(from.hashname, keyed);
 
   // go ask an operator
-  who(self, from.hashname, keyed);
+  doWho(self, from.hashname, keyed);
 }
 
 // NAT is open

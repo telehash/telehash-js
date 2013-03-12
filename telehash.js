@@ -90,7 +90,29 @@ function doStream(self, hashname, callback)
 {
   var to = seen(self, hashname);
   if(!to.line) return undefined;
-  if(!to.streams) to.streams = {};  
+  if(!to.streams) to.streams = {};
+  var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:0, outConfirmed:0}
+  stream.id = dhash.quick();
+  stream.inAny = callback;
+  stream.send = function(js, body){ sendStream(self, to, stream, {js:js, body:body}) };
+  to.streams[stream.id] = stream;
+  return stream;
+}
+
+function sendStream(self, to, stream, packet)
+{
+  packet.js.stream = stream.id;
+  packet.js.seq = stream.outSeq++;
+  // TODO range/misses calc
+}
+
+function inStream(self, packet)
+{
+  if(!packet.from.streams) return warn("no streams open from", packet.from);
+  packet.stream = packet.from.streams[packet.js.stream];
+  if(!packet.stream) return warn("stream id invalid", packet.js.stream, packet.from);
+  delete packet.js.stream;
+  // TODO range/misses calc
 }
 
 // perform a who request
@@ -420,10 +442,15 @@ function incoming(self, packet)
 
   // these are line-only things
   if(packet.js.popping) inPopping(self, packet);
+  if(packet.js.stream) inStream(self, packet);
 
   // only proceed if there's a stream
   if(!packet.stream) return inAny(self, packet);    
 
+  if(Object.keys(packet.js) == 0) return debug("empty packet really done", packet.id);
+  
+  // anything leftover pass along
+  inAny(self, packet);
 }
 
 // any signature must be validated and then the body processed
@@ -553,6 +580,7 @@ function inSee(self, packet)
 function inAny(self, packet)
 {
   // optionally send it up to the app if there's any data that isn't processed yet
+  if(packet.stream && packet.stream.inAny) return packet.stream.inAny(null, packet);
 }
 
 // try to open a line

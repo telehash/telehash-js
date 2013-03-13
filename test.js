@@ -1,7 +1,15 @@
 
 var th = require("./telehash");
-var keypair = require(process.argv[2]);
 
+var hook = th.test(function(self, to, packet){
+  console.log("SEND",to,packet);
+});
+var js = {who:"42", "from":"67"};
+hook.incoming({hashname:"42", pubkey:"SECRET"}, {js:js, from:{ip:"x.x.x.x", port:42}});
+hook.inStream({});
+
+/*
+var keypair = require(process.argv[2]);
 var test = th.hashname("test", keypair);
 console.log(test.address);
 test.setOperators(["1e9f22cdb675bd9d67ec10c2f21c020acc0bd20f,172.16.42.34,58625"]);
@@ -9,7 +17,6 @@ test.doWho("1e9f22cdb675bd9d67ec10c2f21c020acc0bd20f", function(err, key){
   console.log("WHOM", err, key);
 });
 
-/*
 var hash = require("./hash");
 var a = new hash.Hash(null, "a9993e364706816aba3e25717850c26c9cd0d89d");
 var b = new hash.Hash(null, a.far());

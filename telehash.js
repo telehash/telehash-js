@@ -91,28 +91,102 @@ function doStream(self, hashname, callback)
   var to = seen(self, hashname);
   if(!to.line) return undefined;
   if(!to.streams) to.streams = {};
-  var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:0, outConfirmed:0}
+  var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:0, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = dhash.quick();
+  stream.to = to;
   stream.inAny = callback;
-  stream.send = function(js, body){ sendStream(self, to, stream, {js:js, body:body}) };
+  stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
   to.streams[stream.id] = stream;
   return stream;
 }
 
-function sendStream(self, to, stream, packet)
+function sendStream(self, stream, packet)
 {
+  if(stream.outq > 100) return warn("dropping outgoing packet since the stream buffer is too large", stream.id, packet.to);
+
   packet.js.stream = stream.id;
   packet.js.seq = stream.outSeq++;
-  // TODO range/misses calc
+  packet.js.ack = stream.inSeq;
+
+  // calculate misses;
+  if(stream.inq.length > 0)
+  {
+    packet.js.miss = [];
+    for(var i = 0; i < stream.inq.length; i++)
+    {
+      if(!stream.inq[i]) packet.js.miss.push(stream.inDone + 1 + i);
+    }
+  }
+  
+  // reset/update tracking stats
+  stream.outConfirmed = stream.inSeq;
+  stream.inDups = 0;
+  
+  // any misses timer gets cancelled
+  if(stream.missTimeout)
+  {
+    cancelTimeout(stream.missTimeout);
+    stream.missTimeout = false;
+  }
 }
 
-function inStream(self, packet)
+function inStream(self, packet, callback)
 {
   if(!packet.from.streams) return warn("no streams open from", packet.from);
-  packet.stream = packet.from.streams[packet.js.stream];
-  if(!packet.stream) return warn("stream id invalid", packet.js.stream, packet.from);
+  var stream = packet.from.streams[packet.js.stream];
+  if(!stream) return warn("stream id invalid", packet.js.stream, packet.from);
   delete packet.js.stream;
-  // TODO range/misses calc
+  
+  packet.seq = parseInt(packet.js.seq);
+  if(!(packet.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
+  delete packet.js.seq;
+  stream.inSeq = packet.seq;
+
+  // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
+  if(packet.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
+
+  // track and drop duplicate packets
+  if(stream.inq[packet.seq] || packet.seq <= stream.inDone) return stream.inDups++;
+
+  // process any valid newer incoming ack/miss
+  var ack = parseInt(packet.js.ack);
+  var miss = Array.isArray(packet.js.miss) ? packet.js.miss : [];
+  if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from);
+  if(ack > stream.lastAck && ack <= stream.outSeq)
+  {
+    stream.lastAck = ack;
+    // rebuild outq, only keeping missed/newer packets
+    var outq = [];
+    stream.outq.forEach(function(pold){
+      if(pold.seq <= ack && !miss.indexOf(pold.seq)) return; // confirmed!
+      outq.push(pold);
+      if(!miss.indexOf(pold.seq)) return;
+      // resend misses but not too frequently
+      if(Date.now() - pold.resentAt < 5*1000) return;
+      pold.resentAt = Date.now();
+      send(self, stream.to, pold);
+    });
+    stream.outq = outq;    
+  }
+  
+  // drop out of bounds
+  if(packet.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
+
+  // stash this seq and process any in sequence
+  packet.stream = stream;
+  stream.inq[packet.seq - (stream.inDone+1)] = packet;
+  while(stream.inq[0])
+  {
+    packet = stream.inq.shift();
+    stream.inDone++;
+    callback(packet);
+  }
+
+  // is there any missing packets? send notice in a few seconds
+  if(stream.inq.length === 0 || stream.missTimeout) return;
+  stream.missTimeout = setTimeout(function(){
+    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ misses
+  }, 2*1000);
 }
 
 // perform a who request
@@ -417,9 +491,6 @@ function incoming(self, packet)
     delete packet.js.via;
   }
   
-  // make sure there's something to do yet (signed packets usually fall through here empty)
-  if(Object.keys(packet.js) == 0) return debug("empty packet done", packet.id);
-
   // make sure we know the sender before passing
   if(!packet.from.hashname)
   {
@@ -438,19 +509,25 @@ function incoming(self, packet)
   if(packet.js.pop) inPop(self, packet);      
 
   // now, only proceed if there's a line
-  if(!packet.line) return inAny(self, packet);
+  if(!packet.line) return inApp(self, packet);
 
   // these are line-only things
   if(packet.js.popping) inPopping(self, packet);
-  if(packet.js.stream) inStream(self, packet);
 
   // only proceed if there's a stream
-  if(!packet.stream) return inAny(self, packet);    
+  if(!packet.js.stream) return inApp(self, packet);
 
-  if(Object.keys(packet.js) == 0) return debug("empty packet really done", packet.id);
-  
-  // anything leftover pass along
-  inAny(self, packet);
+  // this only calls them back in sequence
+  inStream(self, packet, function(packet){
+
+    // stream only stuff
+    if(packet.js.sock || packet.stream.sock) return inSock(self, packet);
+    if(packet.js.req || packet.stream.proxy) return inProxy(self, packet);
+
+    // anything leftover in a stream, pass along
+    inApp(self, packet);
+  });
+
 }
 
 // any signature must be validated and then the body processed
@@ -577,10 +654,20 @@ function inSee(self, packet)
   delete packet.js.see;
 }
 
-function inAny(self, packet)
+// optionally send it up to the app if there's any data that isn't processed yet
+function inApp(self, packet)
 {
-  // optionally send it up to the app if there's any data that isn't processed yet
+  // make sure there's something to do yet (signed packets usually fall through here empty)
+  if(Object.keys(packet.js) == 0) return debug("empty packet done", packet.id);
+
+  // stream callbacks
   if(packet.stream && packet.stream.inAny) return packet.stream.inAny(null, packet);
+
+  // line stuff
+  if(packet.line && packet.line.inAny) return packet.line.inAny(null, packet);
+  
+  // ad-hoc packets
+  if(self.inAny) packet.line.inAny(null, packet);
 }
 
 // try to open a line
@@ -651,4 +738,11 @@ function inWho(self, packet)
   if(self.cb.lookup) return self.cb.lookup(packet.js.who, valued);
   
   delete packet.js.who;
+}
+
+// simple test rigging to replace builtins
+exports.test = function(outgoing)
+{
+  send = outgoing;
+  return {incoming:incoming, inStream:inStream, doStream:doStream};
 }

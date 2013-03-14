@@ -91,7 +91,7 @@ function doStream(self, hashname, callback)
   var to = seen(self, hashname);
   if(!to.line) return undefined;
   if(!to.streams) to.streams = {};
-  var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:0, outConfirmed:0, inDups:0, lastAck:-1}
+  var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = dhash.quick();
   stream.to = to;
   stream.inAny = callback;
@@ -121,72 +121,16 @@ function sendStream(self, stream, packet)
   // reset/update tracking stats
   stream.outConfirmed = stream.inSeq;
   stream.inDups = 0;
+  stream.outq.push(packet);
   
   // any misses timer gets cancelled
   if(stream.missTimeout)
   {
-    cancelTimeout(stream.missTimeout);
+    clearTimeout(stream.missTimeout);
     stream.missTimeout = false;
   }
-}
-
-function inStream(self, packet, callback)
-{
-  if(!packet.from.streams) return warn("no streams open from", packet.from);
-  var stream = packet.from.streams[packet.js.stream];
-  if(!stream) return warn("stream id invalid", packet.js.stream, packet.from);
-  delete packet.js.stream;
   
-  packet.seq = parseInt(packet.js.seq);
-  if(!(packet.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
-  delete packet.js.seq;
-  stream.inSeq = packet.seq;
-
-  // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
-  if(packet.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
-
-  // track and drop duplicate packets
-  if(stream.inq[packet.seq] || packet.seq <= stream.inDone) return stream.inDups++;
-
-  // process any valid newer incoming ack/miss
-  var ack = parseInt(packet.js.ack);
-  var miss = Array.isArray(packet.js.miss) ? packet.js.miss : [];
-  if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from);
-  if(ack > stream.lastAck && ack <= stream.outSeq)
-  {
-    stream.lastAck = ack;
-    // rebuild outq, only keeping missed/newer packets
-    var outq = [];
-    stream.outq.forEach(function(pold){
-      if(pold.seq <= ack && !miss.indexOf(pold.seq)) return; // confirmed!
-      outq.push(pold);
-      if(!miss.indexOf(pold.seq)) return;
-      // resend misses but not too frequently
-      if(Date.now() - pold.resentAt < 5*1000) return;
-      pold.resentAt = Date.now();
-      send(self, stream.to, pold);
-    });
-    stream.outq = outq;    
-  }
-  
-  // drop out of bounds
-  if(packet.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
-
-  // stash this seq and process any in sequence
-  packet.stream = stream;
-  stream.inq[packet.seq - (stream.inDone+1)] = packet;
-  while(stream.inq[0])
-  {
-    packet = stream.inq.shift();
-    stream.inDone++;
-    callback(packet);
-  }
-
-  // is there any missing packets? send notice in a few seconds
-  if(stream.inq.length === 0 || stream.missTimeout) return;
-  stream.missTimeout = setTimeout(function(){
-    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ misses
-  }, 2*1000);
+  send(self, stream.to, packet);
 }
 
 // perform a who request
@@ -490,23 +434,19 @@ function incoming(self, packet)
     packet.via = via;
     delete packet.js.via;
   }
-  
-  // make sure we know the sender before passing
-  if(!packet.from.hashname)
-  {
-    if(!dhash.isSHA1(packet.js.from)) return warn("missing from hashname", packet.js.from, "from", packet.from);
-    packet.from.hashname = packet.js.from; // for the "to" on answers
-  }
+
+  // copy back their sender name if we don't have one yet for the "to" on answers
+  if(!packet.from.hashname && dhash.isSHA1(packet.js.from)) packet.from.hashname = packet.js.from;
 
   // answer who/see here so we have the best from info to decide if we care
   if(packet.js.who) inWho(self, packet);
   if(packet.js.see) inSee(self, packet);
 
   // everything else must have some level of from trust!
-  if(!packet.line && !packet.signed && !packet.via) return inAny(self, packet);
+  if(!packet.line && !packet.signed && !packet.via) return inApp(self, packet);
 
-  if(packet.js.seek) inSeek(self, packet);
-  if(packet.js.pop) inPop(self, packet);      
+  if(dhash.isSHA1(packet.js.seek)) inSeek(self, packet);
+  if(packet.js.pop) inPop(self, packet);
 
   // now, only proceed if there's a line
   if(!packet.line) return inApp(self, packet);
@@ -517,18 +457,86 @@ function incoming(self, packet)
   // only proceed if there's a stream
   if(!packet.js.stream) return inApp(self, packet);
 
-  // this only calls them back in sequence
-  inStream(self, packet, function(packet){
+  // this makes sure everything is in sequence before continuing
+  inStream(self, packet);
+
+}
+
+function inStream(self, packet)
+{
+  if(!packet.from.streams) return warn("no streams open from", packet.from);
+  var stream = packet.from.streams[packet.js.stream];
+  if(!stream) return warn("stream id invalid", packet.js.stream, packet.from);
+  
+  packet.seq = parseInt(packet.js.seq);
+  if(!(packet.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
+  stream.inSeq = packet.seq;
+
+  // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
+  if(packet.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
+
+  // track and drop duplicate packets
+  if(packet.seq <= stream.inDone || stream.inq[packet.seq - (stream.inDone+1)]) return stream.inDups++;
+
+  // process any valid newer incoming ack/miss
+  var ack = parseInt(packet.js.ack);
+  var miss = Array.isArray(packet.js.miss) ? packet.js.miss : [];
+  if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from);
+  if(ack > stream.lastAck && ack <= stream.outSeq)
+  {
+    stream.lastAck = ack;
+    // rebuild outq, only keeping missed/newer packets
+    var outq = [];
+    stream.outq.forEach(function(pold){
+      if(pold.seq <= ack && !miss.indexOf(pold.seq)) return; // confirmed!
+      outq.push(pold);
+      if(!miss.indexOf(pold.seq)) return;
+      // resend misses but not too frequently
+      if(Date.now() - pold.resentAt < 5*1000) return;
+      pold.resentAt = Date.now();
+      send(self, stream.to, pold);
+    });
+    stream.outq = outq;    
+  }
+  
+  // drop out of bounds
+  if(packet.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
+
+  // stash this seq and process any in sequence
+  packet.stream = stream;
+  stream.inq[packet.seq - (stream.inDone+1)] = packet;
+  while(stream.inq[0])
+  {
+    packet = stream.inq.shift();
+    stream.inDone++;
+    delete packet.js.stream;
+    delete packet.js.seq;
+    delete packet.js.miss;
+    delete packet.js.ack;
 
     // stream only stuff
-    if(packet.js.sock || packet.stream.sock) return inSock(self, packet);
-    if(packet.js.req || packet.stream.proxy) return inProxy(self, packet);
+    if(packet.js.sock || stream.sock) return inSock(self, packet);
+    if(packet.js.req || stream.proxy) return inProxy(self, packet);
 
     // anything leftover in a stream, pass along
     inApp(self, packet);
-  });
+  }
+  
+  // no missing packets be done, cancel any timer now too
+  if(stream.inq.length === 0) {
+    if(stream.missTimeout) {
+      clearTimeout(stream.missTimeout);
+      stream.missTimeout = false;
+    }
+    return;
+  }
 
+  // is there any missing packets? send notice in a few seconds
+  if(!stream.missTimeout) stream.missTimeout = setTimeout(function(){
+    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ misses
+  }, 2*1000);
 }
+
 
 // any signature must be validated and then the body processed
 function inSig(self, packet)

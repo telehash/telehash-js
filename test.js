@@ -1,12 +1,28 @@
 
 var th = require("./telehash");
 
+var from = {streams:{}};
 var hook = th.test(function(self, to, packet){
   console.log("SEND",to,packet);
+  if(packet.js.miss[0] == 1)
+  {
+    var js = {stream:stream.id, seq:1, "foo":"bar1.5"};
+    hook.inStream(self, {from:from, js:js});
+  }
 });
-var js = {who:"42", "from":"67"};
-hook.incoming({hashname:"42", pubkey:"SECRET"}, {js:js, from:{ip:"x.x.x.x", port:42}});
-hook.inStream({});
+//var js = {who:"42", "from":"67"};
+//hook.incoming({hashname:"42", pubkey:"SECRET"}, {js:js, from:{ip:"x.x.x.x", port:42}});
+var self = {seen:{"42":{line:true}}};
+var stream = hook.doStream(self, "42", function(err, packet){
+  console.log("STREAM PACKET", packet.stream.id, packet.js);
+  console.log(packet.stream);
+});
+console.log(stream);
+from.streams[stream.id] = stream;
+var js = {stream:stream.id, seq:2, "foo":"bar2"};
+hook.inStream(self, {from:from, js:js});
+var js = {stream:stream.id, seq:0, "foo":"bar1"};
+hook.inStream(self, {from:from, js:js});
 
 /*
 var keypair = require(process.argv[2]);

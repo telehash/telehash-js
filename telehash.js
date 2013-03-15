@@ -1,5 +1,6 @@
 var dgram = require("dgram");
 var os = require("os");
+var net = require("net");
 var async = require("async");
 var ursa = require("ursa")
 var dhash = require("./dhash");
@@ -81,15 +82,51 @@ exports.hashname = function(space, privateKey, args)
   self.doWho = function(hn, callback) { doWho(self, hn, callback) };
   self.doLine = function(hn, callback) { doLine(self, hn, callback) };
   self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
+  self.doSockProxy = function(args, callback) { return doSockProxy(self, args, callback) };
 
   return self;
+}
+
+// ask hashname to open a socket to this ip:port
+function doSockProxy(self, args, callback)
+{
+  if(!args || !args.hashname) return callback("no hashname");
+  if(!args.to || !args.listen) return callback("need to and listen");
+  self.doLine(args.hashname, function(err){
+    if(err) return callback("line failed");
+    var server = net.createServer(function(c) {
+      console.log('server connected');
+      var stream = doStream(self, args.hashname, function(err, packet, cbStream){
+        if(packet.body) c.write(packet.body);
+        if(packet.js.sock !== args.to)
+        {
+          console.log("stream ended:", packet.js.sock);
+          c.close();
+        }
+        cbStream();
+      });
+      console.log("SOCKSTREAM",stream, seen(self, args.hashname));
+      var cErr;
+      c.on('error', function(err){ err = cErr });
+      c.on('close', function() {
+        var closed = {"sock":"closed"};
+        if(cErr) closed.err = cErr.toString();
+        stream.send(closed);
+        console.log('server disconnected');
+      });
+      c.on('data', function(data){
+        stream.send({}, data);
+      })
+    });
+    server.listen(args.listen, callback);
+  });
 }
 
 // open a stream to the given hashname
 function doStream(self, hashname, callback)
 {
   var to = seen(self, hashname);
-  if(!to.line) return undefined;
+//  if(!to.line) return undefined;
   if(!to.streams) to.streams = {};
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = dhash.quick();
@@ -516,7 +553,8 @@ function inStream(self, packet)
     delete packet.js.seq;
     delete packet.js.miss;
     delete packet.js.ack;
-
+    // sends them to the async queue that calls inStreamSeries()
+    stream.q.push(packet);
   }
   
   // no missing packets be done, cancel any timer now too
@@ -566,22 +604,26 @@ function inSock(self, packet, callback)
     callback();
   }
   packet.stream.sock = net.connect({ip:ip, port:port}, function(){
-    if(packet.body) packet.stream.sock.write(body); // attached body is optional, send it now
-    packet.sock.stream.send({sock:packet.js.sock}); // signal open
+    if(packet.body) packet.stream.sock.write(packet.body); // attached body is optional, send it now
+    packet.stream.send({sock:packet.js.sock}); // signal open
     callback();
   });
   packet.stream.sock.on('data', function(data){
     packet.stream.send({}, data);
   });
-  packet.stream.sock.on('end', function(){
-    packet.stream.send({sock:"closed"});
+  packet.stream.sock.on('error', function(err){
+    packet.stream.sockErr = err;
   });
-  callback();
+  packet.stream.sock.on('close', function(){
+    var closed = {sock:"closed"};
+    if(packet.stream.sockErr) closed.err = packet.stream.sockErr.toString();
+    packet.stream.send(closed);
+  });
 }
 
 function inSockData(self, packet, callback)
 {
-  if(packet.body) packet.js.sock.write(packet.body);
+  if(packet.body) packet.stream.sock.write(packet.body);
   callback();
 }
 

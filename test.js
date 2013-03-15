@@ -2,27 +2,41 @@
 var th = require("./telehash");
 
 var from = {streams:{}};
+var seq = 0;
 var hook = th.test(function(self, to, packet){
-  console.log("SEND",to,packet);
-  if(packet.js.miss[0] == 1)
+  console.log("SEND",packet);
+  if(packet.js.miss && packet.js.miss[0] == 1)
   {
     var js = {stream:stream.id, seq:1, "foo":"bar1.5"};
     hook.inStream(self, {from:from, js:js});
+  }
+  if(packet.body)
+  {
+    var js = {stream:stream.id, seq:seq++};
+    hook.inStream(self, {from:from, js:js, body:packet.body.toString()+"42"});
+    
   }
 });
 //var js = {who:"42", "from":"67"};
 //hook.incoming({hashname:"42", pubkey:"SECRET"}, {js:js, from:{ip:"x.x.x.x", port:42}});
 var self = {seen:{"42":{line:true}}};
-var stream = hook.doStream(self, "42", function(err, packet){
+var stream = hook.doStream(self, "42", function(err, packet, callback){
   console.log("STREAM PACKET", packet.stream.id, packet.js);
-  console.log(packet.stream);
+//  console.log(packet.stream);
+  callback();
 });
 console.log(stream);
 from.streams[stream.id] = stream;
-var js = {stream:stream.id, seq:2, "foo":"bar2"};
-hook.inStream(self, {from:from, js:js});
-var js = {stream:stream.id, seq:0, "foo":"bar1"};
-hook.inStream(self, {from:from, js:js});
+
+// test missing packets
+//var js = {stream:stream.id, seq:2, "foo":"bar2"};
+//hook.inStream(self, {from:from, js:js});
+//var js = {stream:stream.id, seq:0, "foo":"bar1"};
+//hook.inStream(self, {from:from, js:js});
+
+// test sock
+var js = {stream:stream.id, seq:seq++, "sock":"127.0.0.1:4442"};
+hook.inStream(self, {from:from, js:js, body:"hello"});
 
 /*
 var keypair = require(process.argv[2]);

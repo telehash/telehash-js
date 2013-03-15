@@ -515,7 +515,8 @@ function inStream(self, packet)
     delete packet.js.ack;
 
     // stream only stuff
-    if(packet.js.sock || stream.sock) return inSock(self, packet);
+    if(packet.js.sock) return inSock(self, packet);
+    if(stream.sock) return inSockData(self, packet);
     if(packet.js.req || stream.proxy) return inProxy(self, packet);
 
     // anything leftover in a stream, pass along
@@ -537,6 +538,24 @@ function inStream(self, packet)
   }, 2*1000);
 }
 
+function inSock(self, packet)
+{
+  // see if the requested ip:port is whitelisted
+  // after connected return same sock value or error
+  // on disconnect send sock:closed
+}
+
+function inSockData(self, packet)
+{
+  // just send to the packet.sock
+}
+
+function inProxy(self, packet)
+{
+  // if .req, validate/stash it
+  // if .body, buffer it (for now)
+  // if .done, do it
+}
 
 // any signature must be validated and then the body processed
 function inSig(self, packet)

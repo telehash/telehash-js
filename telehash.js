@@ -95,6 +95,9 @@ function doStream(self, hashname, callback)
   stream.id = dhash.quick();
   stream.to = to;
   stream.inAny = callback;
+  stream.q = async.queue(function(packet, cbQ){
+    inStreamSeries(self, packet, cbQ);
+  }, 1);
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
   to.streams[stream.id] = stream;
   return stream;
@@ -514,13 +517,6 @@ function inStream(self, packet)
     delete packet.js.miss;
     delete packet.js.ack;
 
-    // stream only stuff
-    if(packet.js.sock) return inSock(self, packet);
-    if(stream.sock) return inSockData(self, packet);
-    if(packet.js.req || stream.proxy) return inProxy(self, packet);
-
-    // anything leftover in a stream, pass along
-    inApp(self, packet);
   }
   
   // no missing packets be done, cancel any timer now too
@@ -538,23 +534,63 @@ function inStream(self, packet)
   }, 2*1000);
 }
 
-function inSock(self, packet)
+// worker on the ordered-packet-queue processing
+function inStreamSeries(self, packet, callback)
 {
-  // see if the requested ip:port is whitelisted
-  // after connected return same sock value or error
-  // on disconnect send sock:closed
+  // stream only stuff
+  if(packet.js.sock) return inSock(self, packet, callback);
+  if(packet.stream.sock) return inSockData(self, packet, callback);
+  if(packet.js.req || packet.stream.proxy) return inProxy(self, packet, callback);
+
+  // anything leftover in a stream, pass along to app
+  if(!packet.stream.inAny) return callback();
+  packet.stream.inAny(null, packet, callback);
 }
 
-function inSockData(self, packet)
+function inSock(self, packet, callback)
 {
-  // just send to the packet.sock
+  // socket already created, handle connected/errors/closed
+  if(packet.sock)
+  {
+    // TODO
+    return callback();
+  }
+
+  // TODO see if the requested ip:port is whitelisted
+  var parts = packet.js.sock.split(":");
+  var ip = parts[0];
+  var port = parseInt(parts[1]);
+  if(!(port > 0 && port < 65536))
+  {
+    packet.stream.send({"sock":"invalid address"});
+    callback();
+  }
+  packet.stream.sock = net.connect({ip:ip, port:port}, function(){
+    if(packet.body) packet.stream.sock.write(body); // attached body is optional, send it now
+    packet.sock.stream.send({sock:packet.js.sock}); // signal open
+    callback();
+  });
+  packet.stream.sock.on('data', function(data){
+    packet.stream.send({}, data);
+  });
+  packet.stream.sock.on('end', function(){
+    packet.stream.send({sock:"closed"});
+  });
+  callback();
 }
 
-function inProxy(self, packet)
+function inSockData(self, packet, callback)
+{
+  if(packet.body) packet.js.sock.write(packet.body);
+  callback();
+}
+
+function inProxy(self, packet, callback)
 {
   // if .req, validate/stash it
   // if .body, buffer it (for now)
   // if .done, do it
+  callback();
 }
 
 // any signature must be validated and then the body processed
@@ -685,7 +721,7 @@ function inSee(self, packet)
 function inApp(self, packet)
 {
   // make sure there's something to do yet (signed packets usually fall through here empty)
-  if(Object.keys(packet.js) == 0) return debug("empty packet done", packet.id);
+  if(Object.keys(packet.js) == 0 && !packet.body) return debug("empty packet done", packet.id);
 
   // stream callbacks
   if(packet.stream && packet.stream.inAny) return packet.stream.inAny(null, packet);

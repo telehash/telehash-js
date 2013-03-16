@@ -116,24 +116,30 @@ function doSockProxy(self, args, callback)
       });
       c.on('data', function(data){
         stream.send({}, data);
-      })
+      });
+      // send sock open now
+      stream.send({sock:args.to});
     });
     server.listen(args.listen, callback);
   });
 }
 
-// open a stream to the given hashname
+// creates a new stream to the given hashname
 function doStream(self, hashname, callback)
 {
-  var to = seen(self, hashname);
-//  if(!to.line) return undefined;
+  var stream = getStream(self, seen(self, hashname));
+  stream.handler = function(self, packet, cbHandler) { callback(null, packet, cbHandler); }
+  return stream;
+}
+
+function getStream(self, to, id)
+{
   if(!to.streams) to.streams = {};
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
-  stream.id = dhash.quick();
+  stream.id = id || dhash.quick();
   stream.to = to;
-  stream.inAny = callback;
   stream.q = async.queue(function(packet, cbQ){
-    inStreamSeries(self, packet, cbQ);
+    inStreamSeries(self, stream, packet, cbQ);
   }, 1);
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
   to.streams[stream.id] = stream;
@@ -489,10 +495,9 @@ function incoming(self, packet)
 
 function inStream(self, packet)
 {
-  if(!packet.from.streams) return warn("no streams open from", packet.from);
-  var stream = packet.from.streams[packet.js.stream];
-  if(!stream) return warn("stream id invalid", packet.js.stream, packet.from);
-  
+  if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from);
+  var stream = getStream(self, packet.from, packet.js.stream);
+
   packet.seq = parseInt(packet.js.seq);
   if(!(packet.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
   stream.inSeq = packet.seq;
@@ -558,26 +563,32 @@ function inStream(self, packet)
 }
 
 // worker on the ordered-packet-queue processing
-function inStreamSeries(self, packet, callback)
+function inStreamSeries(self, stream, packet, callback)
 {
-  // stream only stuff
-  if(packet.js.sock) return inSock(self, packet, callback);
-  if(packet.stream.sock) return inSockData(self, packet, callback);
+  if(stream.handler) return stream.handler(self, packet, callback);
+  if(packet.js.sock || packet.stream.sock) return inSock(self, packet, callback);
   if(packet.js.req || packet.stream.proxy) return inProxy(self, packet, callback);
 
   // anything leftover in a stream, pass along to app
-  if(!packet.stream.inAny) return callback();
-  packet.stream.inAny(null, packet, callback);
+  if(!self.inAnyStream) return callback();
+  self.inAnyStream(null, packet, callback);
 }
 
 function inSock(self, packet, callback)
 {
   // socket already created, handle connected/errors/closed
-  if(packet.sock)
+  if(packet.stream.sock)
   {
-    // TODO
+    // TODO handle errors/closing
+    if(packet.js.sock) console.log("stream sock", packet.js.sock);
+
+    // send along any data
+    if(packet.body) packet.stream.sock.write(packet.body);
+
     return callback();
   }
+
+  // new socket proxy request!
 
   // TODO see if the requested ip:port is whitelisted
   var parts = packet.js.sock.split(":");
@@ -586,8 +597,10 @@ function inSock(self, packet, callback)
   if(!(port > 0 && port < 65536))
   {
     packet.stream.send({"sock":"invalid address"});
-    callback();
+    return callback();
   }
+  
+  // officially create the proxy
   packet.stream.sock = net.connect({ip:ip, port:port}, function(){
     if(packet.body) packet.stream.sock.write(packet.body); // attached body is optional, send it now
     packet.stream.send({sock:packet.js.sock}); // signal open
@@ -608,7 +621,6 @@ function inSock(self, packet, callback)
 
 function inSockData(self, packet, callback)
 {
-  if(packet.body) packet.stream.sock.write(packet.body);
   callback();
 }
 

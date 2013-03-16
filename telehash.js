@@ -199,10 +199,13 @@ function doWho(self, hashname, callback)
   });
 }
 
-// scan through the queue of packets with an unknown line, and add one
+// scan through the queue of packets with an unknown line, and optionally add one
 function queueLine(self, packet)
 {
-  if(packet) self.lineq.push(packet);
+  if(packet) {
+    if(Object.keys(packet.js).join("") === "line") return; // empty packet
+    self.lineq.push(packet);
+  }
   if(self.lineq.length == 0) return;
   debug("scanning line queue of length", self.lineq.length);
   var q = self.lineq;
@@ -214,33 +217,15 @@ function queueLine(self, packet)
   });
 }
 
-// combine the incoming/outgoing open values to make a line and save it
-function setLine(self, hn)
-{
-  // line is the hash of the two opens joined in sorted order
-  hn.line = dhash.quick([hn.opened, hn.open].sort().join(""));
-  self.lines[hn.line] = hn;
-  var watch = self.watch["line "+hn.hashname];
-  if(watch) watch.done();
-  queueLine(self); // trigger a scan now
-  return hn.line;
-}
-
 // add the proper line or open+signature
 function addLine(self, to, packet)
 {
-  if(to.line) return packet.js.line = to.line;
+  // if we've sent an open and have a line, just use that
+  if(to.openSent && to.line) return packet.js.line = to.line;
 
-  // if we've both sent opens, switch to the line
-  if(to.open && to.opened) return packet.js.line = setLine(self, to);
-
-  // gen a random secret open if it's the first time
-  if(!to.open){
-    to.open = dhash.quick();
-    if(to.opened) setLine(self, to); // save the line
-  }
-
-  // set our open value and flag to be signed
+  // make sure to send a signed open
+  to.openSent = true;
+  if(!to.open) to.open = dhash.quick(); // gen random secret
   packet.js.open = to.open;
   packet.sign = true;
 }
@@ -775,28 +760,35 @@ function inApp(self, packet)
   if(self.inAny) packet.line.inAny(null, packet);
 }
 
-// try to open a line
+// they want to open a line to us
 function inOpen(self, packet)
 {
   // if the from isn't verified, bail
   if(!packet.from.hashname) return warn("unsigned open from", packet.from);
 
-  // store the open value for line generation
-  packet.from.opened = packet.js.open;
-
-  // if we've sent one already, set the line open
-  if(packet.from.open && packet.from.opened) setLine(self, packet.from);
-
-  // in case it's a new open, replacing old line
-  if(packet.from.line)
+  // store the (new) open value for line generation
+  if(packet.from.opened !== packet.js.open)
   {
-    delete packet.from.line
-    delete packet.from.open;      
+    packet.from.opened = packet.js.open;
+    packet.from.openSent = false; // trigger resending them our open since it's a new one from them
   }
-  
-  // consider the line open
-  packet.line = packet.from;
   delete packet.js.open;
+
+  // may need to generate our open secret yet
+  if(!packet.from.open) packet.from.open = dhash.quick();
+
+  // line is the hash of the two opens joined in sorted order
+  packet.from.line = dhash.quick([packet.from.opened, packet.from.open].sort().join(""));
+
+  // set up tracking/flags
+  packet.line = self.lines[packet.from.line] = packet.from;
+
+  // something might be waiting for a line on this hashname
+  var watch = self.watch["line "+packet.from.hashname];
+  if(watch) watch.done(null, packet.from);
+
+  // could have queued out-of-order packets waiting, scan them
+  queueLine(self);
 }
 
 function inKey(self, packet)
@@ -810,6 +802,7 @@ function inKey(self, packet)
   if(!packet.body) return warn("missing key body from", packet.from);
   var seq = parseInt(packet.js.seq || 0);
   if(seq === NaN || seq < 0 || seq > 10) return warn("invalid seq", packet.js.seq, packet.from);
+  delete packet.js.seq;
 
   watch.parts[seq] = packet.body.toString("utf8");
 

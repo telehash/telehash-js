@@ -521,9 +521,9 @@ function inStream(self, packet)
     // rebuild outq, only keeping missed/newer packets
     var outq = [];
     stream.outq.forEach(function(pold){
-      if(pold.seq <= ack && !miss.indexOf(pold.seq)) return; // confirmed!
+      if(pold.seq <= ack && miss.indexOf(pold.seq) == -1) return; // confirmed!
       outq.push(pold);
-      if(!miss.indexOf(pold.seq)) return;
+      if(miss.indexOf(pold.seq) == -1) return;
       // resend misses but not too frequently
       if(Date.now() - pold.resentAt < 5*1000) return;
       pold.resentAt = Date.now();
@@ -568,7 +568,6 @@ function inStream(self, packet)
 // worker on the ordered-packet-queue processing
 function inStreamSeries(self, stream, packet, callback)
 {
-  console.log("SSERIES", typeof stream.handler, typeof stream.sock, packet.js.sock);
   if(stream.handler) return stream.handler(self, packet, callback);
   if(packet.js.sock || stream.sock) return inSock(self, packet, callback);
   if(packet.js.req || stream.proxy) return inProxy(self, packet, callback);

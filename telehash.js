@@ -98,9 +98,9 @@ function doSockProxy(self, args, callback)
       console.log('server connected');
       var stream = doStream(self, args.hashname, function(err, packet, cbStream){
         if(packet.body) c.write(packet.body);
-        if(packet.js.sock !== args.to)
+        if(packet.js.sock === "closed")
         {
-          console.log("stream ended:", packet.js.sock);
+          console.log("stream closed", packet.js.err||"");
           c.close();
         }
         cbStream();
@@ -135,6 +135,9 @@ function doStream(self, hashname, callback)
 function getStream(self, to, id)
 {
   if(!to.streams) to.streams = {};
+  if(id && to.streams[id]) return to.streams[id];
+
+  // new stream
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = id || dhash.quick();
   stream.to = to;
@@ -565,9 +568,10 @@ function inStream(self, packet)
 // worker on the ordered-packet-queue processing
 function inStreamSeries(self, stream, packet, callback)
 {
+  console.log("SSERIES", typeof stream.handler, typeof stream.sock, packet.js.sock);
   if(stream.handler) return stream.handler(self, packet, callback);
-  if(packet.js.sock || packet.stream.sock) return inSock(self, packet, callback);
-  if(packet.js.req || packet.stream.proxy) return inProxy(self, packet, callback);
+  if(packet.js.sock || stream.sock) return inSock(self, packet, callback);
+  if(packet.js.req || stream.proxy) return inProxy(self, packet, callback);
 
   // anything leftover in a stream, pass along to app
   if(!self.inAnyStream) return callback();
@@ -587,6 +591,13 @@ function inSock(self, packet, callback)
 
     return callback();
   }
+  
+  // incoming socket signalling
+  if(packet.js.err) warn("incoming sock error", packet.js.err);
+  if(packet.js.sock === "closed") {
+    if(packet.stream.sock) packet.stream.sock.close();
+    return callback();
+  }
 
   // new socket proxy request!
 
@@ -596,14 +607,14 @@ function inSock(self, packet, callback)
   var port = parseInt(parts[1]);
   if(!(port > 0 && port < 65536))
   {
-    packet.stream.send({"sock":"invalid address"});
+    packet.stream.send({sock:"closed", err:"invalid address"});
     return callback();
   }
   
   // officially create the proxy
-  packet.stream.sock = net.connect({ip:ip, port:port}, function(){
+  packet.stream.sock = net.connect({host:ip, port:port}, function(){
     if(packet.body) packet.stream.sock.write(packet.body); // attached body is optional, send it now
-    packet.stream.send({sock:packet.js.sock}); // signal open
+    packet.stream.send({sock:"open"}); // signal open
     callback();
   });
   packet.stream.sock.on('data', function(data){
@@ -617,11 +628,6 @@ function inSock(self, packet, callback)
     if(packet.stream.sockErr) closed.err = packet.stream.sockErr.toString();
     packet.stream.send(closed);
   });
-}
-
-function inSockData(self, packet, callback)
-{
-  callback();
 }
 
 function inProxy(self, packet, callback)

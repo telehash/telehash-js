@@ -2,7 +2,7 @@ var dgram = require("dgram");
 var os = require("os");
 var net = require("net");
 var async = require("async");
-var ursa = require("ursa")
+var ursa = require("ursa");
 var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
@@ -53,10 +53,13 @@ exports.hashname = function(space, privateKey, args)
     packet.at = Date.now();
     incoming(self, packet);
   });
-  self.server.bind(self.port, self.ip);
+  self.server.bind(self.port, self.ip, function(){
+    // update address after listen completed to be besty
+    self.port = self.server.address().port;
+    self.address = [self.hashname, self.ip, self.port].join(",");
+  });
 
   // try to set the correct address for logging, not important for telehash
-  self.port = self.server.address().port;
   if(self.ip == "0.0.0.0") {
     var better;
     var ifaces = os.networkInterfaces()
@@ -94,8 +97,14 @@ function doSockProxy(self, args, callback)
   if(!args.to || !args.listen) return callback("need to and listen");
   self.doLine(args.hashname, function(err){
     if(err) return callback("line failed");
-    var server = net.createServer(function(c) {
+    var server = net.createServer(function(client) {
       console.log('server connected');
+      var stream = getStream(self, seen(self, args.hashname));
+      var tunnel = wrapStream(self, stream);
+      client.pipe(tunnel).pipe(client);
+      // send sock open now
+      stream.send({sock:args.to});
+/*
       var stream = doStream(self, args.hashname, function(err, packet, cbStream){
         if(packet.body) c.write(packet.body);
         if(packet.js.sock === "closed")
@@ -119,6 +128,7 @@ function doSockProxy(self, args, callback)
       });
       // send sock open now
       stream.send({sock:args.to});
+*/
     });
     server.listen(args.listen, callback);
   });
@@ -132,6 +142,27 @@ function doStream(self, hashname, callback)
   return stream;
 }
 
+// use node's stream api wrapper
+function wrapStream(self, stream)
+{
+  var duplex = new require("stream").Duplex();
+  duplex._read = function(size){};
+  duplex._write = function(buf, enc, cb){
+    console.log("WRTEME",buf.toString());
+    sendStream(self, stream, {js:{}, body:buf, done:function(){console.log("WROTE");cb()}});
+  }
+  duplex.end = function(){
+    sendStream(self, stream, {js:{end:true, err:stream.errMsg}});
+  }
+  stream.handler = function(self, packet, cbHandler) {
+    console.log("HANDLER", packet.js)
+    if(packet.body) duplex.push(packet.body);
+    if(packet.js.end) duplex.push(null);
+    cbHandler();
+  }
+  return duplex;  
+}
+
 function getStream(self, to, id)
 {
   if(!to.streams) to.streams = {};
@@ -141,10 +172,13 @@ function getStream(self, to, id)
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = id || dhash.quick();
   stream.to = to;
+  // how we process things in order
   stream.q = async.queue(function(packet, cbQ){
     inStreamSeries(self, stream, packet, cbQ);
   }, 1);
+  // handy util
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
+
   to.streams[stream.id] = stream;
   return stream;
 }
@@ -172,13 +206,13 @@ function sendStream(self, stream, packet)
   stream.inDups = 0;
   stream.outq.push(packet);
   
-  // any misses timer gets cancelled
-  if(stream.missTimeout)
+  // any ack timer gets cancelled
+  if(stream.ackTimeout)
   {
-    clearTimeout(stream.missTimeout);
-    stream.missTimeout = false;
+    clearTimeout(stream.ackTimeout);
+    stream.ackTimeout = false;
   }
-  
+
   send(self, stream.to, packet);
 }
 
@@ -501,43 +535,49 @@ function inStream(self, packet)
   if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from);
   var stream = getStream(self, packet.from, packet.js.stream);
 
-  packet.seq = parseInt(packet.js.seq);
-  if(!(packet.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
-  stream.inSeq = packet.seq;
+  packet.js.seq = parseInt(packet.js.seq);
+  if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
+  stream.inSeq = packet.js.seq;
 
   // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
-  if(packet.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
+  if(packet.js.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
 
   // track and drop duplicate packets
-  if(packet.seq <= stream.inDone || stream.inq[packet.seq - (stream.inDone+1)]) return stream.inDups++;
+  if(packet.js.seq <= stream.inDone || stream.inq[packet.js.seq - (stream.inDone+1)]) return stream.inDups++;
 
   // process any valid newer incoming ack/miss
   var ack = parseInt(packet.js.ack);
   var miss = Array.isArray(packet.js.miss) ? packet.js.miss : [];
   if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from);
+//console.log(">>>ACK", ack, stream.lastAck, stream.outSeq, "len", stream.outq.length, stream.outq.map(function(p){return p.js.seq}).join(","));
   if(ack > stream.lastAck && ack <= stream.outSeq)
   {
     stream.lastAck = ack;
     // rebuild outq, only keeping missed/newer packets
-    var outq = [];
-    stream.outq.forEach(function(pold){
-      if(pold.seq <= ack && miss.indexOf(pold.seq) == -1) return; // confirmed!
-      outq.push(pold);
-      if(miss.indexOf(pold.seq) == -1) return;
+    var outq = stream.outq;
+    stream.outq = [];
+    outq.forEach(function(pold){
+      // packet acknowleged!
+      if(pold.js.seq <= ack && miss.indexOf(pold.js.seq) == -1) {
+        if(pold.done) pold.done();
+        return;
+      }
+      stream.outq.push(pold);
+      if(miss.indexOf(pold.js.seq) == -1) return;
       // resend misses but not too frequently
       if(Date.now() - pold.resentAt < 5*1000) return;
       pold.resentAt = Date.now();
       send(self, stream.to, pold);
     });
-    stream.outq = outq;    
+//    console.log("OUTQLEN", stream.outq.length);
   }
   
   // drop out of bounds
-  if(packet.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
+  if(packet.js.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
 
   // stash this seq and process any in sequence
   packet.stream = stream;
-  stream.inq[packet.seq - (stream.inDone+1)] = packet;
+  stream.inq[packet.js.seq - (stream.inDone+1)] = packet;
   while(stream.inq[0])
   {
     packet = stream.inq.shift();
@@ -550,26 +590,18 @@ function inStream(self, packet)
     stream.q.push(packet);
   }
   
-  // no missing packets be done, cancel any timer now too
-  if(stream.inq.length === 0) {
-    if(stream.missTimeout) {
-      clearTimeout(stream.missTimeout);
-      stream.missTimeout = false;
-    }
-    return;
-  }
-
-  // is there any missing packets? send notice in a few seconds
-  if(!stream.missTimeout) stream.missTimeout = setTimeout(function(){
-    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ misses
-  }, 2*1000);
+  // start an ack timer to send an ack, will also re-send misses
+  // TODO add backpressure support
+  if(packet.body && !stream.ackTimeout) stream.ackTimeout = setTimeout(function(){
+    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ ack and any misses
+  }, 200);
 }
 
 // worker on the ordered-packet-queue processing
 function inStreamSeries(self, stream, packet, callback)
 {
   if(stream.handler) return stream.handler(self, packet, callback);
-  if(packet.js.sock || stream.sock) return inSock(self, packet, callback);
+  if(packet.js.sock) return inSock(self, packet, callback);
   if(packet.js.req || stream.proxy) return inProxy(self, packet, callback);
 
   // anything leftover in a stream, pass along to app
@@ -577,56 +609,27 @@ function inStreamSeries(self, stream, packet, callback)
   self.inAnyStream(null, packet, callback);
 }
 
+// new socket proxy request!
 function inSock(self, packet, callback)
 {
-  // socket already created, handle connected/errors/closed
-  if(packet.stream.sock)
-  {
-    // TODO handle errors/closing
-    if(packet.js.sock) console.log("stream sock", packet.js.sock);
-
-    // send along any data
-    if(packet.body) packet.stream.sock.write(packet.body);
-
-    return callback();
-  }
-  
-  // incoming socket signalling
-  if(packet.js.err) warn("incoming sock error", packet.js.err);
-  if(packet.js.sock === "closed") {
-    if(packet.stream.sock) packet.stream.sock.close();
-    return callback();
-  }
-
-  // new socket proxy request!
-
   // TODO see if the requested ip:port is whitelisted
   var parts = packet.js.sock.split(":");
   var ip = parts[0];
   var port = parseInt(parts[1]);
   if(!(port > 0 && port < 65536))
   {
-    packet.stream.send({sock:"closed", err:"invalid address"});
+    packet.stream.send({end:true, err:"invalid address"});
     return callback();
   }
-  
-  // officially create the proxy
-  packet.stream.sock = net.connect({host:ip, port:port}, function(){
-    if(packet.body) packet.stream.sock.write(packet.body); // attached body is optional, send it now
-    packet.stream.send({sock:"open"}); // signal open
-    callback();
+
+  // wrap it w/ a node stream
+  var client = net.connect({host:ip, port:port});
+  var tunnel = wrapStream(self, packet.stream);
+  client.pipe(tunnel).pipe(client);
+  client.on('error', function(err){
+    packet.stream.errMsg = err.toString();
   });
-  packet.stream.sock.on('data', function(data){
-    packet.stream.send({}, data);
-  });
-  packet.stream.sock.on('error', function(err){
-    packet.stream.sockErr = err;
-  });
-  packet.stream.sock.on('close', function(){
-    var closed = {sock:"closed"};
-    if(packet.stream.sockErr) closed.err = packet.stream.sockErr.toString();
-    packet.stream.send(closed);
-  });
+  callback();
 }
 
 function inProxy(self, packet, callback)

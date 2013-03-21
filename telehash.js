@@ -146,15 +146,21 @@ function doStream(self, hashname, callback)
 function wrapStream(self, stream)
 {
   var duplex = new require("stream").Duplex();
-  duplex._read = function(size){};
+  duplex._read = function(size){
+    // TODO handle backpressure
+    // perform duplex.push(body)'s if any waiting, if not .push('')
+    // handle return value logic properly
+  };
   duplex._write = function(buf, enc, cb){
     console.log("WRTEME",buf.toString());
+    // TODO backpressure buffering, call cb() for our own buffer until it's full
     sendStream(self, stream, {js:{}, body:buf, done:function(){console.log("WROTE");cb()}});
   }
   duplex.end = function(){
     sendStream(self, stream, {js:{end:true, err:stream.errMsg}});
   }
   stream.handler = function(self, packet, cbHandler) {
+    // TODO migrate to _read backpressure stuff above
     console.log("HANDLER", packet.js)
     if(packet.body) duplex.push(packet.body);
     if(packet.js.end) duplex.push(null);
@@ -352,7 +358,7 @@ function encode(self, to, packet)
 
     // if there's no line, always add extra identifiers
     if(!packet.js.line) {
-      if(to.via) packet.js.via = to.via.hashname;
+      if(to.ref) packet.js.ref = to.ref.hashname;
       packet.js.to = to.hashname;
       packet.js.from = self.hashname;
       if(packet.sign) packet.js.x = Date.now() + 10*1000; // add timeout for signed packets
@@ -494,13 +500,13 @@ function incoming(self, packet)
     delete packet.js.line;
   }
 
-  // any via must be validated as someone we're connected to
-  if(packet.js.via)
+  // any ref must be validated as someone we're connected to
+  if(packet.js.ref)
   {
-    var via = seen(self, packet.js.via);
-    if(!via.line) return warn("invalid via of", packet.js.via, "from", packet.from);
-    packet.via = via;
-    delete packet.js.via;
+    var ref = seen(self, packet.js.ref);
+    if(!ref.line) return warn("invalid ref of", packet.js.ref, "from", packet.from);
+    packet.ref = ref;
+    delete packet.js.ref;
   }
 
   // copy back their sender name if we don't have one yet for the "to" on answers
@@ -511,7 +517,7 @@ function incoming(self, packet)
   if(packet.js.see) inSee(self, packet);
 
   // everything else must have some level of from trust!
-  if(!packet.line && !packet.signed && !packet.via) return inApp(self, packet);
+  if(!packet.line && !packet.signed && !packet.ref) return inApp(self, packet);
 
   if(dhash.isSHA1(packet.js.seek)) inSeek(self, packet);
   if(packet.js.pop) inPop(self, packet);

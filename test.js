@@ -35,8 +35,13 @@ from.streams[stream.id] = stream;
 //hook.inStream(self, {from:from, js:js});
 
 // test sock
-var js = {stream:stream.id, seq:seq++, "sock":"127.0.0.1:4442"};
-hook.inStream(self, {from:from, js:js, body:"hello"});
+//var js = {stream:stream.id, seq:seq++, "sock":"127.0.0.1:4442"};
+//hook.inStream(self, {from:from, js:js, body:"hello"});
+
+// test proxy
+var js = {stream:stream.id, seq:seq++, req:{m:"GET"}, end:true};
+self.proxy = {host:"jeremie.com", port:80};
+hook.inProxy(self, {stream:stream, from:from, js:js}, function(){});
 
 /*
 var keypair = require(process.argv[2]);

@@ -1,6 +1,7 @@
 var dgram = require("dgram");
 var os = require("os");
 var net = require("net");
+var http = require("http");
 var async = require("async");
 var ursa = require("ursa");
 var dhash = require("./dhash");
@@ -85,13 +86,48 @@ exports.hashname = function(space, privateKey, args)
   self.doWho = function(hn, callback) { doWho(self, hn, callback) };
   self.doLine = function(hn, callback) { doLine(self, hn, callback) };
   self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
-  self.doSockProxy = function(args, callback) { return doSockProxy(self, args, callback) };
+  self.doSocket = function(args, callback) { return doSocket(self, args, callback) };
+  self.setProxy = function(args) {
+    self.proxyBase = args;
+  };
+  self.doProxy = function(args, callback) { return doProxy(self, args, callback) };
+
 
   return self;
 }
 
+// ask hashname to answer an http request
+function doProxy(self, args, callback)
+{
+  if(!args || !args.path ||!args.hashname) return callback("no path or hashname");
+  self.doLine(args.hashname, function(err){
+    if(err) return callback("line failed");
+    
+    // create stream and handle responses
+    var res = {};
+    var body = new Buffer(0);
+    var stream = doStream(self, args.hashname, function(err, packet, cbStream){
+      if(packet.body) body = Buffer.concat([body, packet.body]);
+      if(packet.js.res)
+      {
+        res.statusCode = packet.js.res.s || 500;
+        res.headers = packet.js.res.h || {};
+      }
+      if(packet.js.end) callback(null, res, body);
+      cbStream();
+    });
+    
+    // send request, TODO support a streaming interface
+    var js = {end:true, req:{}};
+    js.req.p = args.path;
+    js.req.m = args.method || "GET";
+    if(args.headers) js.req.h = args.headers;
+    stream.send(js, args.body);
+  });
+}
+
 // ask hashname to open a socket to this ip:port
-function doSockProxy(self, args, callback)
+function doSocket(self, args, callback)
 {
   if(!args || !args.hashname) return callback("no hashname");
   if(!args.to || !args.listen) return callback("need to and listen");
@@ -104,31 +140,6 @@ function doSockProxy(self, args, callback)
       client.pipe(tunnel).pipe(client);
       // send sock open now
       stream.send({sock:args.to});
-/*
-      var stream = doStream(self, args.hashname, function(err, packet, cbStream){
-        if(packet.body) c.write(packet.body);
-        if(packet.js.sock === "closed")
-        {
-          console.log("stream closed", packet.js.err||"");
-          c.close();
-        }
-        cbStream();
-      });
-      console.log("SOCKSTREAM",stream, seen(self, args.hashname));
-      var cErr;
-      c.on('error', function(err){ err = cErr });
-      c.on('close', function() {
-        var closed = {"sock":"closed"};
-        if(cErr) closed.err = cErr.toString();
-        stream.send(closed);
-        console.log('server disconnected');
-      });
-      c.on('data', function(data){
-        stream.send({}, data);
-      });
-      // send sock open now
-      stream.send({sock:args.to});
-*/
     });
     server.listen(args.listen, callback);
   });
@@ -640,10 +651,69 @@ function inSock(self, packet, callback)
 
 function inProxy(self, packet, callback)
 {
-  // if .req, validate/stash it
-  // if .body, buffer it (for now)
-  // if .done, do it
-  callback();
+  callback(); // everything we do is async here
+
+  // handy wrapper
+  function err(msg)
+  {
+    debug("PROXY ERROR", msg);
+    packet.stream.send({end:true, res:{"s":500}}, msg);
+  }
+
+  // new request
+  if(packet.js.req)
+  {
+    if(!self.proxyBase) return err("not supported");
+    if(typeof packet.js.req !== "object") return err("invalid req");
+
+    // copy in any defaults
+    var options = {};
+    Object.keys(self.proxyBase).forEach(function(key){ options[key] = self.proxyBase[key]; });
+    options.path = packet.js.req.p || "/";
+    options.method = packet.js.req.m || "GET";
+    if(typeof packet.js.req.h === "object") options.headers = packet.js.req.h;
+
+    packet.stream.proxy = http.request(options, function(res){
+      console.log("PROXY RESPONSE", options, res.statusCode);
+      var body = new Buffer(0);
+      var ended = false;
+      var started = false;
+      var done = false;
+      
+      // try to package up as much in one response and chunk
+      function send(){
+        if(done) return;
+        var js = {};
+        if(!started)
+        {
+          js.res = {s:res.statusCode, h:res.headers}
+          started = true;
+        }
+        var bodyout;
+        if(body.length > 0)
+        {
+          var len = 1024; // max body size for a packet
+          if(body.length < len) len = body.length;
+          bodyout = body.slice(0, len);
+          body = body.slice(len, body.length - len);
+          if(body.length > 0) setTimeout(send, 1);  // more to send!
+        }
+        
+        if(ended && body.length == 0) done = js.end = true;
+        
+        packet.stream.send(js, bodyout);
+      }
+      res.on("end", function(){ ended = true; setTimeout(send, 1); });
+      res.on("data", function(data){ body = Buffer.concat([body, data]); setTimeout(send, 1); });
+      setTimeout(send, 10);
+    });
+    packet.stream.proxy.on("error", err);
+  }
+  
+  // incoming request data
+  if(packet.body) packet.stream.proxy.write(packet.body);
+
+  if(packet.js.end) packet.stream.proxy.end();
 }
 
 // any signature must be validated and then the body processed
@@ -868,5 +938,5 @@ function inWho(self, packet)
 exports.test = function(outgoing)
 {
   send = outgoing;
-  return {incoming:incoming, inStream:inStream, doStream:doStream};
+  return {incoming:incoming, inStream:inStream, doStream:doStream, inProxy:inProxy};
 }

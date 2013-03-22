@@ -13,6 +13,9 @@ var client = tele.hashname("testing.private", ckeys.private);
 // provide the operator(s) for this hashname
 client.setOperators([opaddress]);
 
+// allow an http proxy
+client.setProxy({host:"jeremie.com", port:80});
+
 // ask for ourselves, which will query the operator
 client.doWho(client.hashname, function(err, pubkey){
 	if(err) return console.log("failed to find our hashname in this space:", err);

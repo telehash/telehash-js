@@ -8,15 +8,13 @@ Every "actor" within telehash is called a `hashname` which is an RSA keypair lis
 
 To create an entire standalone setup you'll need a space with at least one operator and one hashname for them to connect to each other.  A space should be identified with a fully qualified hostname or for private/testing ones use "****.private".  These examples are also included in the demo folder.
 
-Start by generating two RSA keypairs:
+Start by generating two RSA keypairs (need to `npm install ursa` first):
 
 ``` js
-var fs = require('fs');
-var tele = require("../telehash");
-var opkeys = tele.createKeys();
-fs.writeFileSync("./operator.json", JSON.stringify(opkeys, null, 4));
-var ckeys = tele.createKeys();
-fs.writeFileSync("./client.json", JSON.stringify(ckeys, null, 4));
+var key = require("ursa").generatePrivateKey();
+require('fs').writeFileSync("./operator.json", JSON.stringify({public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")}, null, 4));
+var key = require("ursa").generatePrivateKey();
+require('fs').writeFileSync("./client.json", JSON.stringify({public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")}, null, 4));
 ```
 
 Then start up the operator:
@@ -25,7 +23,7 @@ var tele = require("../telehash");
 var opkeys = require("./operator.json"); // loads the keypair
 
 // start a new hashname in the given space with these keys, listen on this specific port
-var operator = tele.hashname("testing.private", opkeys.private, {port:42424});
+var operator = tele.hashname("testing.private", opkeys, {port:42424});
 console.log("operator address is ", operator.address);
 
 // operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
@@ -50,7 +48,7 @@ var opaddress = process.argv[2];
 var ckeys = require("./client.json");
 
 // start up our client hashname in the same space
-var client = tele.hashname("testing.private", ckeys.private);
+var client = tele.hashname("testing.private", ckeys);
 
 // provide the operator(s) for this hashname
 client.setOperators([opaddress]);

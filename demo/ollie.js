@@ -1,6 +1,6 @@
 var tele = require("../telehash");
 var opkeys = require("./ollie.json");
-var operator = tele.hashname("testing.private", opkeys.private, {port:42424});
+var operator = tele.hashname("testing.private", opkeys, {port:42424});
 console.log("ollie address is ", operator.address);
 
 Object.keys(opkeys).map(function(key){

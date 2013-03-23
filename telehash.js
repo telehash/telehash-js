@@ -3,41 +3,31 @@ var os = require("os");
 var net = require("net");
 var http = require("http");
 var async = require("async");
-var ursa = require("ursa");
+var crypto = require("crypto");
 var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
 var debug = console.log; //function(){}; // switch to console.log to enable
 
+var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n[\/+=a-zA-Z0-9\r\n]*\r?\n-----END \2 KEY-----\r?\n)/m;
+
 exports.hash = function(string)
 {
   return new dhash.Hash(string);
 }
 
-// simple handy wrapper utility to make a new keypair
-exports.createKeys = function(mod, exp)
-{
-  var key = ursa.generatePrivateKey(mod, exp);
-  return {public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")};
-}
-
 // start a hashname listening and ready to go
-exports.hashname = function(space, privateKey, args)
+exports.hashname = function(space, keys, args)
 {
-  if(!space || !privateKey) return undefined;
+  if(!space || !keys || !keys.public || !keys.private) return undefined;
   if(!args) args = {};
 
   // configure defaults
   var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}};
   // parse/validate the private key
-  try {
-    self.ukey = ursa.coercePrivateKey(privateKey);
-    self.pubkey = self.ukey.toPublicPem("utf8");
-  } catch(E) {
-    warn("couldn't parse key:", E);
-    return undefined;
-  };
+  self.prikey = keys.private;
+  self.pubkey = keys.public;
   self.hashname = new dhash.Hash(self.pubkey+space).toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
@@ -526,7 +516,7 @@ function send(self, to, packet)
   {
     var signed = {js:{}};
     signed.body = buf;
-    signed.js.sig = self.ukey.hashAndSign("md5", buf).toString("base64");
+    signed.js.sig = crypto.createSign("RSA-MD5").update(buf).sign(self.prikey, "base64");
     buf = encode(self, to, signed);
     packet = signed;
   }
@@ -801,13 +791,8 @@ function inSig(self, packet)
     if(!pubkey) return warn("signed packet, no public key for", from.hashname, "from", packet.from, err);
 
     // validate packet.js.sig against packet.body
-    try {
-      var ukey = ursa.coercePublicKey(pubkey);
-      valid = ukey.hashAndVerify("md5", body, sig, "base64");
-      if(!valid) return warn("invalid signature from:", packet.from);
-    }catch(E){
-      return warn("crypto failed for", packet.from, E);
-    }
+    var valid = crypto.createVerify("RSA-MD5").update(body).verify(pubkey, sig, "base64");
+    if(!valid) return warn("invalid signature from:", packet.from);
 
     // make sure our values are correct/current
     updateAddress(from, packet.from.ip, packet.from.port);
@@ -967,7 +952,7 @@ function inKey(self, packet)
 
   // check if it's a valid public key yet, bail if not
   var key = watch.parts.join("");
-  try { ursa.coercePublicKey(key) } catch(E) { return; };
+  if(!PEM_REGEX.exec(key)) return;
   
   // have a key, validate it's for this hashname!
   if(hashname !== dhash.quick(key+self.space)) return warn("key+space hashname mismatch", hashname, "from", packet.from);

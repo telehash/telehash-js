@@ -8,7 +8,7 @@ var opaddress = process.argv[2];
 var ckeys = require("./anya.json");
 
 // start up our client hashname in the same space
-var client = tele.hashname("testing.private", ckeys.private);
+var client = tele.hashname("testing.private", ckeys);
 
 // provide the operator(s) for this hashname
 client.setOperators([opaddress]);

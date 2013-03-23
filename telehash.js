@@ -91,6 +91,10 @@ exports.hashname = function(space, keys, args)
     self.cb.lookup = callback;
     self.operator = true;
   };
+  self.setOpen = function() {
+    self.operator = true;
+    self.open = true;
+  };
   self.setOperators = function(addresses) {
     if(!Array.isArray(addresses)) return;
     self.operators = addresses.map(function(address){
@@ -835,37 +839,51 @@ function inSig(self, packet)
   delete packet.js.body;
   signed.id = packet.id + (packet.id * .1);
   if(!signed.js || !dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
-  var from = seen(self, signed.js.from);
+  signed.from = seen(self, signed.js.from);
+  if(!signed.from.ip) updateAddress(signed.from, packet.from.ip, packet.from.port); // may exist already, don't override until verified
 
   // if a signed packet has a key, it might be the one for this signature, so process it :)
   if(signed.js.key) inKey(self, signed);
 
+  // who requests don't need to be verified
+  if(signed.js.who) inWho(self, signed);
+
   // where we handle validation if/when there's a key
   function keyed(err, pubkey)
   {
-    if(!pubkey) return warn("signed packet, no public key for", from.hashname, "from", packet.from, err);
+    if(!pubkey) return warn("signed packet, no public key for", signed.from.hashname, "from", packet.from, err);
 
     // validate packet.js.sig against packet.body
     var valid = crypto.createVerify("RSA-MD5").update(body).verify(pubkey, sig, "base64");
     if(!valid) return warn("invalid signature from:", packet.from);
 
     // make sure our values are correct/current
-    updateAddress(from, packet.from.ip, packet.from.port);
-    from.pubkey = pubkey;
+    updateAddress(signed.from, packet.from.ip, packet.from.port);
+    signed.from.pubkey = pubkey;
 
     // process body as a new packet with a real from
-    signed.signed = signed.from = from;
+    signed.signed = signed.from;
     incoming(self, signed);
   }
 
   // see if we have the key already by chance
-  if(from.pubkey) return keyed(null, from.pubkey);
+  if(signed.from.pubkey) return keyed(null, signed.from.pubkey);
+
+  // if we're set to be in an open space, just get it from the sender
+  if(self.open) {
+    console.log("OPEN WHO",signed.from);
+    var who = {js:{who:signed.from.hashname}};
+    who.sign = true;
+    keywatch(self, "key "+signed.from.hashname, keyed);
+    send(self, signed.from, who);
+    return;
+  }
 
   // if we are the operator or have a lookup function, use that
-  if(self.cb.lookup) return self.cb.lookup(from.hashname, keyed);
+  if(self.cb.lookup) return self.cb.lookup(signed.from.hashname, keyed);
 
   // go ask an operator
-  doWho(self, from.hashname, keyed);
+  doWho(self, signed.from.hashname, keyed);
 }
 
 // NAT is open
@@ -1022,7 +1040,7 @@ function inWho(self, packet)
 
   function valued(err, key)
   {
-    if(err || !key) return warn("key lookup fail for", body.hashname, err);
+    if(!self.open && (err || !key)) return warn("key lookup fail for", body.hashname, err);
 
     // split into 1k chunks max
     var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
@@ -1031,11 +1049,11 @@ function inWho(self, packet)
       send(self, packet.from, {js:{key:packet.js.who, seq:i}, body:chunks[i]});
     }
   }
-  
+
   if(packet.js.who === self.hashname) return valued(null, self.pubkey);
   if(self.cb.lookup) return self.cb.lookup(packet.js.who, valued);
   
-  delete packet.js.who;
+//  delete packet.js.who;
 }
 
 // simple test rigging to replace builtins

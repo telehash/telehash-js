@@ -12,3 +12,4 @@ operator.myLookup(function(hn, callback){
 	if (opkeys[hn]) return callback(null, opkeys[hn]);
 	callback("not found");
 });
+operator.setOpen();

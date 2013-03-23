@@ -93,6 +93,14 @@ exports.hashname = function(space, privateKey, args)
   self.doProxy = function(args, callback) { return doProxy(self, args, callback) };
   self.doProxyStream = function(args, callback) { return doProxyStream(self, args, callback) };
 
+  self.setSeeds = function(addresses) {
+    // set ourselves in DHT mode
+    // line to the operators
+    // have a 55sec timer to scan all lines
+      // make bucket list
+      // .see for closer to us for set amount in each bucket
+    // have .see watcher for any new lines in empty buckets
+  }
 
   return self;
 }
@@ -758,37 +766,9 @@ function inProxy(self, packet, callback)
 
     packet.stream.proxy = http.request(options, function(res){
       console.log("PROXY RESPONSE", options, res.statusCode);
-      var body = new Buffer(0);
-      var ended = false;
-      var started = false;
-      var done = false;
-      
-      // try to package up as much in one response and chunk
-      function send(){
-        if(done) return;
-        var js = {};
-        if(!started)
-        {
-          js.res = {s:res.statusCode, h:res.headers}
-          started = true;
-        }
-        var bodyout;
-        if(body.length > 0)
-        {
-          var len = 1024; // max body size for a packet
-          if(body.length < len) len = body.length;
-          bodyout = body.slice(0, len);
-          body = body.slice(len, body.length - len);
-          if(body.length > 0) setTimeout(send, 1);  // more to send!
-        }
-        
-        if(ended && body.length == 0) done = js.end = true;
-        
-        packet.stream.send(js, bodyout);
-      }
-      res.on("end", function(){ ended = true; setTimeout(send, 1); });
-      res.on("data", function(data){ body = Buffer.concat([body, data]); setTimeout(send, 1); });
-      setTimeout(send, 10);
+      var wrap = wrapStream(self, packet.stream);
+      wrap.js({req:{s:res.statusCode, h:res.headers}});
+      res.pipe(wrap);
     });
     packet.stream.proxy.on("error", err);
   }

@@ -24,15 +24,15 @@ client.doLine(opaddress.split(",")[0], function(err){
 //	  client.doSocket({hashname:"7aac3b2a72bce56d88b0f88b946d2b5167142d2c", listen:2001, to:"127.0.0.1:2010"}, function(err){
 //	    console.log("SOCKET",err);
 //	  })
-//	  client.doProxy({hashname:"7aac3b2a72bce56d88b0f88b946d2b5167142d2c", path:"/"}, function(err, res, body){
-//	    console.log("PROXY",err, res, body.toString());
-//	  })
-	  var stream = client.doProxyStream({hashname:"7aac3b2a72bce56d88b0f88b946d2b5167142d2c", path:"/", method:"POST"}, function(res){
-	    console.log("PROXYSTREAM",res);
-	  });
-	  require("request").get("http://google.com").pipe(stream);
-	  stream.on("data", function(data){console.log("PROXYDATA", data)})
-	  stream.on("end", function(data){console.log("PROXYEND")});
+	  client.doProxy({hashname:"7aac3b2a72bce56d88b0f88b946d2b5167142d2c", path:"/"}, function(err, res, body){
+	    console.log("PROXY",err, res, body.toString());
+	  })
+//	  var stream = client.doProxyStream({hashname:"7aac3b2a72bce56d88b0f88b946d2b5167142d2c", path:"/", method:"POST"}, function(res){
+//	    console.log("PROXYSTREAM",res);
+//	  });
+//	  require("request").get("http://google.com").pipe(stream);
+//	  stream.on("data", function(data){console.log("PROXYDATA", data)})
+//	  stream.on("end", function(data){console.log("PROXYEND")});
 //	  stream.end()
 ;	});
 })

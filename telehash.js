@@ -102,7 +102,7 @@ function doProxy(self, args, callback)
   if(!args || !args.path ||!args.hashname) return callback("no path or hashname");
   self.doLine(args.hashname, function(err){
     if(err) return callback("line failed");
-    
+
     // create stream and handle responses
     var res = {};
     var body = new Buffer(0);
@@ -528,6 +528,17 @@ function send(self, to, packet)
     packet = signed;
   }
 
+  if(to.cipher)
+  {
+    var enc = {js:{}};
+    enc.js.line = packet.js.line;
+    enc.js.cipher = true;
+    var aes = crypto.createCipher("AES-128-CBC", to.openedSecret);
+    enc.body = Buffer.concat([aes.update(buf), aes.final()]);
+    buf = encode(self, to, enc);
+    packet = enc;
+  }
+
   // track some stats
   to.sent ? to.sent++ : to.sent = 1;
   to.sentAt = Date.now();
@@ -597,6 +608,18 @@ function incoming(self, packet)
     packet.line = packet.from = self.lines[packet.js.line];
     if(!packet.line) return queueLine(self, packet);
     delete packet.js.line;
+  }
+  
+  // must decrypt and start over
+  if(packet.line && packet.js.cipher)
+  {
+    debug("deciphering!")
+    var aes = crypto.createDecipher("AES-128-CBC", packet.line.openSecret);
+    var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
+    deciphered.id = packet.id + (packet.id * .2);
+    deciphered.from = packet.from;
+    deciphered.ciphered = true;
+    return incoming(self, deciphered);
   }
 
   // any ref must be validated as someone we're connected to

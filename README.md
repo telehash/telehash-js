@@ -8,7 +8,7 @@ Every "actor" within telehash is called a `hashname` which is an RSA keypair lis
 
 To create an entire standalone setup you'll need a space with at least one operator and one hashname for them to connect to each other.  A space should be identified with a fully qualified hostname or for private/testing ones use "****.private".  These examples are also included in the demo folder.
 
-Start by generating two RSA keypairs (need to `npm install ursa` first):
+Start by generating two RSA keypairs:
 
 ``` js
 var key = require("ursa").generatePrivateKey();

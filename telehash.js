@@ -4,6 +4,7 @@ var net = require("net");
 var http = require("http");
 var async = require("async");
 var crypto = require("crypto");
+var ursa = require("ursa"); // only need this to do the rsa encryption, not supported in crypto.*
 var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
@@ -358,6 +359,12 @@ function queueLine(self, packet)
   });
 }
 
+function addOpen(self, to)
+{
+  to.openSecret = dhash.quick(); // gen random secret
+  to.open = ursa.coercePrivateKey(self.prikey).privateEncrypt(to.openSecret, "utf8", "base64");  
+}
+
 // add the proper line or open+signature
 function addLine(self, to, packet)
 {
@@ -366,7 +373,7 @@ function addLine(self, to, packet)
 
   // make sure to send a signed open
   to.openSent = true;
-  if(!to.open) to.open = dhash.quick(); // gen random secret
+  if(!to.open) addOpen(self, to);
   packet.js.open = to.open;
   packet.sign = true;
 }
@@ -919,10 +926,11 @@ function inOpen(self, packet)
   delete packet.js.open;
 
   // may need to generate our open secret yet
-  if(!packet.from.open) packet.from.open = dhash.quick();
+  if(!packet.from.open) addOpen(self, packet.from);
 
-  // line is the hash of the two opens joined in sorted order
-  packet.from.line = dhash.quick([packet.from.opened, packet.from.open].sort().join(""));
+  // line is the hash of the sort of the two open secrets (decrypted from open)
+  packet.from.openedSecret = ursa.coercePublicKey(packet.from.pubkey).publicDecrypt(packet.from.opened, "base64", "utf8");
+  packet.from.line = dhash.quick([packet.from.openedSecret, packet.from.openSecret].sort().join(""));
 
   // set up tracking/flags
   packet.line = self.lines[packet.from.line] = packet.from;

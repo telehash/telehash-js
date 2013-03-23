@@ -4,6 +4,7 @@ var net = require("net");
 var http = require("http");
 var async = require("async");
 var crypto = require("crypto");
+var dns = require("dns");
 var ursa = require("ursa"); // only need this to do the rsa encryption, not supported in crypto.*
 var dhash = require("./dhash");
 
@@ -34,7 +35,6 @@ exports.hashname = function(space, keys, args)
   self.ip = args.ip || "0.0.0.0";
   self.port = parseInt(args.port) || 0;
 
-
   // udp socket
   var counter = 1;
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
@@ -63,9 +63,34 @@ exports.hashname = function(space, keys, args)
     if(better) self.ip = better;
   }
   self.address = [self.hashname, self.ip, self.port].join(",");
+  
+  // try to resolve any dns-defined operators for this space
+  dns.resolveSrv("_telehash._udp."+self.space, function(err, srvs){
+    // if we didn't resolve anything, sometimes that's worth warning about
+    if(err){
+      if(!self.operator && self.operators.length === 0) warn("no operators found, couldn't resolve space", self.space, err.toString());
+      return;
+    }
+    srvs.forEach(function(srv){
+      var hashname = srv.name.split(".")[0];
+      if(!dhash.isSHA1(hashname)) return warn("invalid operator address, not a hashname", srv);
+      dns.resolve4(srv.name, function(err, ips){
+        if(err) return warn("couldn't resolve operator", srv.name);
+        ips.forEach(function(ip){
+          var address = [hashname, ip, srv.port].join(",");
+          seen(self, address).operator = true;
+          debug("adding srv operator", address);
+          self.operators.push(address);
+        });
+      });
+    })
+  });
 
   // set up methods (personal prefernce to do this explicitly vs. prototype pattern)
-  self.myLookup = function(callback) { self.cb.lookup = callback };
+  self.myLookup = function(callback) {
+    self.cb.lookup = callback;
+    self.operator = true;
+  };
   self.setOperators = function(addresses) {
     if(!Array.isArray(addresses)) return;
     self.operators = addresses.map(function(address){

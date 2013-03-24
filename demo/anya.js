@@ -17,7 +17,7 @@ client.setOperators([opaddress]);
 client.setProxy({host:"jeremie.com", port:80});
 
 // ask for ourselves, which will query the operator
-client.doWho(client.hashname, function(err, pubkey){
+client.doVerify(client.hashname, function(err, pubkey){
 	if(err) return console.log("failed to find our hashname in this space:", err);
 	if(pubkey !== ckeys.public) return console.log("odd, our keys didn't match", pubkey, ckeys.public); 
 	console.log("great, we're connected! our address is", client.address);

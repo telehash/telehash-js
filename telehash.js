@@ -103,7 +103,7 @@ exports.hashname = function(space, keys, args)
       return op.hashname;
     });
   };
-  self.doWho = function(hn, callback) { doWho(self, hn, callback) };
+  self.doVerify = function(hn, callback) { doVerify(self, hn, callback) };
   self.doLine = function(hn, callback) { doLine(self, hn, callback) };
   self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
   self.doSocket = function(args, callback) { return doSocket(self, args, callback) };
@@ -344,30 +344,59 @@ function sendStream(self, stream, packet)
   send(self, stream.to, packet);
 }
 
-// perform a who request
-function doWho(self, hashname, callback)
+function sendWho(self, to, who, callback, timeout)
 {
-  // this will add the callback to any outstanding who requests
-  var watch = keywatch(self, "who "+hashname, callback, 10*1000);
-  
-  // don't perform another request if there's already one running
+  var watch = keywatch(self, "who "+who+to.hashname, callback, timeout);
+  if(watch.callbacks.length > 1) return; // someone sent one here already
+
+  var packet = {js:{who:who}};
+  packet.sign = true;
+  send(self, to, packet);
+}
+
+// *actively* verify this hashname with an operator
+function doVerify(self, hashname, callback)
+{
+  // this will add the callback to any outstanding verify requests
+  var watch = keywatch(self, "verify "+hashname, callback, 10*1000);
   if(watch.callbacks.length > 1) return;
 
-  var key;
   // ask operators sequentially in random order
-  async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOps){
+  var key;
+  async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOp){
     var op = seen(self, op);
-    var packet = {js:{who:hashname}};
-    packet.sign = true;
-    keywatch(self, "key "+hashname, function(err, value){
+    sendWho(self, op, hashname, function(err, value){
       if(value) key = value;
-      cbOps(value); // stops async when we get a value
-    }, 3*1000); // smaller timeout for operators, they should be fast
-    send(self, op, packet);
+      cbOp(value); // stops async when we get a value
+    }, 3*1000); // smaller timeout, ops should be fast
   }, function(){
-    if(!key) return watch.done("not found");
+    if(!key) return watch.done("not verified");
     watch.done(null, key);
   });
+}
+
+// async fetch the key however possible
+function getKey(self, hashname, callback)
+{
+  // moi?
+  if(self.hashname === hashname) return callback(null, self.pubkey);
+  
+  // already known
+  var who = seen(self, hashname);
+  if(who.pubkey) return callback(null, who.pubkey);
+
+  // multiple things may be wanting the key, create a watch
+  var watch = keywatch(self, "getkey "+hashname, callback, 10*1000);
+  if(watch.callbacks.length > 1) return;
+
+  // if we're open and we know an ip for this hashname, just ask them!
+  if(self.open && who.ip) return sendWho(self, who, hashname, watch.done);
+
+  // if we have a lookup function, use that
+  if(self.cb.lookup) return self.cb.lookup(hashname, watch.done);
+  
+  // resort to asking the operator
+  doVerify(self, hashname, watch.done);
 }
 
 // scan through the queue of packets with an unknown line, and optionally add one
@@ -390,8 +419,9 @@ function queueLine(self, packet)
 
 function addOpen(self, to)
 {
+  if(!to.pubkey) throw new Error("missing pub key! "+to.hashname);
   to.openSecret = dhash.quick(); // gen random secret
-  to.open = ursa.coercePrivateKey(self.prikey).privateEncrypt(to.openSecret, "utf8", "base64");  
+  to.open = ursa.coercePublicKey(to.pubkey).encrypt(to.openSecret, "utf8", "base64", ursa.RSA_PKCS1_PADDING);
 }
 
 // add the proper line or open+signature
@@ -419,7 +449,7 @@ function seek(self, hash)
   });
 }
 
-// open a line to this hashname
+// open a line to this hashname, may need to see and who it both
 function doLine(self, hn, callback)
 {
   // might have it already
@@ -428,17 +458,22 @@ function doLine(self, hn, callback)
   function good(to){
     if(to.line) return callback();
 
-    // only callback when it's fully open
-    keywatch(self, "line "+hn, callback);
+    getKey(self, to.hashname, function(err, key){
+      if(err) return callback();
+      if(!to.pubkey) to.pubkey = key;
 
-    // this triggers a response to make the line open
-    var packet = {js:{seek:to.hashname}};
-    addLine(self, to, packet);
-    send(self, to, packet);
+      // only callback when they've responded
+      keywatch(self, "line "+hn, callback);
+
+      // this is a ping to trigger a response
+      var packet = {js:{seek:to.hashname}};
+      addLine(self, to, packet);
+      send(self, to, packet);
+    });
   }
 
-  // operators we already have an address for
-  if(seen(self, hn).operator) return good(seen(self, hn));
+  // any we already have an ip
+  if(seen(self, hn).ip) return good(seen(self, hn));
 
   // we don't know this hn, seek it and watch for an answer
   keywatch(self, "see "+hn, function(err, address){
@@ -609,7 +644,7 @@ function decode(buf)
 // figure out what this packet is and have some fun
 function incoming(self, packet)
 {
-  debug("INCOMING", self.hashname, packet.id, "packet from", packet.from, packet.js, packet.body && packet.body.length);
+  debug("INCOMING", self.hashname, packet.id, "packet from", packet.from.address, packet.js, packet.body && packet.body.toString());
 
   // signed packets must be processed and verified straight away
   if(packet.js.sig) inSig(self, packet);
@@ -621,8 +656,8 @@ function incoming(self, packet)
     delete packet.js.to;
   }
 
-  // "key" responses are always public and trusted since they are self-verifiable
-  if(packet.js.key) inKey(self, packet);
+  // copy back their sender name if we don't have one yet for the "to" on answers
+  if(!packet.from.hashname && dhash.isSHA1(packet.js.from)) packet.from.hashname = packet.js.from;
 
   // these are only valid when requested, no trust needed
   if(packet.js.popped) inPopped(self, packet);
@@ -660,8 +695,8 @@ function incoming(self, packet)
     delete packet.js.ref;
   }
 
-  // copy back their sender name if we don't have one yet for the "to" on answers
-  if(!packet.from.hashname && dhash.isSHA1(packet.js.from)) packet.from.hashname = packet.js.from;
+  // process the who "key" responses since we know the sender best now
+  if(packet.js.key) inKey(self, packet);
 
   // answer who/see here so we have the best from info to decide if we care
   if(packet.js.who) inWho(self, packet);
@@ -842,14 +877,14 @@ function inSig(self, packet)
   signed.from = seen(self, signed.js.from);
   if(!signed.from.ip) updateAddress(signed.from, packet.from.ip, packet.from.port); // may exist already, don't override until verified
 
-  // if a signed packet has a key, it might be the one for this signature, so process it :)
+  // if a signed packet has a key, it might be the one for this signature! so process it :)
   if(signed.js.key) inKey(self, signed);
 
   // who requests don't need to be verified
   if(signed.js.who) inWho(self, signed);
 
   // where we handle validation if/when there's a key
-  function keyed(err, pubkey)
+  getKey(self, signed.from.hashname, function(err, pubkey)
   {
     if(!pubkey) return warn("signed packet, no public key for", signed.from.hashname, "from", packet.from, err);
 
@@ -864,26 +899,7 @@ function inSig(self, packet)
     // process body as a new packet with a real from
     signed.signed = signed.from;
     incoming(self, signed);
-  }
-
-  // see if we have the key already by chance
-  if(signed.from.pubkey) return keyed(null, signed.from.pubkey);
-
-  // if we're set to be in an open space, just get it from the sender
-  if(self.open) {
-    console.log("OPEN WHO",signed.from);
-    var who = {js:{who:signed.from.hashname}};
-    who.sign = true;
-    keywatch(self, "key "+signed.from.hashname, keyed);
-    send(self, signed.from, who);
-    return;
-  }
-
-  // if we are the operator or have a lookup function, use that
-  if(self.cb.lookup) return self.cb.lookup(signed.from.hashname, keyed);
-
-  // go ask an operator
-  doWho(self, signed.from.hashname, keyed);
+  });
 }
 
 // NAT is open
@@ -981,21 +997,20 @@ function inApp(self, packet)
 function inOpen(self, packet)
 {
   // if the from isn't verified, bail
-  if(!packet.from.hashname) return warn("unsigned open from", packet.from);
+  if(!packet.signed) return warn("unsigned open from", packet.from);
+
+  // trigger resending them our open if it's a new one from them
+  if(packet.from.openSent && packet.from.opened !== packet.js.open) packet.from.openSent = false;
 
   // store the (new) open value for line generation
-  if(packet.from.opened !== packet.js.open)
-  {
-    packet.from.opened = packet.js.open;
-    packet.from.openSent = false; // trigger resending them our open since it's a new one from them
-  }
+  packet.from.opened = packet.js.open;
   delete packet.js.open;
 
   // may need to generate our open secret yet
   if(!packet.from.open) addOpen(self, packet.from);
 
   // line is the hash of the sort of the two open secrets (decrypted from open)
-  packet.from.openedSecret = ursa.coercePublicKey(packet.from.pubkey).publicDecrypt(packet.from.opened, "base64", "utf8");
+  packet.from.openedSecret = ursa.coercePrivateKey(self.prikey).decrypt(packet.from.opened, "base64", "utf8", ursa.RSA_PKCS1_PADDING);
   packet.from.line = dhash.quick([packet.from.openedSecret, packet.from.openSecret].sort().join(""));
 
   // set up tracking/flags
@@ -1013,7 +1028,7 @@ function inKey(self, packet)
 {
   var hashname = packet.js.key;
   delete packet.js.key;
-  var watch = self.watch["key "+hashname];
+  var watch = self.watch["who "+hashname+packet.from.hashname];
   if(!watch) return warn("unknown key", hashname, "from", packet.from);
 
   // some sanity checks
@@ -1036,24 +1051,24 @@ function inKey(self, packet)
 
 function inWho(self, packet)
 {
-  // TODO - do we care to enforce signature validation?
+  // TODO - do we care to enforce signature validation?  
+  var who = seen(self, packet.js.who);
+  delete packet.js.who;
 
-  function valued(err, key)
+  getKey(self, who.hashname, function(err, key)
   {
-    if(!self.open && (err || !key)) return warn("key lookup fail for", body.hashname, err);
+    if(!self.open && (err || !key)) return warn("key lookup fail for", who.hashname, err);
+
+    // if we haven't cached it yet, do that
+    if(!who.pubkey) who.pubkey = key;
 
     // split into 1k chunks max
     var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
     for(var i = 0; i < chunks.length; i++)
     {
-      send(self, packet.from, {js:{key:packet.js.who, seq:i}, body:chunks[i]});
+      send(self, packet.from, {js:{key:who.hashname, seq:i}, body:chunks[i]});
     }
-  }
-
-  if(packet.js.who === self.hashname) return valued(null, self.pubkey);
-  if(self.cb.lookup) return self.cb.lookup(packet.js.who, valued);
-  
-//  delete packet.js.who;
+  });
 }
 
 // simple test rigging to replace builtins

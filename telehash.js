@@ -27,7 +27,7 @@ exports.hashname = function(space, keys, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}};
+  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
   // parse/validate the private key
   self.prikey = keys.private;
   self.pubkey = keys.public;
@@ -157,24 +157,29 @@ function meshSeen(self)
   self.nearest = nearest;
 }
 
-// update which lines are elected to keep
+// drop hn into it's appropriate bucket
+function bucketize(self, hn)
+{
+  if(!hn.bucket) hn.bucket = self.hash.distanceTo(hn.hash);
+  if(!self.buckets[hn.bucket]) self.buckets[hn.bucket] = [];
+  self.buckets[hn.bucket].push(hn);
+}
+
+// update which lines are elected to keep, rebuild self.buckets array
 function meshElect(self)
 {
-  // sort all lines into their bucket
-  var buckets = []; // sparse array, one for each distance 0...159
+  // sort all lines into their bucket, rebuild buckets from scratch (some may be GC'd)
+  self.buckets = []; // sparse array, one for each distance 0...159
   Object.keys(self.lines).forEach(function(line){
-    var hn = self.lines[line];
-    var bucket = self.hash.distanceTo(hn.hash);
-    if(!buckets[bucket]) buckets[bucket] = [];
-    buckets[bucket].push(hn);
+    bucketize(self, self.lines[line])
   });
-  var spread = parseInt(MESH_MAX / Object.keys(buckets).length);
+  var spread = parseInt(MESH_MAX / Object.keys(self.buckets).length);
   if(!(spread > 1)) spread = 1;
 
   // each bucket only gets so many lines elected
-  Object.keys(buckets).forEach(function(bucket){
+  Object.keys(self.buckets).forEach(function(bucket){
     var elected = 0;
-    buckets[bucket].forEach(function(hn){
+    self.buckets[bucket].forEach(function(hn){
       // TODO can use other health quality metrics to elect better/smarter ones
       hn.elected = (elected++ <= spread) ? true : false;
     });
@@ -191,8 +196,7 @@ function meshPing(self)
     // approx no more than once a minute
     if(Date.now() - hn.sentAt < 45*1000) return;
     // seek ourself to discover any new hashnames closer to us for the buckets
-    // TODO send a .see of all the ones closest to them too!
-    send(self, hn, {js:{seek:self.hashname}});
+    send(self, hn, {js:{seek:self.hashname, see:nearby(self, hn.hashname)}});
   });
 }
 
@@ -629,6 +633,11 @@ function parseAddress(str, hn)
     return {};
   }
   var parts = str.split(",");
+  if(!dhash.isSHA1(parts[0]))
+  {
+    warn("invalid address hashname part", str);
+    return {};
+  }
   var ret = hn || {}; // update existing or create new
   ret.hashname = parts[0];
   ret.ip = parts[1];
@@ -649,12 +658,13 @@ function updateAddress(hn, ip, port)
 function seen(self, to)
 {
   if(typeof to === "string") to = parseAddress(to);
-  if(typeof to !== "object") return {}; // could be bad data, empty object allows for .X checks
+  if(typeof to !== "object" || !to.hashname) return {}; // could be bad data, empty object allows for .X checks
   if(to.hashname === self.hashname) return self; // so we can check === self
   var ret = self.seen[to.hashname];
   if(!ret) {
     ret = self.seen[to.hashname] = to;
     ret.at = Date.now();
+    bucketize(self, ret);
   }else if(!ret.ip){
     // add ip/port if not set
     ret.ip = to.ip;
@@ -1029,16 +1039,34 @@ function inPop(self, packet)
   delete packet.js.pop;
 }
 
+// return array of nearby addresses (for .see)
+function nearby(self, hash)
+{
+  var ret = [];
+  if(hash === self.hashname) ret.push(self.address);
+  
+  // return up to 5 closest, in the same or higher (further) bucket
+  var bucket = self.hash.distanceTo(new dhash.Hash(null, hash));
+  var max = 5;
+  while(bucket <= 159 && max > 0)
+  {
+    if(self.buckets[bucket]) self.buckets[bucket].forEach(function(hn){
+      if(!hn.line) return; // only see ones we have a line with
+      max--;
+      ret.push(hn.address);
+    });
+    bucket++;
+  }
+  return ret;
+}
+
 // return a see to anyone closer
 function inSeek(self, packet)
 {
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
-  var answer = {js:{see:[]}};
-  if(packet.js.seek === self.hashname) answer.js.see.push(self.address);
-  if(self.seen[packet.js.seek] && self.seen[packet.js.seek].line) answer.js.see.push(self.seen[packet.js.seek].address);
-  // TODO DHT distance sort into .see
+  var answer = {js:{see:nearby(self, packet.js.seek)}};
   
   delete packet.js.seek;
   send(self, packet.from, answer);
@@ -1139,13 +1167,16 @@ function inKey(self, packet)
 
 function inWho(self, packet)
 {
+  if(!dhash.isSHA1(packet.js.who)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
+
   // TODO - do we care to enforce signature validation?  
   var who = seen(self, packet.js.who);
   delete packet.js.who;
 
   getKey(self, who.hashname, function(err, key)
   {
-    if(!self.open && (err || !key)) return warn("key lookup fail for", who.hashname, err);
+    // only warn if we're not open
+    if(err || typeof key !== "string") return self.open || warn("key lookup fail for", who.hashname, err);
 
     // if we haven't cached it yet, do that
     if(!who.pubkey) who.pubkey = key;

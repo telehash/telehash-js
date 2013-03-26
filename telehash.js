@@ -148,18 +148,18 @@ function meshReap(self)
   function del(who, why)
   {
     if(who.line) delete self.lines[who.line];
-    delete self.seen[who];
-    debug("reaping ", who, why);
+    delete self.seen[who.hashname];
+    debug("reaping ", who.hashname, why);
   }
   Object.keys(self.seen).forEach(function(h){
     var hn = self.seen[h];
     if(!hn.sentAt) return; // TODO never if these are from app? remove old ones from .see hints?
     if(!hn.recvAt) {
-      if(Date.now() - hn.at > 120*1000) return del(h, "sent, never received, older than 2min");
+      if(Date.now() - hn.at > 120*1000) return del(hn, "sent, never received, older than 2min");
       return; // allow non-response for up to 2min
     }
-    if(Date.now() - hn.sentAt > 60*1000) return del(h, "we stopped sending to them for more than 1min");
-    if(hn.sentAt - hn.recvAt > 60*1000) return del(h, "no response in 30sec");
+    if(Date.now() - hn.sentAt > 60*1000) return del(hn, "we stopped sending to them for more than 1min");
+    if(hn.sentAt - hn.recvAt > 60*1000) return del(hn, "no response in 30sec");
   });
 }
 

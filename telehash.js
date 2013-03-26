@@ -11,6 +11,7 @@ var dhash = require("./dhash");
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
 var debug = console.log; //function(){}; // switch to console.log to enable
+var MESH_MAX = 200; // how many peers to maintain at most
 
 var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n[\/+=a-zA-Z0-9\r\n]*\r?\n-----END \2 KEY-----\r?\n)/m;
 
@@ -30,7 +31,8 @@ exports.hashname = function(space, keys, args)
   // parse/validate the private key
   self.prikey = keys.private;
   self.pubkey = keys.public;
-  self.hashname = new dhash.Hash(self.pubkey+space).toString();
+  self.hash = new dhash.Hash(self.pubkey+space);
+  self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
   self.port = parseInt(args.port) || 0;
@@ -122,7 +124,76 @@ exports.hashname = function(space, keys, args)
     // have .see watcher for any new lines in empty buckets
   }
 
+  // start the DHT meshing maintainence
+  meshLoop(self);
+
   return self;
+}
+
+// every 25 seconds do the maintenance work for peers
+function meshLoop(self)
+{
+  debug("MESHA")
+  meshSeen(self);
+  meshElect(self);
+  meshPing(self);
+  debug("MESHZ")
+  setTimeout(function(){meshLoop(self)}, 25*1000);
+}
+
+// look for any newly seen hashnames to request a line to
+function meshSeen(self)
+{
+  // scan the nearest 100
+  var nearest;
+  Object.keys(self.seen).map(function(h){return self.seen[h]}).sort(function(a, b){
+    return self.hash.distanceTo(a.hash) - self.hash.distanceTo(b.hash);
+  }).slice(0,100).forEach(function(hn){
+    if(!nearest) nearest = hn;
+    if(hn.open) return; // line is open or already tried opening a line to them at least once
+    // try sending them a line request, no line == !hn.forApp
+    doLine(self, hn);
+  });
+  self.nearest = nearest;
+}
+
+// update which lines are elected to keep
+function meshElect(self)
+{
+  // sort all lines into their bucket
+  var buckets = []; // sparse array, one for each distance 0...159
+  Object.keys(self.lines).forEach(function(line){
+    var hn = self.lines[line];
+    var bucket = self.hash.distanceTo(hn.hash);
+    if(!buckets[bucket]) buckets[bucket] = [];
+    buckets[bucket].push(hn);
+  });
+  var spread = parseInt(MESH_MAX / Object.keys(buckets).length);
+  if(!(spread > 1)) spread = 1;
+
+  // each bucket only gets so many lines elected
+  Object.keys(buckets).forEach(function(bucket){
+    var elected = 0;
+    buckets[bucket].forEach(function(hn){
+      // TODO can use other health quality metrics to elect better/smarter ones
+      hn.elected = (elected++ <= spread) ? true : false;
+    });
+  });
+}
+
+// every line that needs to be maintained, ping them
+function meshPing(self)
+{
+  Object.keys(self.lines).forEach(function(line){
+    var hn = self.lines[line];
+    // have to be elected or a line induced by the app
+    if(!hn.elected && !hn.forApp) return;
+    // approx no more than once a minute
+    if(Date.now() - hn.sentAt < 45*1000) return;
+    // seek ourself to discover any new hashnames closer to us for the buckets
+    // TODO send a .see of all the ones closest to them too!
+    send(self, hn, {js:{seek:self.hashname}});
+  });
 }
 
 // ask hashname to answer an http request
@@ -450,20 +521,31 @@ function seek(self, hash)
 }
 
 // open a line to this hashname, may need to see and who it both
-function doLine(self, hn, callback)
+function doLine(self, hashname, callback)
 {
-  // might have it already
-  if(self.lines[hn]) return callback();
+  var to = seen(self, hashname);
 
-  function good(to){
+  // this only happens when opening a transient line (meshing)
+  if(!callback)
+  {
+    callback = function(){};
+  }else{
+    to.forApp = true;
+  }
+
+  // might have it already
+  if(to.line) return callback();
+
+  function good(){
     if(to.line) return callback();
 
     getKey(self, to.hashname, function(err, key){
       if(err) return callback();
       if(!to.pubkey) to.pubkey = key;
+      if(to.line) return callback();
 
       // only callback when they've responded
-      keywatch(self, "line "+hn, callback);
+      keywatch(self, "line "+to.hashname, callback);
 
       // this is a ping to trigger a response
       var packet = {js:{seek:to.hashname}};
@@ -473,15 +555,15 @@ function doLine(self, hn, callback)
   }
 
   // any we already have an ip
-  if(seen(self, hn).ip) return good(seen(self, hn));
+  if(to.ip) return good();
 
   // we don't know this hn, seek it and watch for an answer
-  keywatch(self, "see "+hn, function(err, address){
+  keywatch(self, "see "+to.hashname, function(err, address){
     if(err) return callback(err);
-    good(seen(self, address));
+    parseAddress(address, to); // updates to this ip/port
+    good();
   });
-
-  seek(self, hn);
+  seek(self, to.hashname);
 }
 
 function keywatch(self, key, callback, tout)
@@ -539,7 +621,7 @@ function encode(self, to, packet)
 }
 
 // just parse the "60518c1c11dc0452be71a7118a43ab68e3451b82,172.16.42.34,65148" format
-function parseAddress(str)
+function parseAddress(str, hn)
 {
   if(typeof str !== "string")
   {
@@ -547,7 +629,13 @@ function parseAddress(str)
     return {};
   }
   var parts = str.split(",");
-  return {hashname:parts[0], ip:parts[1], port:parseInt(parts[2]), address:str};
+  var ret = hn || {}; // update existing or create new
+  ret.hashname = parts[0];
+  ret.ip = parts[1];
+  ret.port = parseInt(parts[2]);
+  ret.address = str;
+  ret.hash = new dhash.Hash(null, parts[0]);
+  return ret;
 }
 
 function updateAddress(hn, ip, port)

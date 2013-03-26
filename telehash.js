@@ -134,11 +134,33 @@ exports.hashname = function(space, keys, args)
 function meshLoop(self)
 {
   debug("MESHA")
+  meshReap(self);
   meshSeen(self);
   meshElect(self);
   meshPing(self);
   debug("MESHZ")
   setTimeout(function(){meshLoop(self)}, 25*1000);
+}
+
+// delete any dead hashnames!
+function meshReap(self)
+{
+  function del(who, why)
+  {
+    if(who.line) delete self.lines[who.line];
+    delete self.seen[who];
+    debug("reaping ", who, why);
+  }
+  Object.keys(self.seen).forEach(function(h){
+    var hn = self.seen[h];
+    if(!hn.sentAt) return; // TODO never if these are from app? remove old ones from .see hints?
+    if(!hn.recvAt) {
+      if(Date.now() - hn.at > 120*1000) return del(h, "sent, never received, older than 2min");
+      return; // allow non-response for up to 2min
+    }
+    if(Date.now() - hn.sentAt > 60*1000) return del(h, "we stopped sending to them for more than 1min");
+    if(hn.sentAt - hn.recvAt > 60*1000) return del(h, "no response in 30sec");
+  });
 }
 
 // look for any newly seen hashnames to request a line to
@@ -769,6 +791,7 @@ function incoming(self, packet)
     // a matching line is required
     packet.line = packet.from = self.lines[packet.js.line];
     if(!packet.line) return queueLine(self, packet);
+    packet.line.recvAt = Date.now();
     delete packet.js.line;
   }
   
@@ -996,6 +1019,7 @@ function inSig(self, packet)
 
     // process body as a new packet with a real from
     signed.signed = signed.from;
+    signed.signed.recvAt = Date.now();
     incoming(self, signed);
   });
 }
@@ -1116,7 +1140,7 @@ function inOpen(self, packet)
   if(!packet.signed) return warn("unsigned open from", packet.from);
 
   // trigger resending them our open if it's a new one from them
-  if(packet.from.openSent && packet.from.opened !== packet.js.open) packet.from.openSent = false;
+  if(packet.from.openSent && packet.from.opened && packet.from.opened !== packet.js.open) packet.from.openSent = false;
 
   // store the (new) open value for line generation
   packet.from.opened = packet.js.open;

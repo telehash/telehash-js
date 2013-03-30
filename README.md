@@ -12,9 +12,9 @@ Start by generating two RSA keypairs:
 
 ``` js
 var key = require("ursa").generatePrivateKey();
-require('fs').writeFileSync("./operator.json", JSON.stringify({public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")}, null, 4));
+require('fs').writeFileSync("./operator.json", JSON.stringify({publicKey:key.toPublicPem("utf8"), privateKey:key.toPrivatePem("utf8")}, null, 4));
 var key = require("ursa").generatePrivateKey();
-require('fs').writeFileSync("./client.json", JSON.stringify({public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")}, null, 4));
+require('fs').writeFileSync("./client.json", JSON.stringify({publicKey:key.toPublicPem("utf8"), privateKey:key.toPrivatePem("utf8")}, null, 4));
 ```
 
 Then start up the operator:
@@ -29,9 +29,9 @@ console.log("operator address is ", operator.address);
 // operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
 // this is typically done via a key-value store or other means dynamically, here we only have one
 var ckeys = require("./client.json");
-var chashname = tele.hash(ckeys.public+"testing.private").toString();
+var chashname = tele.hash(ckeys.publicKey+"testing.private").toString();
 operator.myLookup(function(hashname, callback){
-	if (hashname === chashname) return callback(null, ckeys.public);
+	if (hashname === chashname) return callback(null, ckeys.publicKey);
 	callback("not found");
 });
 ```
@@ -56,7 +56,7 @@ client.setOperators([opaddress]);
 // ask for ourselves, which will query the operator
 client.doWho(client.hashname, function(err, pubkey){
 	if(err) return console.log("failed to find our hashname in this space:", err);
-	if(pubkey !== ckeys.public) return console.log("odd, our keys didn't match"); 
+	if(pubkey !== ckeys.publicKey) return console.log("odd, our keys didn't match"); 
 	console.log("great, we're connected! our address is", client.address);
 });
 ```

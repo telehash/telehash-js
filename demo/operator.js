@@ -8,8 +8,8 @@ console.log("operator address is ", operator.address);
 // operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
 // this is typically done via a key-value store or other means dynamically, here we only have one
 var ckeys = require("./client.json");
-var chashname = tele.hash(ckeys.public+"testing.private").toString();
+var chashname = tele.hash(ckeys.publicKey+"testing.private").toString();
 operator.myLookup(function(hashname, callback){
-	if (hashname === chashname) return callback(null, ckeys.public);
+	if (hashname === chashname) return callback(null, ckeys.publicKey);
 	callback("not found");
 });

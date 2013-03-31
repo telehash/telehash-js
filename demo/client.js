@@ -16,6 +16,6 @@ client.setOperators([opaddress]);
 // ask for ourselves, which will query the operator
 client.doWho(client.hashname, function(err, pubkey){
 	if(err) return console.log("failed to find our hashname in this space:", err);
-	if(pubkey !== ckeys.public) return console.log("odd, our keys didn't match"); 
+	if(pubkey !== ckeys.publicKey) return console.log("odd, our keys didn't match"); 
 	console.log("great, we're connected! our address is", client.address);
 });

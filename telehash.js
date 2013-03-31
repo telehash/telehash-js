@@ -23,14 +23,14 @@ exports.hash = function(string)
 // start a hashname listening and ready to go
 exports.hashname = function(space, keys, args)
 {
-  if(!space || !keys || !keys.public || !keys.private) return undefined;
+  if(!space || !keys || !keys.publicKey || !keys.privateKey) return undefined;
   if(!args) args = {};
 
   // configure defaults
   var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
   // parse/validate the private key
-  self.prikey = keys.private;
-  self.pubkey = keys.public;
+  self.prikey = keys.privateKey;
+  self.pubkey = keys.publicKey;
   self.hash = new dhash.Hash(self.pubkey+space);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;

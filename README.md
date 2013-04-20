@@ -2,11 +2,11 @@
 
 This module presents a simple high-level API for using [telehash v2](https://github.com/quartzjer/TeleHash/blob/master/org/v2.md).
 
-Every "actor" within telehash is called a `hashname` which is an RSA keypair listening on an IP/Port that is part of a `space`, a collection of hashnames that share some trust or identity.  Every space must have one or more publicly accessible hashnames that can serve as an `operator` for that space to help any new hashname get connected, the seed list of operators for a space is typically bundled with an app.
+Every instance of an app using telehash is identified by a unique `hashname` which is a combination of an RSA public key and a hostname for the `network` it's part of.  Every network must have one or more publicly accessible hashnames that can serve as an `operator` to help any new hashname get connected. The list of operators for a network is typically resolved via DNS (SRV) of the network's hostname or simply bundled/seeded with an app.
 
 # From Scratch
 
-To create an entire standalone setup you'll need a space with at least one operator and one hashname for them to connect to each other.  A space should be identified with a fully qualified hostname or for private/testing ones use "****.private".  These examples are also included in the demo folder.
+To create an entire standalone setup you'll need a network with at least one operator and one other hashname for them to connect to each other.  A network should be identified with a fully qualified hostname, but for private/testing ones use "****.private".  These examples are also included in the demo folder.
 
 Start by generating two RSA keypairs:
 
@@ -22,11 +22,11 @@ Then start up the operator:
 var tele = require("../telehash");
 var opkeys = require("./operator.json"); // loads the keypair
 
-// start a new hashname in the given space with these keys, listen on this specific port
+// start a new hashname in the given network with these keys, listen on this specific port
 var operator = tele.hashname("testing.private", opkeys, {port:42424});
 console.log("operator address is ", operator.address);
 
-// operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
+// operators need to resolve other keys in the same network, so provide a callback to do that for our client.json
 // this is typically done via a key-value store or other means dynamically, here we only have one
 var ckeys = require("./client.json");
 var chashname = tele.hash(ckeys.publicKey+"testing.private").toString();
@@ -47,7 +47,7 @@ var opaddress = process.argv[2];
 // load up our private key
 var ckeys = require("./client.json");
 
-// start up our client hashname in the same space
+// start up our client hashname in the same network
 var client = tele.hashname("testing.private", ckeys);
 
 // provide the operator(s) for this hashname
@@ -55,7 +55,7 @@ client.setOperators([opaddress]);
 
 // ask for ourselves, which will query the operator
 client.doWho(client.hashname, function(err, pubkey){
-	if(err) return console.log("failed to find our hashname in this space:", err);
+	if(err) return console.log("failed to find our hashname in this network:", err);
 	if(pubkey !== ckeys.publicKey) return console.log("odd, our keys didn't match"); 
 	console.log("great, we're connected! our address is", client.address);
 });

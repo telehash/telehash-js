@@ -21,17 +21,17 @@ exports.hash = function(string)
 }
 
 // start a hashname listening and ready to go
-exports.hashname = function(space, keys, args)
+exports.hashname = function(network, keys, args)
 {
-  if(!space || !keys || !keys.publicKey || !keys.privateKey) return undefined;
+  if(!network || !keys || !keys.publicKey || !keys.privateKey) return undefined;
   if(!args) args = {};
 
   // configure defaults
-  var self = {space:space, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
+  var self = {network:network, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
   // parse/validate the private key
   self.prikey = keys.privateKey;
   self.pubkey = keys.publicKey;
-  self.hash = new dhash.Hash(self.pubkey+space);
+  self.hash = new dhash.Hash(self.pubkey+network);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
@@ -42,10 +42,17 @@ exports.hashname = function(space, keys, args)
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     var packet = decode(msg);
     if(!packet) return warn("failed to decode a packet from", rinfo.address, rinfo.port, msg.toString());
-    packet.from = {ip:rinfo.address, port:rinfo.port};
+    packet.sender = {ip:rinfo.address, port:rinfo.port};
     packet.id = counter++;
     packet.at = Date.now();
-    incoming(self, packet);
+
+    // either it's a signed packet
+    if(packet.js.sig) return inSig(self, packet);
+
+    // or it's a line
+    if(packet.js.line) return inLine(self, packet);
+    
+    warn("dropping incoming packet with no sig or line", packet.js, packet.sender);
   });
   self.server.bind(self.port, self.ip, function(){
     // update address after listen completed to be besty
@@ -66,11 +73,11 @@ exports.hashname = function(space, keys, args)
   }
   self.address = [self.hashname, self.ip, self.port].join(",");
   
-  // try to resolve any dns-defined operators for this space
-  dns.resolveSrv("_telehash._udp."+self.space, function(err, srvs){
+  // try to resolve any dns-defined operators for this network
+  dns.resolveSrv("_telehash._udp."+self.network, function(err, srvs){
     // if we didn't resolve anything, sometimes that's worth warning about
     if(err){
-      if(!self.operator && self.operators.length === 0) warn("no operators found, couldn't resolve space", self.space, err.toString());
+      if(!self.operator && self.operators.length === 0) warn("no operators found, couldn't resolve network", self.network, err.toString());
       return;
     }
     srvs.forEach(function(srv){
@@ -764,83 +771,33 @@ function decode(buf)
 // figure out what this packet is and have some fun
 function incoming(self, packet)
 {
-  debug("INCOMING", self.hashname, packet.id, "packet from", packet.from.address, packet.js, packet.body && packet.body.toString());
+  debug("INCOMING", packet.id, packet.from.address, JSON.stringify(packet.js), packet.body && packet.body.toString());
 
-  // signed packets must be processed and verified straight away
-  if(packet.js.sig) inSig(self, packet);
-
-  // make sure any to is us (for multihosting)
-  if(packet.js.to)
-  {
-    if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
-    delete packet.js.to;
-  }
-
-  // copy back their sender name if we don't have one yet for the "to" on answers
-  if(!packet.from.hashname && dhash.isSHA1(packet.js.from)) packet.from.hashname = packet.js.from;
-
-  // these are only valid when requested, no trust needed
-  if(packet.js.popped) inPopped(self, packet);
-
-  // new line creation
-  if(packet.js.open) inOpen(self, packet);
-
-  // incoming lines can happen out of order or before their open is verified, queue them
-  if(packet.js.line)
-  {
-    // a matching line is required
-    packet.line = packet.from = self.lines[packet.js.line];
-    if(!packet.line) return queueLine(self, packet);
-    packet.line.recvAt = Date.now();
-    delete packet.js.line;
-  }
-  
-  // must decrypt and start over
-  if(packet.line && packet.js.cipher)
-  {
-    debug("deciphering!")
-    var aes = crypto.createDecipher("AES-128-CBC", packet.line.openSecret);
-    var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
-    deciphered.id = packet.id + (packet.id * .2);
-    deciphered.from = packet.from;
-    deciphered.ciphered = true;
-    return incoming(self, deciphered);
-  }
-
-  // any ref must be validated as someone we're connected to
-  if(packet.js.ref)
-  {
-    var ref = seen(self, packet.js.ref);
-    if(!ref.line) return warn("invalid ref of", packet.js.ref, "from", packet.from);
-    packet.ref = ref;
-    delete packet.js.ref;
-  }
-
-  // process the who "key" responses since we know the sender best now
-  if(packet.js.key) inKey(self, packet);
-
-  // answer who/see here so we have the best from info to decide if we care
-  if(packet.js.who) inWho(self, packet);
+  // allow any packet to send a see (as a hint) and process it
   if(packet.js.see) inSee(self, packet);
 
-  // everything else must have some level of from trust!
-  if(!packet.line && !packet.signed && !packet.ref) return inApp(self, packet);
+  // new line creation
+  if(packet.js.open) return inOpen(self, packet);
 
-  if(dhash.isSHA1(packet.js.seek)) inSeek(self, packet);
-  if(packet.js.pop) inPop(self, packet);
+  // any NAT stuff
+  if(packet.js.nat) return inNAT(self, packet);
 
-  // now, only proceed if there's a line
-  if(!packet.line) return inApp(self, packet);
+  // all stream level stuff is decoded here
+  if(packet.js.stream) return inStream(self, packet);
 
-  // these are line-only things
-  if(packet.js.popping) inPopping(self, packet);
+  // common questions
+  if(packet.q === "key") return qKey(self, packet);
+  if(packet.q === "seek") return qSeek(self, packet);
 
-  // only proceed if there's a stream
-  if(!packet.js.stream) return inApp(self, packet);
-
-  // this makes sure everything is in sequence before continuing
-  inStream(self, packet);
-
+  // common answers
+  if(packet.a === "key") return aKey(self, packet);
+  if(packet.a === "seek") return aSeek(self, packet);
+  
+  // everything else the app can handle custom
+  if(packet.from.inAny) return packet.from.inAny(self, packet);
+  if(self.inAny) return self.inAny(self, packet);
+  
+  warn("unhandled packet", packet.id, packet.from.address, JSON.stringify(packet.js));
 }
 
 function inStream(self, packet)
@@ -989,39 +946,64 @@ function inSig(self, packet)
 {
   // decode the body as a packet so we can examine it
   var signed = decode(packet.body);
+
+  if(!signed) return warn("invalid body attached", packet.sender);
+
+  // save out the original sig/body and update the packet
   var sig = packet.js.sig;
   var body = packet.body;
-  delete packet.js.sig;
-  delete packet.js.body;
-  signed.id = packet.id + (packet.id * .1);
-  if(!signed.js || !dhash.isSHA1(signed.js.from)) return warn("signed packet missing from value from", packet.from);
-  signed.from = seen(self, signed.js.from);
-  if(!signed.from.ip) updateAddress(signed.from, packet.from.ip, packet.from.port); // may exist already, don't override until verified
+  packet.js = signed.js;
+  packet.body = signed.body;
 
-  // if a signed packet has a key, it might be the one for this signature! so process it :)
-  if(signed.js.key) inKey(self, signed);
+  // make sure any to is us (for multihosting)
+  if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
+  
+  if(!dhash.isSHA1(packet.js.from)) return warn("invalid from", packet.js.from);
 
-  // who requests don't need to be verified
-  if(signed.js.who) inWho(self, signed);
+  // load the sender
+  packet.from = seen(self, packet.js.from);
+  // store these but don't override ip:port until verified
+  if(!packet.from.ip) updateAddress(packet.from, packet.sender.ip, packet.sender.port);
+
+  // if this is an answer to a key request we have to process it first in order to validate the signature :)
+  if(packet.js.a === 'key') aKey(self, packet);
+
+  // key requests don't need to have a verified signature
+  if(signed.js.q === 'key') qKey(self, packet);
 
   // where we handle validation if/when there's a key
-  getKey(self, signed.from.hashname, function(err, pubkey)
+  getKey(self, packet.from.hashname, function(err, pubkey)
   {
-    if(!pubkey) return warn("signed packet, no public key for", signed.from.hashname, "from", packet.from, err);
+    if(!pubkey) return warn("signed packet, no public key for", packet.from.address, err);
 
-    // validate packet.js.sig against packet.body
+    // validate sig against packet.body
     var valid = crypto.createVerify("RSA-MD5").update(body).verify(pubkey, sig, "base64");
-    if(!valid) return warn("invalid signature from:", packet.from);
+    if(!valid) return warn("invalid signature from:", packet.from.address);
 
     // make sure our values are correct/current
-    updateAddress(signed.from, packet.from.ip, packet.from.port);
-    signed.from.pubkey = pubkey;
+    updateAddress(packet.from, packet.sender.ip, packet.sender.port);
+    packet.from.pubkey = pubkey;
 
     // process body as a new packet with a real from
-    signed.signed = signed.from;
-    signed.signed.recvAt = Date.now();
-    incoming(self, signed);
+    packet.from.recvAt = Date.now();
+    incoming(self, packet);
   });
+}
+
+// line packets must be decoded first
+function inLine(self, packet){
+  packet.line = packet.from = self.lines[packet.js.line];
+
+  // sometimes they come out of order, queue it waiting for the open just in case
+  if(!packet.line) return queueLine(self, packet);
+
+  // a matching line is required to decode the packet
+  packet.line.recvAt = Date.now();
+  var aes = crypto.createDecipher("AES-128-CBC", packet.line.openSecret);
+  var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
+  packet.js = deciphered.js;
+  packet.body = deciphered.body;
+  incoming(self, packet);
 }
 
 // NAT is open
@@ -1117,22 +1099,6 @@ function inSee(self, packet)
   delete packet.js.see;
 }
 
-// optionally send it up to the app if there's any data that isn't processed yet
-function inApp(self, packet)
-{
-  // make sure there's something to do yet (signed packets usually fall through here empty)
-  if(Object.keys(packet.js) == 0 && !packet.body) return debug("empty packet done", packet.id);
-
-  // stream callbacks
-  if(packet.stream && packet.stream.inAny) return packet.stream.inAny(null, packet);
-
-  // line stuff
-  if(packet.line && packet.line.inAny) return packet.line.inAny(null, packet);
-  
-  // ad-hoc packets
-  if(self.inAny) packet.line.inAny(null, packet);
-}
-
 // they want to open a line to us
 function inOpen(self, packet)
 {
@@ -1164,53 +1130,37 @@ function inOpen(self, packet)
   queueLine(self);
 }
 
-function inKey(self, packet)
+function aKey(self, packet)
 {
-  var hashname = packet.js.key;
-  delete packet.js.key;
-  var watch = self.watch["who "+hashname+packet.from.hashname];
-  if(!watch) return warn("unknown key", hashname, "from", packet.from);
+  var hashname = packet.js.hash;
+  var watch = self.watch["key "+hashname+packet.from.hashname];
+  if(!watch) return warn("unknown key", hashname, "from", packet.from.address);
 
   // some sanity checks
-  if(!packet.body) return warn("missing key body from", packet.from);
-  var seq = parseInt(packet.js.seq || 0);
-  if(seq === NaN || seq < 0 || seq > 10) return warn("invalid seq", packet.js.seq, packet.from);
-  delete packet.js.seq;
+  if(!packet.body) return warn("missing key body from", packet.from.address);
+  var key = packet.body.toString("utf8");
+  if(!PEM_REGEX.exec(key)) return warn("invalid key from", packet.from.address);
 
-  watch.parts[seq] = packet.body.toString("utf8");
-
-  // check if it's a valid public key yet, bail if not
-  var key = watch.parts.join("");
-  if(!PEM_REGEX.exec(key)) return;
-  
   // have a key, validate it's for this hashname!
-  if(hashname !== dhash.quick(key+self.space)) return warn("key+space hashname mismatch", hashname, "from", packet.from);
+  if(hashname !== dhash.quick(key+self.network)) return warn("key+network hashname mismatch", hashname, "from", packet.from.address);
   seen(self, hashname).pubkey = key; // save all public keys we get back
   watch.done(null, key);
 }
 
-function inWho(self, packet)
+function qKey(self, packet)
 {
-  if(!dhash.isSHA1(packet.js.who)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
+  var hashname = packet.js.hash;
+  if(!dhash.isSHA1(hashname)) return warn("invalid seek of ", hashname, "from:", packet.from);
 
-  // TODO - do we care to enforce signature validation?  
-  var who = seen(self, packet.js.who);
-  delete packet.js.who;
-
-  getKey(self, who.hashname, function(err, key)
+  getKey(self, hashname, function(err, key)
   {
-    // only warn if we're not open
-    if(err || typeof key !== "string") return self.open || warn("key lookup fail for", who.hashname, err);
+    if(err || typeof key !== "string") return warn("key lookup fail for", hashname, err);
 
     // if we haven't cached it yet, do that
+    var who = seen(self, hashname);
     if(!who.pubkey) who.pubkey = key;
 
-    // split into 1k chunks max
-    var chunks = [].concat.apply([], key.split('').map(function(x,i){ return i%1000 ? [] : key.slice(i,i+1000) }));
-    for(var i = 0; i < chunks.length; i++)
-    {
-      send(self, packet.from, {js:{key:who.hashname, seq:i}, body:chunks[i]});
-    }
+    send(self, packet.from, {js:{a:"key", hash:hashname}, body:key});
   });
 }
 

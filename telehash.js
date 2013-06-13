@@ -23,14 +23,14 @@ exports.hash = function(string)
 // start a hashname listening and ready to go
 exports.hashname = function(network, keys, args)
 {
-  if(!network || !keys || !keys.publicKey || !keys.privateKey) return undefined;
+  if(!network || !keys || !keys.public || !keys.private) return undefined;
   if(!args) args = {};
 
   // configure defaults
   var self = {network:network, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
   // parse/validate the private key
-  self.prikey = keys.privateKey;
-  self.pubkey = keys.publicKey;
+  self.prikey = keys.private;
+  self.pubkey = keys.public;
   self.hash = new dhash.Hash(self.pubkey+network);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
@@ -46,13 +46,13 @@ exports.hashname = function(network, keys, args)
     packet.id = counter++;
     packet.at = Date.now();
 
-    // either it's a signed packet
-    if(packet.js.sig) return inSig(self, packet);
+    // either it's an open
+    if(packet.js.type == "open") return inOpen(self, packet);
 
     // or it's a line
-    if(packet.js.line) return inLine(self, packet);
+    if(packet.js.type == "line") return inLine(self, packet);
     
-    warn("dropping incoming packet with no sig or line", packet.js, packet.sender);
+    warn("dropping incoming packet of unknown type", packet.js, packet.sender);
   });
   self.server.bind(self.port, self.ip, function(){
     // update address after listen completed to be besty
@@ -112,15 +112,11 @@ exports.hashname = function(network, keys, args)
       return op.hashname;
     });
   };
-  self.doVerify = function(hn, callback) { doVerify(self, hn, callback) };
   self.doLine = function(hn, callback) { doLine(self, hn, callback) };
   self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
   self.doSocket = function(args, callback) { return doSocket(self, args, callback) };
-  self.setProxy = function(args) {
-    self.proxyBase = args;
-  };
-  self.doProxy = function(args, callback) { return doProxy(self, args, callback) };
-  self.doProxyStream = function(args, callback) { return doProxyStream(self, args, callback) };
+  self.doSend = function(to, packet) { send(self, to, packet) };
+  self.doSeen = function(hn) { return seen(self, hn) };
 
   self.setSeeds = function(addresses) {
     // set ourselves in DHT mode
@@ -227,62 +223,6 @@ function meshPing(self)
     // seek ourself to discover any new hashnames closer to us for the buckets
     send(self, hn, {js:{seek:self.hashname, see:nearby(self, hn.hashname)}});
   });
-}
-
-// ask hashname to answer an http request
-function doProxy(self, args, callback)
-{
-  if(!args || !args.path ||!args.hashname) return callback("no path or hashname");
-  self.doLine(args.hashname, function(err){
-    if(err) return callback("line failed");
-
-    // create stream and handle responses
-    var res = {};
-    var body = new Buffer(0);
-    var stream = doStream(self, args.hashname, function(err, packet, cbStream){
-      if(packet.body) body = Buffer.concat([body, packet.body]);
-      if(packet.js.res)
-      {
-        res.statusCode = packet.js.res.s || 500;
-        res.headers = packet.js.res.h || {};
-      }
-      if(packet.js.end) callback(null, res, body);
-      cbStream();
-    });
-    
-    // send request, TODO support a streaming interface
-    var js = {end:true, req:{}};
-    js.req.p = args.path;
-    js.req.m = args.method || "GET";
-    if(args.headers) js.req.h = args.headers;
-    stream.send(js, args.body);
-  });
-}
-
-// ask hashname to answer an http request, streamingly
-function doProxyStream(self, args, callback)
-{
-  if(!args || !args.path ||!args.hashname) return callback("no path or hashname");
-  // create stream and a req json
-  var stream = getStream(self, seen(self, args.hashname));
-  var js = {req:{}};
-  js.req.p = args.path;
-  js.req.m = args.method || "GET";
-  if(args.headers) js.req.h = args.headers;
-
-  // give back node streaming interface
-  var x = wrapStream(self, stream, function(packet){
-    // when the headers show up pass them along
-    if(packet.js.res)
-    {
-      var res = {};
-      res.statusCode = packet.js.res.s || 500;
-      res.headers = packet.js.res.h || {};
-      callback(res);
-    }
-  });
-  x.js(js); // send headers
-  return x;
 }
 
 // ask hashname to open a socket to this ip:port
@@ -407,7 +347,7 @@ function getStream(self, to, id)
   stream.to = to;
   // how we process things in order
   stream.q = async.queue(function(packet, cbQ){
-    inStreamSeries(self, stream, packet, cbQ);
+    inStreamSeries(self, packet, cbQ);
   }, 1);
 
   // handy utils, send just one anytime explicitly
@@ -448,35 +388,12 @@ function sendStream(self, stream, packet)
   send(self, stream.to, packet);
 }
 
-function sendWho(self, to, who, callback, timeout)
+function askKey(self, to, key, callback)
 {
-  var watch = keywatch(self, "who "+who+to.hashname, callback, timeout);
+  var watch = watcher(self, "askKey "+who+to.hashname, REQUEST_TIMEOUT, callback);
   if(watch.callbacks.length > 1) return; // someone sent one here already
 
-  var packet = {js:{who:who}};
-  packet.sign = true;
-  send(self, to, packet);
-}
-
-// *actively* verify this hashname with an operator
-function doVerify(self, hashname, callback)
-{
-  // this will add the callback to any outstanding verify requests
-  var watch = keywatch(self, "verify "+hashname, callback, 10*1000);
-  if(watch.callbacks.length > 1) return;
-
-  // ask operators sequentially in random order
-  var key;
-  async.forEachSeries(self.operators.sort(function(){ return Math.random()-0.5; }), function(op, cbOp){
-    var op = seen(self, op);
-    sendWho(self, op, hashname, function(err, value){
-      if(value) key = value;
-      cbOp(value); // stops async when we get a value
-    }, 3*1000); // smaller timeout, ops should be fast
-  }, function(){
-    if(!key) return watch.done("not verified");
-    watch.done(null, key);
-  });
+  getStream(self, to).send({js:{type:"key", key:key}});
 }
 
 // async fetch the key however possible
@@ -493,8 +410,9 @@ function getKey(self, hashname, callback)
   var watch = keywatch(self, "getkey "+hashname, callback, 10*1000);
   if(watch.callbacks.length > 1) return;
 
-  // if we're open and we know an ip for this hashname, just ask them!
-  if(self.open && who.ip) return sendWho(self, who, hashname, watch.done);
+  // if we know an ip for this hashname, just ask them!
+  if(who.ip)
+   return sendWho(self, who, hashname, watch.done);
 
   // if we have a lookup function, use that
   if(self.cb.lookup) return self.cb.lookup(hashname, watch.done);
@@ -521,25 +439,6 @@ function queueLine(self, packet)
   });
 }
 
-function addOpen(self, to)
-{
-  if(!to.pubkey) throw new Error("missing pub key! "+to.hashname);
-  to.openSecret = dhash.quick(); // gen random secret
-  to.open = ursa.coercePublicKey(to.pubkey).encrypt(to.openSecret, "utf8", "base64", ursa.RSA_PKCS1_PADDING);
-}
-
-// add the proper line or open+signature
-function addLine(self, to, packet)
-{
-  // if we've sent an open and have a line, just use that
-  if(to.openSent && to.line) return packet.js.line = to.line;
-
-  // make sure to send a signed open
-  to.openSent = true;
-  if(!to.open) addOpen(self, to);
-  packet.js.open = to.open;
-  packet.sign = true;
-}
 
 // ask open lines for an address
 function seek(self, hash)
@@ -599,7 +498,8 @@ function doLine(self, hashname, callback)
   seek(self, to.hashname);
 }
 
-function keywatch(self, key, callback, tout)
+// an internal "lock" function, so that many things can wait for one trigger and have a timeout
+function watcher(self, key, timeout, callback)
 {
   var watch = self.watch[key];
 
@@ -610,17 +510,18 @@ function keywatch(self, key, callback, tout)
   }
 
   // start a new watch
-  var timeout = setTimeout(function(){done("timeout")}, tout || REQUEST_TIMEOUT);
-  function done(err, value)
+  var timer = timeout && setTimeout(function(){done("timeout")}, timeout);
+  function done()
   {
-    if(!timeout) return; // re-entered by accident if answer came after timeout
-    clearTimeout(timeout);
-    timeout = false;
+    if(!timer) return; // re-entered by accident if answer came after timeout
+    clearTimeout(timer);
+    timer = false;
+    var args = arguments;
     delete self.watch[key];
-    watch.callbacks.forEach(function(cb){ cb(err, value); });
+    watch.callbacks.forEach(function(cb){ cb.call(args); });
   }
 
-  var watch = self.watch[key] = {done:done, callbacks:[], parts:[]};
+  var watch = self.watch[key] = {done:done, callbacks:[]};
   watch.callbacks.push(callback);
   return watch;
 }
@@ -628,22 +529,7 @@ function keywatch(self, key, callback, tout)
 // create a wire writeable buffer from a packet
 function encode(self, to, packet)
 {
-  // signed packets are special, everything else gets common things added
-  if(!packet.js.sig)
-  {
-    // if we need a line and it's not added, add it, convenience
-    if(to.line || to.opened) addLine(self, to, packet);
-
-    // if there's no line, always add extra identifiers
-    if(!packet.js.line) {
-      if(to.ref) packet.js.ref = to.ref.hashname;
-      packet.js.to = to.hashname;
-      packet.js.from = self.hashname;
-      if(packet.sign) packet.js.x = Date.now() + 10*1000; // add timeout for signed packets
-    }    
-  }
-  
-  debug("ENCODING", packet.js, packet.body && packet.body.toString(), "\n");
+  debug("ENCODING", JSON.stringify(packet.js), (typeof packet.body == "string")?packet.body:packet.body && "BINARY "+packet.body.length, "\n");
 
   var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
   if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
@@ -678,71 +564,104 @@ function parseAddress(str, hn)
 
 function updateAddress(hn, ip, port)
 {
-  hn.ip = ip;
-  hn.port = port;
-  hn.address = [hn.hashname, hn.ip, hn.port].join(",");
 }
 
-// track every hashname we know about
-function seen(self, to)
+// track every hashname we know about, to is result of parseAddress
+function seen(self, hashname)
 {
-  if(typeof to === "string") to = parseAddress(to);
-  if(typeof to !== "object" || !to.hashname) return {}; // could be bad data, empty object allows for .X checks
-  if(to.hashname === self.hashname) return self; // so we can check === self
-  var ret = self.seen[to.hashname];
+  // validations
+  if(!hashname || typeof hashname != "string") { warn("seen called without a valid hashname", hashname); return false; }
+
+  // so we can check === self
+  if(hashname === self.hashname) return self;
+
+  var ret = self.seen[hashname];
   if(!ret) {
-    ret = self.seen[to.hashname] = to;
+    ret = self.seen[hashname] = parseAddress(hashname);
     ret.at = Date.now();
     bucketize(self, ret);
-  }else if(!ret.ip){
-    // add ip/port if not set
-    ret.ip = to.ip;
-    ret.port = to.port;
   }
   return ret;
 }
 
-// wiring wrapper, to may be ephemeral (just ip+port, or usually a hashname object)
+function openSeek(self, to)
+{
+  debug("openSeek", to.hashname);
+  // use watcher
+  // perform seek
+  // on finding the to.hashname's ip/port, call send()
+}
+
+function sendOpen(self, to)
+{
+  // only way to get it is to pop whoever told us about the hashname
+  if(!to.pubkey)
+  {
+    if(!to.via) return warn("can't open a line to a hashname with no via", to.hashname);
+    var js = {type:"pop"};
+    js.pop = [to.hashname,to.ip,to.port].join(",");
+    getStream(self, seen(self, to.via)).send(js); // throwaway
+    return;
+  }
+
+  debug("sendOpen sending", to.hashname);
+  to.sentOpen = true;
+  if(!to.secretOut) to.secretOut = dhash.quick(); // gen random secret
+  if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
+  
+  // send an open packet, containing our key
+  var packet = {js:{}, body:self.pubkey};
+  packet.js.to = to.hashname;
+  packet.js.from = self.hashname;
+  packet.js.x = Date.now() + 10*1000; // timeout to prevent replay
+  packet.js.line = to.lineOut;
+
+  // craft the special open packet wrapper
+  var open = {js:{type:"open"}};
+  // attach the aes secret, encrypted to the recipients public key
+  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.secretOut, "utf8", "base64", ursa.RSA_PKCS1_PADDING);
+  // now encrypt the original open packet
+  var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
+  open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
+  // now attach a signature so the recipient can verify the sender
+  open.js.sig = crypto.createSign("RSA-MD5").update(open.body).sign(self.prikey, "base64");
+  sendBuf(self, to, encode(self, to, open));
+}
+
+// wiring wrapper, to is a hashname object from seen(), does the work to open a line first
 function send(self, to, packet)
 {
-  if(!to.ip || !(to.port > 0)) return warn("invalid address", to);
+  if(typeof to == "string") to = seen(self, to);
+  if(!to.outq) to.outq = [];
+  if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname);
+  if(packet) to.outq.push(packet);
 
-  var buf = encode(self, to, packet);
+  // if we don't know the IP yet, go seek it first
+  if(!to.ip) return openSeek(self, to);
 
-  // if this packet is to be signed, wrap it and do that
-  if(packet.sign && !packet.js.line)
-  {
-    var signed = {js:{}};
-    signed.body = buf;
-    signed.js.sig = crypto.createSign("RSA-MD5").update(buf).sign(self.prikey, "base64");
-    buf = encode(self, to, signed);
-    packet = signed;
-  }
+  // if there's no line to send this on yet, try to open one
+  if(!to.lineIn) return sendOpen(self, to);
 
-  if(to.cipher)
-  {
-    var enc = {js:{}};
-    enc.js.line = packet.js.line;
-    enc.js.cipher = true;
-    var aes = crypto.createCipher("AES-128-CBC", to.openedSecret);
+  // flush out all packets
+  to.outq.forEach(function(packet){
+    var buf = encode(self, to, packet);
+
+    var enc = {js:{type:"line"}};
+    enc.js.line = to.lineIn;
+    var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
-    buf = encode(self, to, enc);
-    packet = enc;
-  }
 
+    sendBuf(self, to, encode(self, to, enc))
+  });
+  to.outq = [];
+}
+
+// raw write to the wire
+function sendBuf(self, to, buf)
+{
   // track some stats
   to.sent ? to.sent++ : to.sent = 1;
   to.sentAt = Date.now();
-
-  // if there's a hashname, this is the best place to handle clearing the pop'd state on any send
-  if(to.hashname && to.popping) delete to.popping;
-
-  // special, first packet + nat + via'd, send a pop too
-  if(to.via && to.sent === 1 && self.nat)
-  {
-    to.popping = packet; // cache first packet for possible resend
-    send(self, to.via, {js:{pop:[[to.hashname,to.ip,to.port].join(",")]}});
-  }
 
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
@@ -777,22 +696,11 @@ function incoming(self, packet)
   if(packet.js.see) inSee(self, packet);
 
   // new line creation
-  if(packet.js.open) return inOpen(self, packet);
-
-  // any NAT stuff
-  if(packet.js.nat) return inNAT(self, packet);
+  if(packet.js.type == "open") return inOpen(self, packet);
 
   // all stream level stuff is decoded here
   if(packet.js.stream) return inStream(self, packet);
 
-  // common questions
-  if(packet.q === "key") return qKey(self, packet);
-  if(packet.q === "seek") return qSeek(self, packet);
-
-  // common answers
-  if(packet.a === "key") return aKey(self, packet);
-  if(packet.a === "seek") return aSeek(self, packet);
-  
   // everything else the app can handle custom
   if(packet.from.inAny) return packet.from.inAny(self, packet);
   if(self.inAny) return self.inAny(self, packet);
@@ -852,10 +760,6 @@ function inStream(self, packet)
   {
     packet = stream.inq.shift();
     stream.inDone++;
-    delete packet.js.stream;
-    delete packet.js.seq;
-    delete packet.js.miss;
-    delete packet.js.ack;
     // sends them to the async queue that calls inStreamSeries()
     stream.q.push(packet);
   }
@@ -863,20 +767,29 @@ function inStream(self, packet)
   // start an ack timer to send an ack, will also re-send misses
   // TODO add backpressure support
   if(packet.body && !stream.ackTimeout) stream.ackTimeout = setTimeout(function(){
-    sendStream(self, stream, {js:{}}); // it'll fill in empty packet w/ ack and any misses
+    packet.stream.send({js:{}}); // it'll fill in empty packet w/ ack and any misses
   }, 200);
 }
 
 // worker on the ordered-packet-queue processing
-function inStreamSeries(self, stream, packet, callback)
+function inStreamSeries(self, packet, callback)
 {
-  if(stream.handler) return stream.handler(self, packet, callback);
-  if(packet.js.sock) return inSock(self, packet, callback);
-  if(packet.js.req || stream.proxy) return inProxy(self, packet, callback);
+  // everything from an outgoing stream has a handler
+  if(packet.stream.handler) return packet.stream.handler(self, packet, callback);
 
-  // anything leftover in a stream, pass along to app
-  if(!self.inAnyStream) return callback();
-  self.inAnyStream(null, packet, callback);
+  // only new incoming streams end up here, require a type
+  if(typeof packet.js.type != "string") {
+    warn("unknown stream packet", JSON.stringify(packet.js));
+    return callback();
+  }
+
+  if(packet.js.type === "sock") return inSock(self, packet, callback);
+  if(packet.js.type === "key") return inKey(self, packet, callback);
+  if(packet.js.type === "seek") return inSeek(self, packet, callback);
+
+  warn("unknown stream packet type", packet.js.type);
+  packet.stream.send({js:{end:true, err:"unknown type"}});
+  callback();
 }
 
 // new socket proxy request!
@@ -902,92 +815,76 @@ function inSock(self, packet, callback)
   callback();
 }
 
-function inProxy(self, packet, callback)
+// any signature must be validated and then the body decrypted+processed
+function inOpen(self, packet)
 {
-  callback(); // everything we do is async here
-
-  // handy wrapper
-  function err(msg)
-  {
-    debug("PROXY ERROR", msg);
-    packet.stream.send({end:true, res:{"s":500}}, msg.toString());
-  }
-
-  // new request
-  if(packet.js.req)
-  {
-    if(!self.proxyBase) return err("not supported");
-    if(typeof packet.js.req !== "object") return err("invalid req");
-
-    // copy in any defaults
-    var options = {};
-    Object.keys(self.proxyBase).forEach(function(key){ options[key] = self.proxyBase[key]; });
-    options.path = packet.js.req.p || "/";
-    options.method = packet.js.req.m || "GET";
-    if(typeof packet.js.req.h === "object") options.headers = packet.js.req.h;
-
-    packet.stream.proxy = http.request(options, function(res){
-      console.log("PROXY RESPONSE", options, res.statusCode);
-      var wrap = wrapStream(self, packet.stream);
-      wrap.js({req:{s:res.statusCode, h:res.headers}});
-      res.pipe(wrap);
-    });
-    packet.stream.proxy.on("error", err);
-  }
+  // decrypt the open
+  if(!packet.js.open) return warn("missing open value", packet.sender);
+  var secret = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", "utf8", ursa.RSA_PKCS1_PADDING);
+  if(!secret) return warn("couldn't decrypt open", packet.sender);
   
-  // incoming request data
-  if(packet.body) packet.stream.proxy.write(packet.body);
-
-  if(packet.js.end) packet.stream.proxy.end();
-}
-
-// any signature must be validated and then the body processed
-function inSig(self, packet)
-{
-  // decode the body as a packet so we can examine it
-  var signed = decode(packet.body);
-
-  if(!signed) return warn("invalid body attached", packet.sender);
-
-  // save out the original sig/body and update the packet
-  var sig = packet.js.sig;
-  var body = packet.body;
-  packet.js = signed.js;
-  packet.body = signed.body;
+  // decipher the body as a packet so we can examine it
+  if(!packet.body) return warn("body missing on open", packet.sender);
+  var aes = crypto.createDecipher("AES-128-CBC", secret);
+  var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
+  if(!deciphered) return warn("invalid body attached", packet.sender);
 
   // make sure any to is us (for multihosting)
-  if(packet.js.to !== self.hashname) return warn("packet for", packet.js.to, "is not us");
-  
-  if(!dhash.isSHA1(packet.js.from)) return warn("invalid from", packet.js.from);
+  if(deciphered.js.to !== self.hashname) return warn("packet for", deciphered.js.to, "is not us");
 
-  // load the sender
-  packet.from = seen(self, packet.js.from);
-  // store these but don't override ip:port until verified
-  if(!packet.from.ip) updateAddress(packet.from, packet.sender.ip, packet.sender.port);
+  // make sure it's not expired, and has a valid line
+  if(deciphered.js.x < Date.now()) return warn("open packet has expired", deciphered.js.x, packet.sender);
+  if(typeof deciphered.js.line != "string" || deciphered.js.line.length == 0) return warn("invalid line id contained");
 
-  // if this is an answer to a key request we have to process it first in order to validate the signature :)
-  if(packet.js.a === 'key') aKey(self, packet);
+  // extract attached public key
+  if(!deciphered.body) return warn("open missing attached key", packet.sender);
+  var key = deciphered.body.toString("utf8");
+  if(!PEM_REGEX.exec(key)) return warn("invalid attached key from", packet.sender);
 
-  // key requests don't need to have a verified signature
-  if(signed.js.q === 'key') qKey(self, packet);
+  // verify signature
+  var valid = crypto.createVerify("RSA-MD5").update(packet.body).verify(key, packet.js.sig, "base64");
+  if(!valid) return warn("invalid signature from:", packet.sender);
 
-  // where we handle validation if/when there's a key
-  getKey(self, packet.from.hashname, function(err, pubkey)
-  {
-    if(!pubkey) return warn("signed packet, no public key for", packet.from.address, err);
+  // verify senders hashname
+  if(deciphered.js.from !== (new dhash.Hash(key+self.network)).toString()) return warn("invalid hashname", deciphered.js.from);
 
-    // validate sig against packet.body
-    var valid = crypto.createVerify("RSA-MD5").update(body).verify(pubkey, sig, "base64");
-    if(!valid) return warn("invalid signature from:", packet.from.address);
+  // load the sender and update any ip:port/key/etc
+  var from = seen(self, deciphered.js.from);
+  debug("inOpen verified", from.hashname);
+  from.pubkey = key;
+  from.ip = packet.sender.ip;
+  from.port = packet.sender.port;
+  from.address = [from.hashname, from.ip, from.port].join(",");
+  from.recvAt = Date.now();
 
-    // make sure our values are correct/current
-    updateAddress(packet.from, packet.sender.ip, packet.sender.port);
-    packet.from.pubkey = pubkey;
+  // was an existing line already, being replaced
+  if(from.lineIn && from.lineIn !== deciphered.js.line) {
+    warn("changing lines",from);
+    from.sentOpen = false; // trigger resending them our open again
+    // delete the old one in 5 seconds in case old packets come in yet under it (unlikely)
+    var oldLine = from.lineIn;
+    setTimeout(function(){
+      delete self.lines[oldLine];
+    }, 5*1000);
+  }
 
-    // process body as a new packet with a real from
-    packet.from.recvAt = Date.now();
-    incoming(self, packet);
-  });
+  // do we need to send them an open yet?
+  if(!from.sentOpen) sendOpen(self, from);
+
+  // line is open now!
+  from.lineIn = deciphered.js.line;
+  self.lines[from.lineIn] = from;
+  from.secretIn = secret;
+
+  // could have queued packets to be sent, flush them
+  send(self, from);
+
+  // something might be waiting for a line on this hashname
+  var watch = self.watch["line "+from.hashname];
+  if(watch) watch.done(null, from);
+
+  // could have queued out-of-order packets waiting, scan them
+  queueLine(self);
 }
 
 // line packets must be decoded first
@@ -1067,67 +964,31 @@ function nearby(self, hash)
 }
 
 // return a see to anyone closer
-function inSeek(self, packet)
+function inSeek(self, packet, callback)
 {
+  callback();
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
   var answer = {js:{see:nearby(self, packet.js.seek)}};
   
-  delete packet.js.seek;
-  send(self, packet.from, answer);
+  packet.stream.send(answer);
 }
 
-// any packet can have a .see, anything might want to know
+// see might be in response to a seek, or bundled ad-hoc with any session creation
 function inSee(self, packet)
 {
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
-  
-  // to trust a .see, we just need to know who they are or that we've sent them something
-  var via = packet.from;
-  if(!via.hashname) via = seen(packet.js.from); // ephemeral responses only have a from
-  if(!packet.from.hashname && !(via.sent > 0)) return warn("incoming see from someone unknown", packet.from);
 
+  var watch = self.watch["seeking"];
+  if(watch) watch.done(null, packet);
+
+  // also track each one for the dht meshing maintenance
   packet.js.see.forEach(function(address){
     var see = seen(self, address);
-    if(see !== via) see.via = via;
-    // check if anyone is waiting for this one specifically
-    var watch = self.watch["see "+see.hashname];
-    if(watch) watch.done(null, see);
-    // TODO also check anyone watching for ones closer to recurse
+    if(see === packet.from) return; // common for a see to include the sender
+    if(!see.via) see.via = packet.from.hashname;
   });
-  delete packet.js.see;
-}
-
-// they want to open a line to us
-function inOpen(self, packet)
-{
-  // if the from isn't verified, bail
-  if(!packet.signed) return warn("unsigned open from", packet.from);
-
-  // trigger resending them our open if it's a new one from them
-  if(packet.from.openSent && packet.from.opened && packet.from.opened !== packet.js.open) packet.from.openSent = false;
-
-  // store the (new) open value for line generation
-  packet.from.opened = packet.js.open;
-  delete packet.js.open;
-
-  // may need to generate our open secret yet
-  if(!packet.from.open) addOpen(self, packet.from);
-
-  // line is the hash of the sort of the two open secrets (decrypted from open)
-  packet.from.openedSecret = ursa.coercePrivateKey(self.prikey).decrypt(packet.from.opened, "base64", "utf8", ursa.RSA_PKCS1_PADDING);
-  packet.from.line = dhash.quick([packet.from.openedSecret, packet.from.openSecret].sort().join(""));
-
-  // set up tracking/flags
-  packet.line = self.lines[packet.from.line] = packet.from;
-
-  // something might be waiting for a line on this hashname
-  var watch = self.watch["line "+packet.from.hashname];
-  if(watch) watch.done(null, packet.from);
-
-  // could have queued out-of-order packets waiting, scan them
-  queueLine(self);
 }
 
 function aKey(self, packet)
@@ -1147,8 +1008,9 @@ function aKey(self, packet)
   watch.done(null, key);
 }
 
-function qKey(self, packet)
+function inKey(self, packet, callback)
 {
+  callback();
   var hashname = packet.js.hash;
   if(!dhash.isSHA1(hashname)) return warn("invalid seek of ", hashname, "from:", packet.from);
 
@@ -1160,7 +1022,7 @@ function qKey(self, packet)
     var who = seen(self, hashname);
     if(!who.pubkey) who.pubkey = key;
 
-    send(self, packet.from, {js:{a:"key", hash:hashname}, body:key});
+    packet.stream.send({js:{a:"key", hash:hashname}, body:key});
   });
 }
 
@@ -1168,5 +1030,5 @@ function qKey(self, packet)
 exports.test = function(outgoing)
 {
   send = outgoing;
-  return {incoming:incoming, inStream:inStream, doStream:doStream, inProxy:inProxy};
+  return {incoming:incoming, inStream:inStream, doStream:doStream};
 }

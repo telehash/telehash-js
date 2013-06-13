@@ -1,15 +1,11 @@
 var tele = require("../telehash");
-var opkeys = require("./ollie.json");
-var operator = tele.hashname("testing.private", opkeys, {port:42424});
-console.log("ollie address is ", operator.address);
+var opkeys = require("./operator.json");
+var ollie = require("./ollie.json");
+var client = tele.hashname("testing.private", ollie);
+console.log("ollie address is ", client.address);
 
-Object.keys(opkeys).map(function(key){
-  var hn = tele.hash(opkeys[key]+"testing.private").toString();
-  opkeys[hn] = opkeys[key];
-});
-operator.myLookup(function(hn, callback){
-  console.log("lookup",hn)
-	if (opkeys[hn]) return callback(null, opkeys[hn]);
-	callback("not found");
-});
-operator.setOpen();
+var op = client.doSeen("842088702734e897a996f66b3f879adb38002258");
+op.ip = client.ip;
+op.port = 42424;
+op.pubkey = opkeys.public;
+client.doSend(op, {js:{foo:"bar"}});

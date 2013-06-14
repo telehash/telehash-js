@@ -73,6 +73,48 @@ exports.hashname = function(network, keys, args)
   }
   self.address = [self.hashname, self.ip, self.port].join(",");
   
+  // instead of using dns, hard-wire the operators
+  self.addOperator = function(address, key) {
+    if(!address || !key) return warn("invalid args to addOperator");
+    var op = seen(self, address);
+    op.pubkey = key;
+    op.operator = true;
+    self.operators.push(op);
+  }
+  
+  // connect 
+  self.online = function(callback){
+    if(self.opeerators.length == 0) return dnsOps(self, function(err){
+      if(err) return callback(err);
+      if(self.operators.length == 0) return callback("couldn't find any operators for "+self.network);
+      self.online(callback);
+    });
+    // try to open a line to an op
+    var on = false;
+    async.forEachSeries(self.operators, function(op, cbOps){
+      // TODO open line to an operator, then on=true and cbOps(true);
+    }, function(){
+      if(!on) return callback("couldn't reach any operators :(");
+      meshLoop(self); // start the DHT meshing maintainence
+      callback();
+    })
+  }
+
+  self.custom = function(hn, type, callback) { return doStream(self, hn, callback) };
+  self.handler = function(type, callback) { };
+  self.tunnel = function(args, callback) { return doSocket(self, args, callback) };
+  self.proxy = function(ipp, hn) { };
+  self.search = function(q, callback) { };
+  self.doSend = function(to, packet) { send(self, to, packet) };
+
+
+  return self;
+}
+
+// TODO ADD CALLBACK HANDLING
+
+function dnsOps(self, callback)
+{
   // try to resolve any dns-defined operators for this network
   dns.resolveSrv("_telehash._udp."+self.network, function(err, srvs){
     // if we didn't resolve anything, sometimes that's worth warning about
@@ -94,43 +136,6 @@ exports.hashname = function(network, keys, args)
       });
     })
   });
-
-  // set up methods (personal prefernce to do this explicitly vs. prototype pattern)
-  self.myLookup = function(callback) {
-    self.cb.lookup = callback;
-    self.operator = true;
-  };
-  self.setOpen = function() {
-    self.operator = true;
-    self.open = true;
-  };
-  self.setOperators = function(addresses) {
-    if(!Array.isArray(addresses)) return;
-    self.operators = addresses.map(function(address){
-      var op = seen(self, address);
-      op.operator = true;
-      return op.hashname;
-    });
-  };
-  self.doLine = function(hn, callback) { doLine(self, hn, callback) };
-  self.doStream = function(hn, callback) { return doStream(self, hn, callback) };
-  self.doSocket = function(args, callback) { return doSocket(self, args, callback) };
-  self.doSend = function(to, packet) { send(self, to, packet) };
-  self.doSeen = function(hn) { return seen(self, hn) };
-
-  self.setSeeds = function(addresses) {
-    // set ourselves in DHT mode
-    // line to the operators
-    // have a 55sec timer to scan all lines
-      // make bucket list
-      // .see for closer to us for set amount in each bucket
-    // have .see watcher for any new lines in empty buckets
-  }
-
-  // start the DHT meshing maintainence
-  meshLoop(self);
-
-  return self;
 }
 
 // every 25 seconds do the maintenance work for peers
@@ -490,9 +495,8 @@ function doLine(self, hashname, callback)
   if(to.ip) return good();
 
   // we don't know this hn, seek it and watch for an answer
-  keywatch(self, "see "+to.hashname, function(err, address){
+  keywatch(self, "see "+to.hashname, function(err){
     if(err) return callback(err);
-    parseAddress(address, to); // updates to this ip/port
     good();
   });
   seek(self, to.hashname);
@@ -539,46 +543,20 @@ function encode(self, to, packet)
   return Buffer.concat([len, jsbuf, packet.body]);
 }
 
-// just parse the "60518c1c11dc0452be71a7118a43ab68e3451b82,172.16.42.34,65148" format
-function parseAddress(str, hn)
-{
-  if(typeof str !== "string")
-  {
-    warn("invalid address", str);
-    return {};
-  }
-  var parts = str.split(",");
-  if(!dhash.isSHA1(parts[0]))
-  {
-    warn("invalid address hashname part", str);
-    return {};
-  }
-  var ret = hn || {}; // update existing or create new
-  ret.hashname = parts[0];
-  ret.ip = parts[1];
-  ret.port = parseInt(parts[2]);
-  ret.address = str;
-  ret.hash = new dhash.Hash(null, parts[0]);
-  return ret;
-}
-
-function updateAddress(hn, ip, port)
-{
-}
-
-// track every hashname we know about, to is result of parseAddress
+// track every hashname we know about
 function seen(self, hashname)
 {
   // validations
-  if(!hashname || typeof hashname != "string") { warn("seen called without a valid hashname", hashname); return false; }
+  if(!dhash.isSHA1(hashname)) { warn("seen called without a valid hashname", hashname); return false; }
 
   // so we can check === self
   if(hashname === self.hashname) return self;
 
   var ret = self.seen[hashname];
   if(!ret) {
-    ret = self.seen[hashname] = parseAddress(hashname);
+    ret = self.seen[hashname] = {hashname:hashname};
     ret.at = Date.now();
+    ret.hash = new dhash.Hash(null, hashname);
     bucketize(self, ret);
   }
   return ret;
@@ -598,9 +576,19 @@ function sendOpen(self, to)
   if(!to.pubkey)
   {
     if(!to.via) return warn("can't open a line to a hashname with no via", to.hashname);
-    var js = {type:"pop"};
-    js.pop = [to.hashname,to.ip,to.port].join(",");
-    getStream(self, seen(self, to.via)).send(js); // throwaway
+    Object.keys(to.via).forEach(function(hn){
+      var via = seen(self, hn);
+      if(!via.lineIn) return;
+      // send an empty packet to the target to open any NAT
+      if(self.nat) {
+        var parts = to.via[hn].split(",");
+        sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
+      }
+      // send request to the via so they can relay our pubkey to them to open to us
+      var js = {type:"pop"};
+      js.pop = [hn];
+      getStream(self, via).send(js); // throwaway      
+    });
     return;
   }
 
@@ -636,8 +624,8 @@ function send(self, to, packet)
   if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname);
   if(packet) to.outq.push(packet);
 
-  // if we don't know the IP yet, go seek it first
-  if(!to.ip) return openSeek(self, to);
+  // if we don't know how to reach them, go find them
+  if(!to.ip && !to.via) return openSeek(self, to);
 
   // if there's no line to send this on yet, try to open one
   if(!to.lineIn) return sendOpen(self, to);
@@ -690,7 +678,7 @@ function decode(buf)
 // figure out what this packet is and have some fun
 function incoming(self, packet)
 {
-  debug("INCOMING", packet.id, packet.from.address, JSON.stringify(packet.js), packet.body && packet.body.toString());
+  debug("INCOMING", packet.id, packet.from.hashname, JSON.stringify(packet.js), packet.body && packet.body.toString());
 
   // allow any packet to send a see (as a hint) and process it
   if(packet.js.see) inSee(self, packet);
@@ -705,7 +693,7 @@ function incoming(self, packet)
   if(packet.from.inAny) return packet.from.inAny(self, packet);
   if(self.inAny) return self.inAny(self, packet);
   
-  warn("unhandled packet", packet.id, packet.from.address, JSON.stringify(packet.js));
+  warn("unhandled packet", packet.id, packet.from.hashname, JSON.stringify(packet.js));
 }
 
 function inStream(self, packet)
@@ -859,13 +847,9 @@ function inOpen(self, packet)
 
   // was an existing line already, being replaced
   if(from.lineIn && from.lineIn !== deciphered.js.line) {
-    warn("changing lines",from);
+    debug("changing lines",from);
     from.sentOpen = false; // trigger resending them our open again
-    // delete the old one in 5 seconds in case old packets come in yet under it (unlikely)
-    var oldLine = from.lineIn;
-    setTimeout(function(){
-      delete self.lines[oldLine];
-    }, 5*1000);
+    delete self.lines[oldLine]; // delete the old one
   }
 
   // do we need to send them an open yet?
@@ -933,13 +917,13 @@ function inPop(self, packet)
   if(!Array.isArray(packet.js.pop) || packet.js.pop.length == 0) return warn("invalid pop of", packet.js.pop, "from", packet.from);
   if(!dhash.isSHA1(packet.js.from)) return warn("invalid pop from of", packet.js.from, "from", packet.from);
 
-  packet.js.pop.forEach(function(address){
-    var pop = seen(self, address);
-    if(!pop.line) return warn("pop requested for", address, "but no line, from", packet.from);
-    var popping = {js:{popping:[packet.js.from, packet.from.ip, packet.from.port].join(',')}};
+  packet.js.pop.forEach(function(hn){
+    var pop = seen(self, hn);
+    if(!pop.line) return warn("pop requested for", hn, "but no line, from", packet.from);
+    // XXX TODO IN STREAM + PUB KEY
+    var popping = {js:{popping:packet.from.address}};
     send(self, pop, popping);
   });
-  delete packet.js.pop;
 }
 
 // return array of nearby addresses (for .see)
@@ -985,9 +969,13 @@ function inSee(self, packet)
 
   // also track each one for the dht meshing maintenance
   packet.js.see.forEach(function(address){
-    var see = seen(self, address);
+    var parts = address.split(",");
+    var see = seen(self, parts[0]);
     if(see === packet.from) return; // common for a see to include the sender
-    if(!see.via) see.via = packet.from.hashname;
+    // store who told us about this hashname and what they said their address is
+    if(!see.via) see.via = {};
+    if(see.via[packet.from.hashname]) return;
+    see.via[packet.from.hashname] = address;
   });
 }
 
@@ -995,15 +983,15 @@ function aKey(self, packet)
 {
   var hashname = packet.js.hash;
   var watch = self.watch["key "+hashname+packet.from.hashname];
-  if(!watch) return warn("unknown key", hashname, "from", packet.from.address);
+  if(!watch) return warn("unknown key", hashname, "from", packet.from.hashname);
 
   // some sanity checks
-  if(!packet.body) return warn("missing key body from", packet.from.address);
+  if(!packet.body) return warn("missing key body from", packet.from.hashname);
   var key = packet.body.toString("utf8");
-  if(!PEM_REGEX.exec(key)) return warn("invalid key from", packet.from.address);
+  if(!PEM_REGEX.exec(key)) return warn("invalid key from", packet.from.hashname);
 
   // have a key, validate it's for this hashname!
-  if(hashname !== dhash.quick(key+self.network)) return warn("key+network hashname mismatch", hashname, "from", packet.from.address);
+  if(hashname !== dhash.quick(key+self.network)) return warn("key+network hashname mismatch", hashname, "from", packet.from.hashname);
   seen(self, hashname).pubkey = key; // save all public keys we get back
   watch.done(null, key);
 }

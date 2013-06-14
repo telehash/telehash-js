@@ -27,7 +27,7 @@ exports.hashname = function(network, keys, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {network:network, cb:{}, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
+  var self = {network:network, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
   // parse/validate the private key
   self.prikey = keys.private;
   self.pubkey = keys.public;
@@ -401,31 +401,6 @@ function askKey(self, to, key, callback)
   getStream(self, to).send({js:{type:"key", key:key}});
 }
 
-// async fetch the key however possible
-function getKey(self, hashname, callback)
-{
-  // moi?
-  if(self.hashname === hashname) return callback(null, self.pubkey);
-  
-  // already known
-  var who = seen(self, hashname);
-  if(who.pubkey) return callback(null, who.pubkey);
-
-  // multiple things may be wanting the key, create a watch
-  var watch = keywatch(self, "getkey "+hashname, callback, 10*1000);
-  if(watch.callbacks.length > 1) return;
-
-  // if we know an ip for this hashname, just ask them!
-  if(who.ip)
-   return sendWho(self, who, hashname, watch.done);
-
-  // if we have a lookup function, use that
-  if(self.cb.lookup) return self.cb.lookup(hashname, watch.done);
-  
-  // resort to asking the operator
-  doVerify(self, hashname, watch.done);
-}
-
 // scan through the queue of packets with an unknown line, and optionally add one
 function queueLine(self, packet)
 {
@@ -584,7 +559,6 @@ function sendOpen(self, to)
         var parts = to.via[hn].split(",");
         sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
       }
-      // send request to the via so they can relay our pubkey to them to open to us
       var js = {type:"pop"};
       js.pop = [hn];
       getStream(self, via).send(js); // throwaway      
@@ -887,28 +861,16 @@ function inLine(self, packet){
   incoming(self, packet);
 }
 
-// NAT is open
-function inPopped(self, packet)
-{
-  delete packet.js.popped;
-  var popped = seen(self, packet.js.from);
-  if(!popped.popping) return warn("popped when not popping from", packet.from);
-  
-  // make sure we use the ip/port we received from (could be different)
-  popped.ip = packet.from.ip;
-  popped.port = packet.from.port;
-  
-  // resend the first packet, this clears .popping too
-  send(self, popped, popped.popping);
-}
-
-// someone's trying to connect to us
+// someone's trying to connect to us, send an open to them
 function inPopping(self, packet)
 {
   var to = seen(self, packet.js.popping);
-  delete packet.js.popping;
-  if((Date.now() - to.sentAt) < 60*1000) return; // we already sent them something recently
-  send(self, to, {js:{popped:true}});
+  // only do this once, prevent abuse
+  if(to.openSent) return warn("redundant popping from",packet.from.hashname,"for",to.hashname);
+  // verify destination hashname+key
+  if(to.hashname !== (new dhash.Hash(packet.body.toString()+self.network)).toString()) return warn("invalid popping from", packet.from.hashname);
+  to.pubkey = packet.body.toString();
+  sendOpen(self, to);
 }
 
 // be the middleman to help NAT hole punch
@@ -920,9 +882,7 @@ function inPop(self, packet)
   packet.js.pop.forEach(function(hn){
     var pop = seen(self, hn);
     if(!pop.line) return warn("pop requested for", hn, "but no line, from", packet.from);
-    // XXX TODO IN STREAM + PUB KEY
-    var popping = {js:{popping:packet.from.address}};
-    send(self, pop, popping);
+    getStream(self, pop).send({type:"popping", popping:packet.from.address}, pop.pubkey);
   });
 }
 
@@ -959,15 +919,12 @@ function inSeek(self, packet, callback)
   packet.stream.send(answer);
 }
 
-// see might be in response to a seek, or bundled ad-hoc with any session creation
+// see might be in response to a seek, or bundled ad-hoc anytime
 function inSee(self, packet)
 {
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
 
-  var watch = self.watch["seeking"];
-  if(watch) watch.done(null, packet);
-
-  // also track each one for the dht meshing maintenance
+  // track each one for the via and dht meshing maintenance
   packet.js.see.forEach(function(address){
     var parts = address.split(",");
     var see = seen(self, parts[0]);
@@ -977,41 +934,7 @@ function inSee(self, packet)
     if(see.via[packet.from.hashname]) return;
     see.via[packet.from.hashname] = address;
   });
-}
 
-function aKey(self, packet)
-{
-  var hashname = packet.js.hash;
-  var watch = self.watch["key "+hashname+packet.from.hashname];
-  if(!watch) return warn("unknown key", hashname, "from", packet.from.hashname);
-
-  // some sanity checks
-  if(!packet.body) return warn("missing key body from", packet.from.hashname);
-  var key = packet.body.toString("utf8");
-  if(!PEM_REGEX.exec(key)) return warn("invalid key from", packet.from.hashname);
-
-  // have a key, validate it's for this hashname!
-  if(hashname !== dhash.quick(key+self.network)) return warn("key+network hashname mismatch", hashname, "from", packet.from.hashname);
-  seen(self, hashname).pubkey = key; // save all public keys we get back
-  watch.done(null, key);
-}
-
-function inKey(self, packet, callback)
-{
-  callback();
-  var hashname = packet.js.hash;
-  if(!dhash.isSHA1(hashname)) return warn("invalid seek of ", hashname, "from:", packet.from);
-
-  getKey(self, hashname, function(err, key)
-  {
-    if(err || typeof key !== "string") return warn("key lookup fail for", hashname, err);
-
-    // if we haven't cached it yet, do that
-    var who = seen(self, hashname);
-    if(!who.pubkey) who.pubkey = key;
-
-    packet.stream.send({js:{a:"key", hash:hashname}, body:key});
-  });
 }
 
 // simple test rigging to replace builtins

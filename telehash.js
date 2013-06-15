@@ -27,7 +27,7 @@ exports.hashname = function(network, keys, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {network:network, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[]};
+  var self = {network:network, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[], customs:{}, allowed:{}};
   // parse/validate the private key
   self.prikey = keys.private;
   self.pubkey = keys.public;
@@ -100,13 +100,29 @@ exports.hashname = function(network, keys, args)
     })
   }
 
-  self.custom = function(hn, type, callback) { return doStream(self, hn, callback) };
-  self.handler = function(type, callback) { };
-  self.tunnel = function(args, callback) { return doSocket(self, args, callback) };
-  self.proxy = function(ipp, hn) { };
-  self.search = function(q, callback) { };
-  self.doSend = function(to, packet) { send(self, to, packet) };
+  // create your own custom streams
+  self.custom = function(hn, handler) {return addStream(self, seen(self, hn), handler); };
 
+  // handle new streams coming in
+  self.handler = function(type, callback) {
+    if(typeof type != "string") return warn("bad arg given for handler, needs string and is", typeof type);
+    self.customs[type] = callback;
+  };
+
+  // create a socket tunnel
+  self.tunnel = function(args, callback) { return doSocket(self, args, callback) };
+
+  // set up which socket destinations we can proxy
+  self.proxy = function(ip, port, hn) {
+    if(ip && port && hn) self.allowed[ip+port+hn] = true;
+    if(ip && port && !hn) self.allowed[ip+port] = true;
+    if(ip && !port && !hn) self.allowed[ip] = true;
+    if(ip && !port && hn) self.allowed[ip+hn] = true;
+    if(!ip && !port && hn) self.allowed[hn] = true;
+  };
+
+  // go look for hashnames matching a search query via the DHT
+  self.search = function(q, callback) { };
 
   return self;
 }
@@ -239,7 +255,7 @@ function doSocket(self, args, callback)
     if(err) return callback("line failed");
     var server = net.createServer(function(client) {
       console.log('server connected');
-      var stream = getStream(self, seen(self, args.hashname));
+      var stream = addStream(self, seen(self, args.hashname));
       var tunnel = wrapStream(self, stream);
       client.pipe(tunnel).pipe(client);
       // send sock open now
@@ -247,14 +263,6 @@ function doSocket(self, args, callback)
     });
     server.listen(args.listen, callback);
   });
-}
-
-// creates a new stream to the given hashname
-function doStream(self, hashname, callback)
-{
-  var stream = getStream(self, seen(self, hashname));
-  stream.handler = function(self, packet, cbHandler) { callback(null, packet, cbHandler); }
-  return stream;
 }
 
 // use node's stream api wrapper
@@ -341,24 +349,24 @@ function wrapStream(self, stream, cbExtra)
   return duplex;  
 }
 
-function getStream(self, to, id)
+function addStream(self, to, handler, id)
 {
-  if(!to.streams) to.streams = {};
-  if(id && to.streams[id]) return to.streams[id];
-
-  // new stream
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = id || dhash.quick();
+  to.streams[stream.id] = stream;
   stream.to = to;
+
   // how we process things in order
   stream.q = async.queue(function(packet, cbQ){
     inStreamSeries(self, packet, cbQ);
   }, 1);
 
-  // handy utils, send just one anytime explicitly
+  // as a convenience, as soon as we send out a stream, ensure there's at least a dummy handler
+  if(handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
+
+  // handy util, send just one anytime explicitly
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
 
-  to.streams[stream.id] = stream;
   return stream;
 }
 
@@ -382,6 +390,7 @@ function sendStream(self, stream, packet)
   stream.outConfirmed = stream.inSeq;
   stream.inDups = 0;
   stream.outq.push(packet);
+  stream.ended = packet.js.end;
   
   // any ack timer gets cancelled
   if(stream.ackTimeout)
@@ -391,14 +400,6 @@ function sendStream(self, stream, packet)
   }
 
   send(self, stream.to, packet);
-}
-
-function askKey(self, to, key, callback)
-{
-  var watch = watcher(self, "askKey "+who+to.hashname, REQUEST_TIMEOUT, callback);
-  if(watch.callbacks.length > 1) return; // someone sent one here already
-
-  getStream(self, to).send({js:{type:"key", key:key}});
 }
 
 // scan through the queue of packets with an unknown line, and optionally add one
@@ -419,62 +420,31 @@ function queueLine(self, packet)
   });
 }
 
+// XXX finish seek!
 
 // ask open lines for an address
 function seek(self, hash)
 {
   // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
-  var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3);
+  var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3).map(function(id){ return self.lines[id].hashname });
 
   // ask them all
-  ask.forEach(function(line){
-    send(self, self.lines[line], {js:{seek:hash}});
+  var dest = new dhash.Hash(null, hash);
+  var closest = self;
+  ask.forEach(function seeker(hn){
+    addStream(self, seen(self, hn), function(self, packet, callback){
+      if(!Array.isArray(packet.js.see)) return;
+      packet.js.see.forEach(function(address){
+        var parts = address.split(",");
+        if(!dhash.isSHA1(parts[0])) return;
+        var targ = seen(self, parts[0]);
+        if(targ.hash.distanceTo(dest) > closest.hash.distanceTo(dest)) return;
+        closest = targ;
+        // recurse
+        seeker(closest.hashname);
+      });
+    }).send({type:"seek",seek:hash});
   });
-}
-
-// open a line to this hashname, may need to see and who it both
-function doLine(self, hashname, callback)
-{
-  var to = seen(self, hashname);
-
-  // this only happens when opening a transient line (meshing)
-  if(!callback)
-  {
-    callback = function(){};
-  }else{
-    to.forApp = true;
-  }
-
-  // might have it already
-  if(to.line) return callback();
-
-  function good(){
-    if(to.line) return callback();
-
-    getKey(self, to.hashname, function(err, key){
-      if(err) return callback();
-      if(!to.pubkey) to.pubkey = key;
-      if(to.line) return callback();
-
-      // only callback when they've responded
-      keywatch(self, "line "+to.hashname, callback);
-
-      // this is a ping to trigger a response
-      var packet = {js:{seek:to.hashname}};
-      addLine(self, to, packet);
-      send(self, to, packet);
-    });
-  }
-
-  // any we already have an ip
-  if(to.ip) return good();
-
-  // we don't know this hn, seek it and watch for an answer
-  keywatch(self, "see "+to.hashname, function(err){
-    if(err) return callback(err);
-    good();
-  });
-  seek(self, to.hashname);
 }
 
 // an internal "lock" function, so that many things can wait for one trigger and have a timeout
@@ -529,7 +499,7 @@ function seen(self, hashname)
 
   var ret = self.seen[hashname];
   if(!ret) {
-    ret = self.seen[hashname] = {hashname:hashname};
+    ret = self.seen[hashname] = {hashname:hashname, streams:{}};
     ret.at = Date.now();
     ret.hash = new dhash.Hash(null, hashname);
     bucketize(self, ret);
@@ -561,7 +531,7 @@ function sendOpen(self, to)
       }
       var js = {type:"pop"};
       js.pop = [hn];
-      getStream(self, via).send(js); // throwaway      
+      addStream(self, via).send(js);
     });
     return;
   }
@@ -649,31 +619,11 @@ function decode(buf)
   return packet;
 }
 
-// figure out what this packet is and have some fun
-function incoming(self, packet)
-{
-  debug("INCOMING", packet.id, packet.from.hashname, JSON.stringify(packet.js), packet.body && packet.body.toString());
-
-  // allow any packet to send a see (as a hint) and process it
-  if(packet.js.see) inSee(self, packet);
-
-  // new line creation
-  if(packet.js.type == "open") return inOpen(self, packet);
-
-  // all stream level stuff is decoded here
-  if(packet.js.stream) return inStream(self, packet);
-
-  // everything else the app can handle custom
-  if(packet.from.inAny) return packet.from.inAny(self, packet);
-  if(self.inAny) return self.inAny(self, packet);
-  
-  warn("unhandled packet", packet.id, packet.from.hashname, JSON.stringify(packet.js));
-}
-
 function inStream(self, packet)
 {
   if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from);
-  var stream = getStream(self, packet.from, packet.js.stream);
+
+  var stream = (packet.from.streams[packet.js.stream]) ? packet.from.streams[packet.js.stream] : addStream(self, packet.from, false, packet.js.stream);
 
   packet.js.seq = parseInt(packet.js.seq);
   if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
@@ -736,6 +686,9 @@ function inStream(self, packet)
 // worker on the ordered-packet-queue processing
 function inStreamSeries(self, packet, callback)
 {
+  // allow any packet to send a see (as a hint) and process it
+  if(packet.js.see) inSee(self, packet);
+
   // everything from an outgoing stream has a handler
   if(packet.stream.handler) return packet.stream.handler(self, packet, callback);
 
@@ -745,27 +698,36 @@ function inStreamSeries(self, packet, callback)
     return callback();
   }
 
-  if(packet.js.type === "sock") return inSock(self, packet, callback);
-  if(packet.js.type === "key") return inKey(self, packet, callback);
-  if(packet.js.type === "seek") return inSeek(self, packet, callback);
+  // branch out based on what type of stream it is
+  if(packet.js.type === "sock") inSock(self, packet);
+  else if(packet.js.type === "pop") inPop(self, packet);
+  else if(packet.js.type === "popping") inPopping(self, packet);
+  else if(packet.js.type === "seek") inSeek(self, packet);
+  else if(self.customs[packet.js.type]) inCustom(self, packet);
+  else {
+    warn("unknown stream packet type", packet.js.type);
+    packet.stream.send({js:{end:true, err:"unknown type"}});
+  }
 
-  warn("unknown stream packet type", packet.js.type);
-  packet.stream.send({js:{end:true, err:"unknown type"}});
+  // if nobody is handling or has replied, automatically end it
+  if(!packet.stream.handler && !packet.stream.ended) packet.stream.send({end:true});
+
   callback();
 }
 
 // new socket proxy request!
-function inSock(self, packet, callback)
+function inSock(self, packet)
 {
-  // TODO see if the requested ip:port is whitelisted
   var parts = packet.js.sock.split(":");
   var ip = parts[0];
   var port = parseInt(parts[1]);
-  if(!(port > 0 && port < 65536))
-  {
-    packet.stream.send({end:true, err:"invalid address"});
-    return callback();
-  }
+  if(!(port > 0 && port < 65536)) return packet.stream.send({end:true, err:"invalid address"});
+  
+  // make sure the destination is allowed
+  var hn = packet.from.hashname;
+  var ok=false;
+  [ip, ip+port, ip+port+hn, ip+hn, hn].forEach(function(match){ if(self.allowed[match]) ok=true; });
+  if(!ok) return packet.stream.send({end:true, err:"denied"});
 
   // wrap it w/ a node stream
   var client = net.connect({host:ip, port:port});
@@ -774,7 +736,6 @@ function inSock(self, packet, callback)
   client.on('error', function(err){
     packet.stream.errMsg = err.toString();
   });
-  callback();
 }
 
 // any signature must be validated and then the body decrypted+processed
@@ -854,11 +815,14 @@ function inLine(self, packet){
 
   // a matching line is required to decode the packet
   packet.line.recvAt = Date.now();
-  var aes = crypto.createDecipher("AES-128-CBC", packet.line.openSecret);
+  var aes = crypto.createDecipher("AES-128-CBC", packet.line.secretIn);
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
+  if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;
   packet.body = deciphered.body;
-  incoming(self, packet);
+  
+  // now let the stream processing happen
+  inStream(self, packet);
 }
 
 // someone's trying to connect to us, send an open to them
@@ -882,7 +846,7 @@ function inPop(self, packet)
   packet.js.pop.forEach(function(hn){
     var pop = seen(self, hn);
     if(!pop.line) return warn("pop requested for", hn, "but no line, from", packet.from);
-    getStream(self, pop).send({type:"popping", popping:packet.from.address}, pop.pubkey);
+    addStream(self, pop).send({type:"popping", popping:packet.from.address}, pop.pubkey);
   });
 }
 
@@ -908,14 +872,12 @@ function nearby(self, hash)
 }
 
 // return a see to anyone closer
-function inSeek(self, packet, callback)
+function inSeek(self, packet)
 {
-  callback();
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
-  var answer = {js:{see:nearby(self, packet.js.seek)}};
-  
+  var answer = {js:{see:nearby(self, packet.js.seek), end:true}};  
   packet.stream.send(answer);
 }
 

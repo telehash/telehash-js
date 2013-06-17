@@ -420,24 +420,40 @@ function queueLine(self, packet)
   });
 }
 
-// XXX finish seek!
-
 // ask open lines for an address
-function seek(self, hash)
+function seek(self, hash, callback)
 {
   // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
   var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3).map(function(id){ return self.lines[id].hashname });
 
-  // ask them all
   var dest = new dhash.Hash(null, hash);
   var closest = self;
+  var found = {};
+  var routes = {};
+  var fin = false;
+  function done(){
+    if(fin) return; // prevent multiple returns
+    fin = true;
+    callback(Object.keys(found).sort(), Object.keys(routes).sort());
+  }
+
+  // TODO goal it to start three threads that will always ask the next closest one, until there are no more.
+  // ask them all
   ask.forEach(function seeker(hn){
     addStream(self, seen(self, hn), function(self, packet, callback){
-      if(!Array.isArray(packet.js.see)) return;
-      packet.js.see.forEach(function(address){
+      // we keep track of all routes
+      if(Array.isArray(packet.js.routes)) packet.js.routes.forEach(function(address){
+        var parts = address.split(",");
+        if(!dhash.isSHA1(parts[0])) return;
+        routes[parts[0]] = true;
+      });
+      // any see's, if close, recurse
+      if(Array.isArray(packet.js.see)) packet.js.see.forEach(function(address){
         var parts = address.split(",");
         if(!dhash.isSHA1(parts[0])) return;
         var targ = seen(self, parts[0]);
+        found[targ.hashname] = true;
+        if(targ.hashname == hash) return done();
         if(targ.hash.distanceTo(dest) > closest.hash.distanceTo(dest)) return;
         closest = targ;
         // recurse
@@ -887,16 +903,18 @@ function inSee(self, packet)
   if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
 
   // track each one for the via and dht meshing maintenance
-  packet.js.see.forEach(function(address){
+  function via(address){
     var parts = address.split(",");
-    var see = seen(self, parts[0]);
-    if(see === packet.from) return; // common for a see to include the sender
+    var hn = seen(self, parts[0]);
+    if(hn === packet.from) return; // common for a see to include the sender
     // store who told us about this hashname and what they said their address is
-    if(!see.via) see.via = {};
-    if(see.via[packet.from.hashname]) return;
-    see.via[packet.from.hashname] = address;
-  });
+    if(!hn.via) see.via = {};
+    if(hn.via[packet.from.hashname]) return;
+    hn.via[packet.from.hashname] = address; // TODO handle multiple addresses per hn (ipv4+ipv6)
+  };
 
+  if(Array.isArray(packet.js.see)) packet.js.see.forEach(via);
+  if(Array.isArray(packet.js.routes)) packet.js.routes.forEach(via);
 }
 
 // simple test rigging to replace builtins

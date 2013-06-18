@@ -420,75 +420,46 @@ function queueLine(self, packet)
   });
 }
 
-// ask open lines for an address
-function seek(self, hash, callback)
+// ask open lines for a hashname, recurse through the DHT looking for it
+function openSeek(self, to)
 {
-  // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
-  var ask = Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3).map(function(id){ return self.lines[id].hashname });
+  if(to === self) return; // safety
 
-  var dest = new dhash.Hash(null, hash);
-  var closest = self;
-  var found = {};
-  var routes = {};
-  var fin = false;
-  function done(){
-    if(fin) return; // prevent multiple returns
-    fin = true;
-    callback(Object.keys(found).sort(), Object.keys(routes).sort());
-  }
-
-  // TODO goal it to start three threads that will always ask the next closest one, until there are no more.
-  // ask them all
-  ask.forEach(function seeker(hn){
+  // queue of concurrency 3, any that are closer than the closest are unshifted, any closer than the request are pushed
+  var asked = {};
+  var q = async.queue(function(hn, cbQ){
+    if(asked[hn]) return cbQ(); // someone else already asked
+    if(to.via) return cbQ(); // already found!
+    asked[hn] = true;
     addStream(self, seen(self, hn), function(self, packet, callback){
-      // we keep track of all routes
-      if(Array.isArray(packet.js.routes)) packet.js.routes.forEach(function(address){
+      callback();
+      if(!Array.isArray(packet.js.see)) return cbQ();
+      if(to.via) return cbQ();
+      // any see's, if close, add to the queue, otherwise we might be done!
+      packet.js.see.forEach(function(address){
         var parts = address.split(",");
         if(!dhash.isSHA1(parts[0])) return;
-        routes[parts[0]] = true;
+        var see = seen(self, parts[0]);
+        if(asked[see.hashname]) return;
+        // if it's further than the closest yet, just add to the end of the queue
+        if(see.hash.distanceTo(to.hash) > closest.hash.distanceTo(to.hash)) return q.push(see.hashname);
+        // if it's a new closer one, put at the top of the list!
+        closest = see;
+        q.unshift(see.hashname);
       });
-      // any see's, if close, recurse
-      if(Array.isArray(packet.js.see)) packet.js.see.forEach(function(address){
-        var parts = address.split(",");
-        if(!dhash.isSHA1(parts[0])) return;
-        var targ = seen(self, parts[0]);
-        found[targ.hashname] = true;
-        if(targ.hashname == hash) return done();
-        if(targ.hash.distanceTo(dest) > closest.hash.distanceTo(dest)) return;
-        closest = targ;
-        // recurse
-        seeker(closest.hashname);
-      });
-    }).send({type:"seek",seek:hash});
+      cbQ();
+    }).send({type:"seek",seek:to.hashname});
+  }, 3);
+  
+  // when all done, if we found the hashname, trigger the open!
+  q.drain = function(){
+    if(to.via) send(self, to);
+  };
+
+  // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
+  Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3).map(function(id){
+    q.push(self.lines[id].hashname);
   });
-}
-
-// an internal "lock" function, so that many things can wait for one trigger and have a timeout
-function watcher(self, key, timeout, callback)
-{
-  var watch = self.watch[key];
-
-  // if a watch is running, just add this to the callback list
-  if(watch) {
-    watch.callbacks.push(callback);
-    return watch;
-  }
-
-  // start a new watch
-  var timer = timeout && setTimeout(function(){done("timeout")}, timeout);
-  function done()
-  {
-    if(!timer) return; // re-entered by accident if answer came after timeout
-    clearTimeout(timer);
-    timer = false;
-    var args = arguments;
-    delete self.watch[key];
-    watch.callbacks.forEach(function(cb){ cb.call(args); });
-  }
-
-  var watch = self.watch[key] = {done:done, callbacks:[]};
-  watch.callbacks.push(callback);
-  return watch;
 }
 
 // create a wire writeable buffer from a packet
@@ -521,14 +492,6 @@ function seen(self, hashname)
     bucketize(self, ret);
   }
   return ret;
-}
-
-function openSeek(self, to)
-{
-  debug("openSeek", to.hashname);
-  // use watcher
-  // perform seek
-  // on finding the to.hashname's ip/port, call send()
 }
 
 function sendOpen(self, to)
@@ -914,7 +877,6 @@ function inSee(self, packet)
   };
 
   if(Array.isArray(packet.js.see)) packet.js.see.forEach(via);
-  if(Array.isArray(packet.js.routes)) packet.js.routes.forEach(via);
 }
 
 // simple test rigging to replace builtins

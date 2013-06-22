@@ -5,11 +5,9 @@ var opkeys = require("./operator.json"); // loads the keypair
 var operator = tele.hashname("testing.private", opkeys, {port:42424});
 console.log("operator address is ", operator.address);
 
-// operators need to resolve other keys in the same space, so provide a callback to do that for our client.json
-// this is typically done via a key-value store or other means dynamically, here we only have one
-var ckeys = require("./client.json");
-var chashname = tele.hash(ckeys.publicKey+"testing.private").toString();
-operator.myLookup(function(hashname, callback){
-	if (hashname === chashname) return callback(null, ckeys.publicKey);
-	callback("not found");
+// custom stream
+operator.listen("42", function(operator, packet, callback){
+  console.log("got a 42 from", packet.from.address);
+  packet.stream.send({"universe":true, end:true});
+  callback();
 });

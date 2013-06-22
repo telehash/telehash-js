@@ -45,6 +45,7 @@ exports.hashname = function(network, keys, args)
     packet.sender = {ip:rinfo.address, port:rinfo.port};
     packet.id = counter++;
     packet.at = Date.now();
+    console.log("in",packet.sender.ip+":"+packet.sender.port, packet.js.type, packet.body.length);
 
     // either it's an open
     if(packet.js.type == "open") return inOpen(self, packet);
@@ -74,37 +75,25 @@ exports.hashname = function(network, keys, args)
   self.address = [self.hashname, self.ip, self.port].join(",");
   
   // instead of using dns, hard-wire the operators
-  self.addOperator = function(address, key) {
-    if(!address || !key) return warn("invalid args to addOperator");
-    var op = seen(self, address);
+  self.addOperator = function(ip, port, key) {
+    if(!ip || !port || !key) return warn("invalid args to addOperator");
+    var hashname = (new dhash.Hash(key+self.network)).toString();
+    var op = seen(self, hashname);
     op.pubkey = key;
+    op.ip = ip;
+    op.port = port;
     op.operator = true;
     self.operators.push(op);
   }
   
-  // connect 
-  self.online = function(callback){
-    if(self.opeerators.length == 0) return dnsOps(self, function(err){
-      if(err) return callback(err);
-      if(self.operators.length == 0) return callback("couldn't find any operators for "+self.network);
-      self.online(callback);
-    });
-    // try to open a line to an op
-    var on = false;
-    async.forEachSeries(self.operators, function(op, cbOps){
-      // TODO open line to an operator, then on=true and cbOps(true);
-    }, function(){
-      if(!on) return callback("couldn't reach any operators :(");
-      meshLoop(self); // start the DHT meshing maintainence
-      callback();
-    })
-  }
+  // connect to an operator
+  self.online = function(callback) { online(self, callback); };
 
   // create your own custom streams
-  self.custom = function(hn, handler) {return addStream(self, seen(self, hn), handler); };
+  self.stream = function(hn, handler) {return addStream(self, seen(self, hn), handler); };
 
   // handle new streams coming in
-  self.handler = function(type, callback) {
+  self.listen = function(type, callback) {
     if(typeof type != "string") return warn("bad arg given for handler, needs string and is", typeof type);
     self.customs[type] = callback;
   };
@@ -112,45 +101,57 @@ exports.hashname = function(network, keys, args)
   // create a socket tunnel
   self.tunnel = function(args, callback) { return doSocket(self, args, callback) };
 
-  // set up which socket destinations we can proxy
-  self.proxy = function(ip, port, hn) {
-    if(ip && port && hn) self.allowed[ip+port+hn] = true;
-    if(ip && port && !hn) self.allowed[ip+port] = true;
-    if(ip && !port && !hn) self.allowed[ip] = true;
-    if(ip && !port && hn) self.allowed[ip+hn] = true;
-    if(!ip && !port && hn) self.allowed[hn] = true;
-  };
-
-  // go look for hashnames matching a search query via the DHT
-  self.search = function(q, callback) { };
+  // have a callback to determine if a socket proxy request can pass through, fn(ip, port, hn) returns true/false
+  self.proxyCheck = function(){ return false; };
+  self.proxy = function(check) { self.proxyCheck = check };
 
   return self;
 }
 
-// TODO ADD CALLBACK HANDLING
+// start/return online status
+function online(self, callback)
+{
+  if(Object.keys(self.lines).length > 0) return callback();
+  if(self.operators.length == 0) return dnsOps(self, function(err){
+    if(err) return callback(err);
+    if(self.operators.length == 0) return callback("couldn't find any operators for "+self.network);
+    online(self, callback);
+  });
+  // try to open a line to an op
+  async.forEachSeries(self.operators, function(op, cbOps){
+    addStream(self, op, function(self, packet, callback){
+      callback();
+      delete packet.stream.handler; // so we don't get called again
+      if(Array.isArray(packet.js.see)) return cbOps(true);
+      cbOps();
+    }).send({type:"seek", seek:self.hashname});
+  }, function(on){
+    if(!on) return callback("couldn't reach any operators :(");
+    meshLoop(self); // start the DHT meshing maintainence
+    callback();
+  })
 
+}
+
+// try to resolve any dns-defined operators for this network, use SRV to get the hashnames+ports, A for IP, TXT for pubkey
 function dnsOps(self, callback)
 {
-  // try to resolve any dns-defined operators for this network
   dns.resolveSrv("_telehash._udp."+self.network, function(err, srvs){
-    // if we didn't resolve anything, sometimes that's worth warning about
-    if(err){
-      if(!self.operator && self.operators.length === 0) warn("no operators found, couldn't resolve network", self.network, err.toString());
-      return;
-    }
-    srvs.forEach(function(srv){
+    if(err) return callback(err);
+    async.forEach(srvs, function(srv, cbSrv){
       var hashname = srv.name.split(".")[0];
-      if(!dhash.isSHA1(hashname)) return warn("invalid operator address, not a hashname", srv);
+      if(!dhash.isSHA1(hashname)) return cbSrv();
       dns.resolve4(srv.name, function(err, ips){
-        if(err) return warn("couldn't resolve operator", srv.name);
-        ips.forEach(function(ip){
-          var address = [hashname, ip, srv.port].join(",");
-          seen(self, address).operator = true;
-          debug("adding srv operator", address);
-          self.operators.push(address);
+        if(err || ips.length == 0) return cbSrv();
+        dns.resolveTxt(srv.name, function(err, txts){
+          if(err || txts.length == 0) return cbSrv();
+          // verify hashname to key
+          if(hashname !== (new dhash.Hash(txts[0]+self.network)).toString()) return cbSrv();
+          self.addOperator(ips[0], srv.port, txts[0]);
+          cbSrv();
         });
       });
-    })
+    }, callback);
   });
 }
 
@@ -242,7 +243,14 @@ function meshPing(self)
     // approx no more than once a minute
     if(Date.now() - hn.sentAt < 45*1000) return;
     // seek ourself to discover any new hashnames closer to us for the buckets
-    send(self, hn, {js:{seek:self.hashname, see:nearby(self, hn.hashname)}});
+    addStream(self, hn, function(self, packet, callback){
+      callback();
+      if(!Array.isArray(packet.js.see)) return;
+      // store who told us about this hashname and what they said their address is
+      packet.js.see.forEach(function(address){
+        addVia(self, hn, address);        
+      });
+    }).send({type:"seek", seek:self.hashname});
   });
 }
 
@@ -420,6 +428,16 @@ function queueLine(self, packet)
   });
 }
 
+// happens whenever we're processing a .see response in different contexts
+function addVia(self, from, address)
+{
+  var see = seen(self, address);
+  if(!see) return;
+  if(!see.via) see.via = {};
+  if(see.via[from.hashname]) return;
+  see.via[from.hashname] = address; // TODO handle multiple addresses per hn (ipv4+ipv6)
+}
+
 // ask open lines for a hashname, recurse through the DHT looking for it
 function openSeek(self, to)
 {
@@ -427,25 +445,26 @@ function openSeek(self, to)
 
   // queue of concurrency 3, any that are closer than the closest are unshifted, any closer than the request are pushed
   var asked = {};
+  var closest = self;
   var q = async.queue(function(hn, cbQ){
-    if(asked[hn]) return cbQ(); // someone else already asked
     if(to.via) return cbQ(); // already found!
-    asked[hn] = true;
-    addStream(self, seen(self, hn), function(self, packet, callback){
+    if(asked[hn.hashname]) return cbQ(); // someone else already asked
+    asked[hn.hashname] = true;
+    addStream(self, hn, function(self, packet, callback){
       callback();
       if(!Array.isArray(packet.js.see)) return cbQ();
       if(to.via) return cbQ();
       // any see's, if close, add to the queue, otherwise we might be done!
       packet.js.see.forEach(function(address){
-        var parts = address.split(",");
-        if(!dhash.isSHA1(parts[0])) return;
-        var see = seen(self, parts[0]);
+        var see = seen(self, address);
+        if(!see) return;
         if(asked[see.hashname]) return;
-        // if it's further than the closest yet, just add to the end of the queue
-        if(see.hash.distanceTo(to.hash) > closest.hash.distanceTo(to.hash)) return q.push(see.hashname);
+        addVia(self, hn, address); // store who told us about this hashname and what they said their address is
+        // if it's further than the closest yet, just add to the end of the queue as a fallback
+        if(see.hash.distanceTo(to.hash) > closest.hash.distanceTo(to.hash)) return q.push(see);
         // if it's a new closer one, put at the top of the list!
         closest = see;
-        q.unshift(see.hashname);
+        q.unshift(see);
       });
       cbQ();
     }).send({type:"seek",seek:to.hashname});
@@ -453,13 +472,12 @@ function openSeek(self, to)
   
   // when all done, if we found the hashname, trigger the open!
   q.drain = function(){
-    if(to.via) send(self, to);
+    if(to.via) return send(self, to);
+    warn("seek failed to", to.hashname);
   };
 
-  // take a random max of three lines and ask them all (TODO use the DHT distance stuff)
-  Object.keys(self.lines).sort(function(){ return Math.random()-0.5; }).slice(0,3).map(function(id){
-    q.push(self.lines[id].hashname);
-  });
+  // take the closest lines and ask them
+  nearby(self, to.hashname).map(function(hn){ q.push(hn); });
 }
 
 // create a wire writeable buffer from a packet
@@ -479,6 +497,8 @@ function encode(self, to, packet)
 function seen(self, hashname)
 {
   // validations
+  if(!typeof hashname != "string") hashname = hashname.toString();
+  hashname = hashname.split(",")[0]; // convenience if an address is passed in
   if(!dhash.isSHA1(hashname)) { warn("seen called without a valid hashname", hashname); return false; }
 
   // so we can check === self
@@ -499,8 +519,8 @@ function sendOpen(self, to)
   // only way to get it is to pop whoever told us about the hashname
   if(!to.pubkey)
   {
-    if(!to.via) return warn("can't open a line to a hashname with no via", to.hashname);
-    Object.keys(to.via).forEach(function(hn){
+    var popped = false;
+    if(to.via) Object.keys(to.via).forEach(function(hn){
       var via = seen(self, hn);
       if(!via.lineIn) return;
       // send an empty packet to the target to open any NAT
@@ -511,7 +531,14 @@ function sendOpen(self, to)
       var js = {type:"pop"};
       js.pop = [hn];
       addStream(self, via).send(js);
+      popped = true;
     });
+    // if we didn't have a working via, try again
+    if(!popped) {
+      warn("re-seeking since via failed", to.hashname);
+      delete to.via;
+      openSeek(self, to);
+    }
     return;
   }
 
@@ -558,7 +585,7 @@ function send(self, to, packet)
     var buf = encode(self, to, packet);
 
     var enc = {js:{type:"line"}};
-    enc.js.line = to.lineIn;
+    enc.js.line = to.lineOut;
     var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
@@ -574,6 +601,7 @@ function sendBuf(self, to, buf)
   to.sent ? to.sent++ : to.sent = 1;
   to.sentAt = Date.now();
 
+  console.log("out",to.ip+":"+to.port, buf.length);
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
@@ -665,9 +693,6 @@ function inStream(self, packet)
 // worker on the ordered-packet-queue processing
 function inStreamSeries(self, packet, callback)
 {
-  // allow any packet to send a see (as a hint) and process it
-  if(packet.js.see) inSee(self, packet);
-
   // everything from an outgoing stream has a handler
   if(packet.stream.handler) return packet.stream.handler(self, packet, callback);
 
@@ -703,10 +728,7 @@ function inSock(self, packet)
   if(!(port > 0 && port < 65536)) return packet.stream.send({end:true, err:"invalid address"});
   
   // make sure the destination is allowed
-  var hn = packet.from.hashname;
-  var ok=false;
-  [ip, ip+port, ip+port+hn, ip+hn, hn].forEach(function(match){ if(self.allowed[match]) ok=true; });
-  if(!ok) return packet.stream.send({end:true, err:"denied"});
+  if(!self.proxyCheck(ip, port, hn)) return packet.stream.send({end:true, err:"denied"});
 
   // wrap it w/ a node stream
   var client = net.connect({host:ip, port:port});
@@ -773,6 +795,7 @@ function inOpen(self, packet)
   from.lineIn = deciphered.js.line;
   self.lines[from.lineIn] = from;
   from.secretIn = secret;
+  debug("added line",from.lineIn, from.address);
 
   // could have queued packets to be sent, flush them
   send(self, from);
@@ -843,7 +866,7 @@ function nearby(self, hash)
     if(self.buckets[bucket]) self.buckets[bucket].forEach(function(hn){
       if(!hn.line) return; // only see ones we have a line with
       max--;
-      ret.push(hn.address);
+      ret.push(hn);
     });
     bucket++;
   }
@@ -856,27 +879,8 @@ function inSeek(self, packet)
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
-  var answer = {js:{see:nearby(self, packet.js.seek), end:true}};  
+  var answer = {js:{see:nearby(self, packet.js.seek).map(function(hn){ return hn.address; }), end:true}};  
   packet.stream.send(answer);
-}
-
-// see might be in response to a seek, or bundled ad-hoc anytime
-function inSee(self, packet)
-{
-  if(!Array.isArray(packet.js.see)) return warn("invalid see of ", packet.js.see, "from:", packet.from);
-
-  // track each one for the via and dht meshing maintenance
-  function via(address){
-    var parts = address.split(",");
-    var hn = seen(self, parts[0]);
-    if(hn === packet.from) return; // common for a see to include the sender
-    // store who told us about this hashname and what they said their address is
-    if(!hn.via) see.via = {};
-    if(hn.via[packet.from.hashname]) return;
-    hn.via[packet.from.hashname] = address; // TODO handle multiple addresses per hn (ipv4+ipv6)
-  };
-
-  if(Array.isArray(packet.js.see)) packet.js.see.forEach(via);
 }
 
 // simple test rigging to replace builtins

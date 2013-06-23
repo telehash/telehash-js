@@ -1,21 +1,23 @@
 var fs = require("fs");
 var tele = require("../telehash");
+tele.debug(function(){}); // disable any debug output for now
 
-// what is our operator, pass in or replace this value
-var opaddress = process.argv[2];
+// what is the operator running, pass in or replace this value
+var opIPPort = process.argv[2];
+var opPubkey = require("./operator.json").public;
 
 // load up our private key
 var ckeys = require("./client.json");
 
-// start up our client hashname in the same space
+// create a client hashname in the test space
 var client = tele.hashname("testing.private", ckeys);
 
 // provide the operator(s) for this hashname
-client.setOperators([opaddress]);
+client.addOperator(opIPPort, opPubkey);
 
-// ask for ourselves, which will query the operator
-client.doVerify(client.hashname, function(err, pubkey){
-	if(err) return console.log("failed to find our hashname in this space:", err);
-	if(pubkey !== ckeys.publicKey) return console.log("odd, our keys didn't match"); 
-	console.log("great, we're connected! our address is", client.address);
+console.log("client hashname created", client.address, "connecting to operator...");
+
+// go online
+client.online(function(err){
+  console.log("client online status", err?err:true);
 });

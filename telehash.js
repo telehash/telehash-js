@@ -20,10 +20,16 @@ exports.hash = function(string)
   return new dhash.Hash(string);
 }
 
+// useful for dev
+exports.debug = function(cb){ debug = cb; };
+
 // start a hashname listening and ready to go
 exports.hashname = function(network, keys, args)
 {
-  if(!network || !keys || !keys.public || !keys.private) return undefined;
+  if(!network || !keys || !keys.public || !keys.private) {
+    warn("bad args to hashname, requires network, keys.public and keys.private");
+    return undefined;
+  }
   if(!args) args = {};
 
   // configure defaults
@@ -45,7 +51,7 @@ exports.hashname = function(network, keys, args)
     packet.sender = {ip:rinfo.address, port:rinfo.port};
     packet.id = counter++;
     packet.at = Date.now();
-    console.log("in",packet.sender.ip+":"+packet.sender.port, packet.js.type, packet.body.length);
+    debug("in",packet.sender.ip+":"+packet.sender.port, packet.js.type, packet.body.length);
 
     // either it's an open
     if(packet.js.type == "open") return inOpen(self, packet);
@@ -75,13 +81,13 @@ exports.hashname = function(network, keys, args)
   self.address = [self.hashname, self.ip, self.port].join(",");
   
   // instead of using dns, hard-wire the operators
-  self.addOperator = function(ip, port, key) {
-    if(!ip || !port || !key) return warn("invalid args to addOperator");
+  self.addOperator = function(ipport, key) {
+    if(!ipport || ipport.indexOf(":") == -1 || !key) return warn("invalid args to addOperator");
     var hashname = (new dhash.Hash(key+self.network)).toString();
     var op = seen(self, hashname);
     op.pubkey = key;
-    op.ip = ip;
-    op.port = port;
+    op.ip = ipport.split(":")[0];
+    op.port = parseInt(ipport.split(":")[1]);
     op.operator = true;
     self.operators.push(op);
   }
@@ -104,7 +110,7 @@ exports.hashname = function(network, keys, args)
   // have a callback to determine if a socket proxy request can pass through, fn(ip, port, hn) returns true/false
   self.proxyCheck = function(){ return false; };
   self.proxy = function(check) { self.proxyCheck = check };
-
+  
   return self;
 }
 
@@ -147,7 +153,7 @@ function dnsOps(self, callback)
           if(err || txts.length == 0) return cbSrv();
           // verify hashname to key
           if(hashname !== (new dhash.Hash(txts[0]+self.network)).toString()) return cbSrv();
-          self.addOperator(ips[0], srv.port, txts[0]);
+          self.addOperator(ips[0]+":"+srv.port, txts[0]);
           cbSrv();
         });
       });
@@ -262,7 +268,7 @@ function doSocket(self, args, callback)
   self.doLine(args.hashname, function(err){
     if(err) return callback("line failed");
     var server = net.createServer(function(client) {
-      console.log('server connected');
+      debug('server connected');
       var stream = addStream(self, seen(self, args.hashname));
       var tunnel = wrapStream(self, stream);
       client.pipe(tunnel).pipe(client);
@@ -290,7 +296,7 @@ function wrapStream(self, stream, cbExtra)
   duplex.cbWrite;
 
   function doChunk(){
-    console.log("CHUNKING", duplex.bufJS, duplex.bufBody.length)
+    debug("CHUNKING", duplex.bufJS, duplex.bufBody.length)
     if(duplex.bufBody.length === 0 && Object.keys(duplex.bufJS).length === 0) return;      
     var bodyout;
     var jsout = duplex.bufJS;
@@ -348,7 +354,7 @@ function wrapStream(self, stream, cbExtra)
 
   stream.handler = function(self, packet, cbHandler) {
     // TODO migrate to _read backpressure stuff above
-    console.log("HANDLER", packet.js)
+    debug("HANDLER", packet.js)
     if(cbExtra) cbExtra(packet);
     if(packet.body) duplex.push(packet.body);
     if(packet.js.end) duplex.push(null);
@@ -601,7 +607,7 @@ function sendBuf(self, to, buf)
   to.sent ? to.sent++ : to.sent = 1;
   to.sentAt = Date.now();
 
-  console.log("out",to.ip+":"+to.port, buf.length);
+  debug("out",to.ip+":"+to.port, buf.length);
   self.server.send(buf, 0, buf.length, to.port, to.ip);
 }
 
@@ -785,7 +791,7 @@ function inOpen(self, packet)
   if(from.lineIn && from.lineIn !== deciphered.js.line) {
     debug("changing lines",from);
     from.sentOpen = false; // trigger resending them our open again
-    delete self.lines[oldLine]; // delete the old one
+    delete self.lines[from.lineIn]; // delete the old one
   }
 
   // do we need to send them an open yet?

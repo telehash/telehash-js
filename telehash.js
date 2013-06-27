@@ -842,10 +842,14 @@ function inLine(self, packet){
 function inPopping(self, packet)
 {
   var to = seen(self, packet.js.popping);
+  var parts = packet.js.popping.split(",");
+  if(!to.ip) {
+    to.ip = parts[1];
+    to.port = parseInt(parts[2]);
+  }
   // only do this once, prevent abuse
   if(to.openSent) return warn("redundant popping from",packet.from.hashname,"for",to.hashname);
   // verify destination hashname+key
-console.log("POPPING", to.hashname, packet.body.toString(), (new dhash.Hash(packet.body.toString()+self.network)).toString())
   if(to.hashname !== (new dhash.Hash(packet.body.toString()+self.network)).toString()) return warn("invalid popping from", packet.from.hashname);
   to.pubkey = packet.body.toString();
   sendOpen(self, to);
@@ -859,7 +863,7 @@ function inPop(self, packet)
   packet.js.pop.forEach(function(hn){
     var pop = seen(self, hn);
     if(!pop.lineIn) return warn("pop requested for", hn, "but no line, from", packet.from);
-    addStream(self, pop).send({type:"popping", popping:packet.from.address}, pop.pubkey);
+    addStream(self, pop).send({type:"popping", popping:packet.from.address}, packet.from.pubkey);
   });
 }
 

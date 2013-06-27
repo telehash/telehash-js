@@ -51,7 +51,7 @@ exports.hashname = function(network, keys, args)
     packet.sender = {ip:rinfo.address, port:rinfo.port};
     packet.id = counter++;
     packet.at = Date.now();
-    debug("in",packet.sender.ip+":"+packet.sender.port, packet.js.type, packet.body.length);
+    debug("in",packet.sender.ip+":"+packet.sender.port, packet.js.type, packet.body && packet.body.length);
 
     // either it's an open
     if(packet.js.type == "open") return inOpen(self, packet);
@@ -59,7 +59,7 @@ exports.hashname = function(network, keys, args)
     // or it's a line
     if(packet.js.type == "line") return inLine(self, packet);
     
-    warn("dropping incoming packet of unknown type", packet.js, packet.sender);
+    if(Object.keys(packet.js).length > 0) warn("dropping incoming packet of unknown type", packet.js, packet.sender);
   });
   self.server.bind(self.port, self.ip, function(){
     // update address after listen completed to be besty
@@ -125,8 +125,8 @@ function online(self, callback)
   });
   // try to open a line to an op
   async.forEachSeries(self.operators, function(op, cbOps){
-    addStream(self, op, function(self, packet, callback){
-      callback();
+    addStream(self, op, function(self, packet, cbStream){
+      cbStream();
       delete packet.stream.handler; // so we don't get called again
       if(Array.isArray(packet.js.see)) return cbOps(true);
       cbOps();
@@ -178,7 +178,7 @@ function meshReap(self)
 {
   function del(who, why)
   {
-    if(who.line) delete self.lines[who.line];
+    if(who.lineIn) delete self.lines[who.lineIn];
     delete self.seen[who.hashname];
     debug("reaping ", who.hashname, why);
   }
@@ -203,9 +203,9 @@ function meshSeen(self)
     return self.hash.distanceTo(a.hash) - self.hash.distanceTo(b.hash);
   }).slice(0,100).forEach(function(hn){
     if(!nearest) nearest = hn;
-    if(hn.open) return; // line is open or already tried opening a line to them at least once
+    if(hn.lineIn) return; // line is open or already tried opening a line to them at least once
     // try sending them a line request, no line == !hn.forApp
-    doLine(self, hn);
+    sendOpen(self, hn);
   });
   self.nearest = nearest;
 }
@@ -376,7 +376,8 @@ function addStream(self, to, handler, id)
   }, 1);
 
   // as a convenience, as soon as we send out a stream, ensure there's at least a dummy handler
-  if(handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
+  stream.handler = handler;
+  if(stream.handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
 
   // handy util, send just one anytime explicitly
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
@@ -489,13 +490,13 @@ function openSeek(self, to)
 // create a wire writeable buffer from a packet
 function encode(self, to, packet)
 {
-  debug("ENCODING", JSON.stringify(packet.js), (typeof packet.body == "string")?packet.body:packet.body && "BINARY "+packet.body.length, "\n");
 
   var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
   if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
   packet.body = packet.body || new Buffer(0);
   var len = new Buffer(2);
   len.writeInt16BE(jsbuf.length, 0);
+  debug("ENCODING", JSON.stringify(packet.js), "BODY "+packet.body.length);
   return Buffer.concat([len, jsbuf, packet.body]);
 }
 
@@ -535,14 +536,16 @@ function sendOpen(self, to)
         sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
       }
       var js = {type:"pop"};
-      js.pop = [hn];
+      js.pop = [to.hashname];
       addStream(self, via).send(js);
       popped = true;
     });
     // if we didn't have a working via, try again
     if(!popped) {
-      warn("re-seeking since via failed", to.hashname);
       delete to.via;
+      if(to.retries) return warn("abandoning after second attempt to seek", to.hashname);
+      to.retries = 1; // prevent a loop of failed connections/seeking
+      warn("re-seeking since via failed", to.hashname);
       openSeek(self, to);
     }
     return;
@@ -619,7 +622,7 @@ function decode(buf)
   if(len == 0 || len > (buf.length - 2)) return undefined;
 
   // parse out the json
-  var packet = {};
+  var packet = {js:{}};
   try {
       packet.js = JSON.parse(buf.toString("utf8",2,len+2));
   } catch(E) {
@@ -628,6 +631,8 @@ function decode(buf)
 
   // if any body, attach it as a buffer
   if(buf.length > (len + 2)) packet.body = buf.slice(len + 2);
+ 
+  debug("DECODING", JSON.stringify(packet.js), "BODY", (packet.body && packet.body.length) || 0);
   
   return packet;
 }
@@ -713,7 +718,7 @@ function inStreamSeries(self, packet, callback)
   else if(packet.js.type === "pop") inPop(self, packet);
   else if(packet.js.type === "popping") inPopping(self, packet);
   else if(packet.js.type === "seek") inSeek(self, packet);
-  else if(self.customs[packet.js.type]) inCustom(self, packet);
+  else if(self.customs[packet.js.type]) self.customs[packet.js.type](self, packet);
   else {
     warn("unknown stream packet type", packet.js.type);
     packet.stream.send({js:{end:true, err:"unknown type"}});
@@ -816,14 +821,14 @@ function inOpen(self, packet)
 
 // line packets must be decoded first
 function inLine(self, packet){
-  packet.line = packet.from = self.lines[packet.js.line];
+  packet.from = self.lines[packet.js.line];
 
   // sometimes they come out of order, queue it waiting for the open just in case
-  if(!packet.line) return queueLine(self, packet);
+  if(!packet.from) return queueLine(self, packet);
 
   // a matching line is required to decode the packet
-  packet.line.recvAt = Date.now();
-  var aes = crypto.createDecipher("AES-128-CBC", packet.line.secretIn);
+  packet.from.recvAt = Date.now();
+  var aes = crypto.createDecipher("AES-128-CBC", packet.from.secretIn);
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;
@@ -840,6 +845,7 @@ function inPopping(self, packet)
   // only do this once, prevent abuse
   if(to.openSent) return warn("redundant popping from",packet.from.hashname,"for",to.hashname);
   // verify destination hashname+key
+console.log("POPPING", to.hashname, packet.body.toString(), (new dhash.Hash(packet.body.toString()+self.network)).toString())
   if(to.hashname !== (new dhash.Hash(packet.body.toString()+self.network)).toString()) return warn("invalid popping from", packet.from.hashname);
   to.pubkey = packet.body.toString();
   sendOpen(self, to);
@@ -849,11 +855,10 @@ function inPopping(self, packet)
 function inPop(self, packet)
 {
   if(!Array.isArray(packet.js.pop) || packet.js.pop.length == 0) return warn("invalid pop of", packet.js.pop, "from", packet.from);
-  if(!dhash.isSHA1(packet.js.from)) return warn("invalid pop from of", packet.js.from, "from", packet.from);
 
   packet.js.pop.forEach(function(hn){
     var pop = seen(self, hn);
-    if(!pop.line) return warn("pop requested for", hn, "but no line, from", packet.from);
+    if(!pop.lineIn) return warn("pop requested for", hn, "but no line, from", packet.from);
     addStream(self, pop).send({type:"popping", popping:packet.from.address}, pop.pubkey);
   });
 }
@@ -870,7 +875,7 @@ function nearby(self, hash)
   while(bucket <= 159 && max > 0)
   {
     if(self.buckets[bucket]) self.buckets[bucket].forEach(function(hn){
-      if(!hn.line) return; // only see ones we have a line with
+      if(!hn.lineIn) return; // only see ones we have a line with
       max--;
       ret.push(hn);
     });
@@ -885,7 +890,7 @@ function inSeek(self, packet)
   if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
 
   // now see if we have anyone to recommend
-  var answer = {js:{see:nearby(self, packet.js.seek).map(function(hn){ return hn.address; }), end:true}};  
+  var answer = {see:nearby(self, packet.js.seek).map(function(hn){ return hn.address; }), end:true};  
   packet.stream.send(answer);
 }
 

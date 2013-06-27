@@ -1,6 +1,6 @@
 var fs = require("fs");
 var tele = require("../telehash");
-tele.debug(function(){}); // disable any debug output for now
+//tele.debug(function(){}); // disable any debug output for now
 
 // what is the operator running, pass in or replace this value
 var opIPPort = process.argv[2];

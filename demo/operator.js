@@ -6,8 +6,7 @@ var operator = tele.hashname("testing.private", opkeys, {port:42424});
 console.log("operator online at", operator.ip+":"+operator.port, "for the network", operator.network, "with the hashname", operator.hashname);
 
 // custom stream
-operator.listen("42", function(operator, packet, callback){
+operator.listen("42", function(operator, packet){
   console.log("got a 42 from", packet.from.address);
   packet.stream.send({"universe":true, end:true});
-  callback();
 });

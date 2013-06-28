@@ -33,7 +33,7 @@ exports.hashname = function(network, keys, args)
   if(!args) args = {};
 
   // configure defaults
-  var self = {network:network, operators:[], watch:{}, lines:{}, lineq:[], seen:{}, buckets:[], customs:{}, allowed:{}};
+  var self = {network:network, operators:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
   // parse/validate the private key
   self.prikey = keys.private;
   self.pubkey = keys.public;
@@ -417,24 +417,6 @@ function sendStream(self, stream, packet)
   send(self, stream.to, packet);
 }
 
-// scan through the queue of packets with an unknown line, and optionally add one
-function queueLine(self, packet)
-{
-  if(packet) {
-    if(Object.keys(packet.js).join("") === "line") return; // empty packet
-    self.lineq.push(packet);
-  }
-  if(self.lineq.length == 0) return;
-  debug("scanning line queue of length", self.lineq.length);
-  var q = self.lineq;
-  self.lineq = [];
-  q.forEach(function(queued){
-    if(self.lines[queued.js.line]) return incoming(self, queued);
-    if(Date.now() - queued.at < 10*1000) return self.lineq.push(queued);
-    warn("dropping expired unknown line packet from", queued.from);
-  });
-}
-
 // happens whenever we're processing a .see response in different contexts
 function addVia(self, from, address)
 {
@@ -523,10 +505,10 @@ function seen(self, hashname)
 
 function sendOpen(self, to)
 {
-  // only way to get it is to pop whoever told us about the hashname
+  // only way to get it is to peer whoever told us about the hashname
   if(!to.pubkey)
   {
-    var popped = false;
+    var peered = false;
     if(to.via) Object.keys(to.via).forEach(function(hn){
       var via = seen(self, hn);
       if(!via.lineIn) return;
@@ -535,13 +517,13 @@ function sendOpen(self, to)
         var parts = to.via[hn].split(",");
         sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
       }
-      var js = {type:"pop"};
-      js.pop = [to.hashname];
+      var js = {type:"peer"};
+      js.peer = [to.hashname];
       addStream(self, via).send(js);
-      popped = true;
+      peered = true;
     });
     // if we didn't have a working via, try again
-    if(!popped) {
+    if(!peered) {
       delete to.via;
       if(to.retries) return warn("abandoning after second attempt to seek", to.hashname);
       to.retries = 1; // prevent a loop of failed connections/seeking
@@ -555,12 +537,12 @@ function sendOpen(self, to)
   to.sentOpen = true;
   if(!to.secretOut) to.secretOut = dhash.quick(); // gen random secret
   if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
+  self.lines[to.lineOut] = to;
   
   // send an open packet, containing our key
   var packet = {js:{}, body:self.pubkey};
-  packet.js.to = to.hashname;
-  packet.js.from = self.hashname;
-  packet.js.x = Date.now() + 10*1000; // timeout to prevent replay
+  packet.js.network = self.network;
+  packet.js.at = Date.now();
   packet.js.line = to.lineOut;
 
   // craft the special open packet wrapper
@@ -594,7 +576,7 @@ function send(self, to, packet)
     var buf = encode(self, to, packet);
 
     var enc = {js:{type:"line"}};
-    enc.js.line = to.lineOut;
+    enc.js.line = to.lineIn;
     var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
@@ -715,8 +697,8 @@ function inStreamSeries(self, packet, callback)
 
   // branch out based on what type of stream it is
   if(packet.js.type === "sock") inSock(self, packet);
-  else if(packet.js.type === "pop") inPop(self, packet);
-  else if(packet.js.type === "popping") inPopping(self, packet);
+  else if(packet.js.type === "peer") inPeer(self, packet);
+  else if(packet.js.type === "connect") inConnect(self, packet);
   else if(packet.js.type === "seek") inSeek(self, packet);
   else if(self.customs[packet.js.type]) self.customs[packet.js.type](self, packet);
   else {
@@ -765,11 +747,10 @@ function inOpen(self, packet)
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
   // make sure any to is us (for multihosting)
-  if(deciphered.js.to !== self.hashname) return warn("packet for", deciphered.js.to, "is not us");
+  if(deciphered.js.network !== self.network) return warn("packet for wrong network", deciphered.js.network);
 
-  // make sure it's not expired, and has a valid line
-  if(deciphered.js.x < Date.now()) return warn("open packet has expired", deciphered.js.x, packet.sender);
-  if(typeof deciphered.js.line != "string" || deciphered.js.line.length == 0) return warn("invalid line id contained");
+  // make sure it has a valid line
+  if(!dhash.isSHA1(deciphered.js.line)) return warn("invalid line id contained");
 
   // extract attached public key
   if(!deciphered.body) return warn("open missing attached key", packet.sender);
@@ -781,11 +762,16 @@ function inOpen(self, packet)
   if(!valid) return warn("invalid signature from:", packet.sender);
 
   // verify senders hashname
-  if(deciphered.js.from !== (new dhash.Hash(key+self.network)).toString()) return warn("invalid hashname", deciphered.js.from);
 
-  // load the sender and update any ip:port/key/etc
-  var from = seen(self, deciphered.js.from);
+  // load the sender
+  var from = seen(self, (new dhash.Hash(key+self.network)).toString());
+
+  // make sure this open is newer (if any others)
+  if(typeof deciphered.js.at != "number" || (from.openAt && deciphered.js.at < from.openAt)) return warn("invalid at", deciphered.js.at);
+
+  // update values
   debug("inOpen verified", from.hashname);
+  from.openAt = deciphered.js.at;
   from.pubkey = key;
   from.ip = packet.sender.ip;
   from.port = packet.sender.port;
@@ -796,7 +782,6 @@ function inOpen(self, packet)
   if(from.lineIn && from.lineIn !== deciphered.js.line) {
     debug("changing lines",from);
     from.sentOpen = false; // trigger resending them our open again
-    delete self.lines[from.lineIn]; // delete the old one
   }
 
   // do we need to send them an open yet?
@@ -804,19 +789,10 @@ function inOpen(self, packet)
 
   // line is open now!
   from.lineIn = deciphered.js.line;
-  self.lines[from.lineIn] = from;
   from.secretIn = secret;
-  debug("added line",from.lineIn, from.address);
 
   // could have queued packets to be sent, flush them
   send(self, from);
-
-  // something might be waiting for a line on this hashname
-  var watch = self.watch["line "+from.hashname];
-  if(watch) watch.done(null, from);
-
-  // could have queued out-of-order packets waiting, scan them
-  queueLine(self);
 }
 
 // line packets must be decoded first
@@ -824,7 +800,7 @@ function inLine(self, packet){
   packet.from = self.lines[packet.js.line];
 
   // sometimes they come out of order, queue it waiting for the open just in case
-  if(!packet.from) return queueLine(self, packet);
+  if(!packet.from) return warn("invalid line received", packet.js.line, packet.sender);
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
@@ -839,31 +815,28 @@ function inLine(self, packet){
 }
 
 // someone's trying to connect to us, send an open to them
-function inPopping(self, packet)
+function inConnect(self, packet)
 {
-  var to = seen(self, packet.js.popping);
-  var parts = packet.js.popping.split(",");
+  var to = seen(self, (new dhash.Hash(packet.body.toString()+self.network)).toString());
   if(!to.ip) {
-    to.ip = parts[1];
-    to.port = parseInt(parts[2]);
+    to.ip = packet.js.ip;
+    to.port = parseInt(packet.js.port);
   }
   // only do this once, prevent abuse
-  if(to.openSent) return warn("redundant popping from",packet.from.hashname,"for",to.hashname);
-  // verify destination hashname+key
-  if(to.hashname !== (new dhash.Hash(packet.body.toString()+self.network)).toString()) return warn("invalid popping from", packet.from.hashname);
+  if(to.openSent) return warn("redundant connect from",packet.from.hashname,"for",to.hashname);
   to.pubkey = packet.body.toString();
   sendOpen(self, to);
 }
 
 // be the middleman to help NAT hole punch
-function inPop(self, packet)
+function inPeer(self, packet)
 {
-  if(!Array.isArray(packet.js.pop) || packet.js.pop.length == 0) return warn("invalid pop of", packet.js.pop, "from", packet.from);
+  if(!Array.isArray(packet.js.peer) || packet.js.peer.length == 0) return warn("invalid peer of", packet.js.peer, "from", packet.from);
 
-  packet.js.pop.forEach(function(hn){
-    var pop = seen(self, hn);
-    if(!pop.lineIn) return warn("pop requested for", hn, "but no line, from", packet.from);
-    addStream(self, pop).send({type:"popping", popping:packet.from.address}, packet.from.pubkey);
+  packet.js.peer.forEach(function(hn){
+    var peer = seen(self, hn);
+    if(!peer.lineIn) return warn("peer requested for", hn, "but no line, from", packet.from);
+    addStream(self, peer).send({type:"connect", ip:packet.from.ip, port:packet.from.port}, packet.from.pubkey);
   });
 }
 

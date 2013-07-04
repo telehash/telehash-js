@@ -211,9 +211,10 @@ function meshSeen(self)
 }
 
 // drop hn into it's appropriate bucket
-function bucketize(self, hn)
+function bucketize(self, hn, force)
 {
-  if(!hn.bucket) hn.bucket = self.hash.distanceTo(hn.hash);
+  if(!force && hn.bucket) return;
+  hn.bucket = self.hash.distanceTo(hn.hash);
   if(!self.buckets[hn.bucket]) self.buckets[hn.bucket] = [];
   self.buckets[hn.bucket].push(hn);
 }
@@ -224,7 +225,7 @@ function meshElect(self)
   // sort all lines into their bucket, rebuild buckets from scratch (some may be GC'd)
   self.buckets = []; // sparse array, one for each distance 0...159
   Object.keys(self.lines).forEach(function(line){
-    bucketize(self, self.lines[line])
+    bucketize(self, self.lines[line], true)
   });
   var spread = parseInt(MESH_MAX / Object.keys(self.buckets).length);
   if(!(spread > 1)) spread = 1;
@@ -538,10 +539,11 @@ function sendOpen(self, to)
   if(!to.secretOut) to.secretOut = dhash.quick(); // gen random secret
   if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
   self.lines[to.lineOut] = to;
+  bucketize(self, to); // make sure they're in a bucket
   
   // send an open packet, containing our key
   var packet = {js:{}, body:self.pubkey};
-  packet.js.network = self.network;
+  packet.js.to = to.hashname;
   packet.js.at = Date.now();
   packet.js.line = to.lineOut;
 
@@ -747,7 +749,7 @@ function inOpen(self, packet)
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
   // make sure any to is us (for multihosting)
-  if(deciphered.js.network !== self.network) return warn("packet for wrong network", deciphered.js.network);
+  if(deciphered.js.to !== self.hashname) return warn("open for wrong hashname", deciphered.js.to);
 
   // make sure it has a valid line
   if(!dhash.isSHA1(deciphered.js.line)) return warn("invalid line id contained");

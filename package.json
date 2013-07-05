@@ -1,10 +1,42 @@
 {
    "name": "telehash2",
-   "version": "0.0.42",
+   "version": "0.0.43",
    "dependencies": {
    	  "async": "0.2.x",
       "ursa": "0.8.x"
    },
+  "keywords": [
+    "telehash",
+    "crypto",
+    "p2p",
+    "dht",
+    "json",
+    "mesh"
+  ],
+  "description": "A generic telehash switch library",
+  "homepage": "https://github.com/quartzjer/node-telehash",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quartzjer/node-telehash.git"
+  },
+  "licenses": [
+  {
+    "type": "MIT",
+    "url": "https://github.com/quartzjer/node-telehash/raw/master/LICENSE"
+  }
+  ],
+  "author": {
+    "name": "Jeremie Miller",
+    "email": "jeremie@jabber.org",
+    "url": "http://jeremie.com/"
+  },
+  "maintainers": [
+    {
+    "name": "Jeremie Miller",
+    "email": "jeremie@jabber.org",
+    "url": "http://jeremie.com/"
+    }
+  ],
    "engines": {
      "node": "0.10.x",
      "npm":  "1.2.x"

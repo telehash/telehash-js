@@ -1,4 +1,4 @@
-var tele = require("../telehash");
+var tele = require("..");
 var opkeys = require("./operator.json"); // loads the keypair
 
 // start a new hashname in the given space with these keys, listen on this specific port

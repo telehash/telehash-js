@@ -1,4 +1,4 @@
-var tele = require("../telehash");
+var tele = require("..");
 var opkeys = require("./operator.json");
 var ollie = tele.hashname("testing.private", require("./ollie.json"));
 ollie.addOperator(process.argv[2], opkeys.public);

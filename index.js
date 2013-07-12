@@ -10,7 +10,7 @@ var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
-var debug = console.log; //function(){}; // switch to console.log to enable
+var debug = function(){}; // switch to console.log to enable
 var MESH_MAX = 200; // how many peers to maintain at most
 
 var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n[\/+=a-zA-Z0-9\r\n]*\r?\n-----END \2 KEY-----\r?\n)/m;
@@ -23,20 +23,26 @@ exports.hash = function(string)
 // useful for dev
 exports.debug = function(cb){ debug = cb; };
 
+// util to make new key
+exports.genkey = function(callback){
+  var key = ursa.generatePrivateKey();
+  callback(null, {public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")});
+}
+
 // start a hashname listening and ready to go
-exports.hashname = function(network, keys, args)
+exports.hashname = function(network, key, args)
 {
-  if(!network || !keys || !keys.public || !keys.private) {
-    warn("bad args to hashname, requires network, keys.public and keys.private");
+  if(!network || !key || !key.public || !key.private) {
+    warn("bad args to hashname, requires network, key.public and key.private");
     return undefined;
   }
   if(!args) args = {};
 
   // configure defaults
-  var self = {network:network, operators:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
+  var self = {network:network, seeds:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
   // parse/validate the private key
-  self.prikey = keys.private;
-  self.pubkey = keys.public;
+  self.prikey = key.private;
+  self.pubkey = key.public;
   self.hash = new dhash.Hash(self.pubkey+network);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
@@ -80,19 +86,18 @@ exports.hashname = function(network, keys, args)
   }
   self.address = [self.hashname, self.ip, self.port].join(",");
   
-  // instead of using dns, hard-wire the operators
-  self.addOperator = function(ipport, key) {
-    if(!ipport || ipport.indexOf(":") == -1 || !key) return warn("invalid args to addOperator");
-    var hashname = (new dhash.Hash(key+self.network)).toString();
-    var op = seen(self, hashname);
-    op.pubkey = key;
-    op.ip = ipport.split(":")[0];
-    op.port = parseInt(ipport.split(":")[1]);
-    op.operator = true;
-    self.operators.push(op);
+  // need some seeds to connect to
+  self.addSeed = function(arg) {
+    if(!arg.ip || !arg.port || !arg.pubkey) return warn("invalid args to addSeed");
+    var hashname = (new dhash.Hash(arg.pubkey+self.network)).toString();
+    var seed = seen(self, hashname);
+    seed.pubkey = arg.pubkey;
+    seed.ip = arg.ip;
+    seed.port = parseInt(arg.port);
+    self.seeds.push(seed);
   }
   
-  // connect to an operator
+  // connect to the network
   self.online = function(callback) { online(self, callback); };
 
   // create your own custom streams
@@ -118,47 +123,21 @@ exports.hashname = function(network, keys, args)
 function online(self, callback)
 {
   if(Object.keys(self.lines).length > 0) return callback();
-  if(self.operators.length == 0) return dnsOps(self, function(err){
-    if(err) return callback(err);
-    if(self.operators.length == 0) return callback("couldn't find any operators for "+self.network);
-    online(self, callback);
-  });
-  // try to open a line to an op
-  async.forEachSeries(self.operators, function(op, cbOps){
-    addStream(self, op, function(self, packet, cbStream){
+  if(self.seeds.length == 0) return callback("no seeds for "+self.network);
+  // try to open a line to any seed
+  async.forEachSeries(self.seeds, function(seed, cbSeed){
+    addStream(self, seed, function(self, packet, cbStream){
       cbStream();
       delete packet.stream.handler; // so we don't get called again
-      if(Array.isArray(packet.js.see)) return cbOps(true);
-      cbOps();
+      if(Array.isArray(packet.js.see)) return cbSeed(true);
+      cbSeed();
     }).send({type:"seek", seek:self.hashname});
   }, function(on){
-    if(!on) return callback("couldn't reach any operators :(");
+    if(!on) return callback("couldn't reach any seeds :(");
     meshLoop(self); // start the DHT meshing maintainence
     callback();
   })
 
-}
-
-// try to resolve any dns-defined operators for this network, use SRV to get the hashnames+ports, A for IP, TXT for pubkey
-function dnsOps(self, callback)
-{
-  dns.resolveSrv("_telehash._udp."+self.network, function(err, srvs){
-    if(err) return callback(err);
-    async.forEach(srvs, function(srv, cbSrv){
-      var hashname = srv.name.split(".")[0];
-      if(!dhash.isSHA1(hashname)) return cbSrv();
-      dns.resolve4(srv.name, function(err, ips){
-        if(err || ips.length == 0) return cbSrv();
-        dns.resolveTxt(srv.name, function(err, txts){
-          if(err || txts.length == 0) return cbSrv();
-          // verify hashname to key
-          if(hashname !== (new dhash.Hash(txts[0]+self.network)).toString()) return cbSrv();
-          self.addOperator(ips[0]+":"+srv.port, txts[0]);
-          cbSrv();
-        });
-      });
-    }, callback);
-  });
 }
 
 // every 25 seconds do the maintenance work for peers
@@ -368,7 +347,7 @@ function addStream(self, to, handler, id)
 {
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = id || dhash.quick();
-  to.streams[stream.id] = stream;
+  if(to) to.streams[stream.id] = stream; // sendStream handles invalid to
   stream.to = to;
 
   // how we process things in order
@@ -381,13 +360,22 @@ function addStream(self, to, handler, id)
   if(stream.handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
 
   // handy util, send just one anytime explicitly
-  stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}) };
+  stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}); return stream; };
 
   return stream;
 }
 
 function sendStream(self, stream, packet)
 {
+  if(stream.ended) return warn("sending to an ended stream", stream.id);
+  if(!stream.to)
+  {
+    stream.ended = true;
+    if(!stream.handler) return warn("stream missing to and handler", stream.id);
+    var err = {stream:stream, js:{err:"invalid hashname", end:true}};
+    return stream.handler(self, err, function(){});
+  }
+
   packet.js.stream = stream.id;
   packet.js.seq = stream.outSeq++;
   packet.js.ack = stream.inSeq;

@@ -611,12 +611,12 @@ function decode(buf)
 
 function inStream(self, packet)
 {
-  if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from);
+  if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from.address);
 
   var stream = (packet.from.streams[packet.js.stream]) ? packet.from.streams[packet.js.stream] : addStream(self, packet.from, false, packet.js.stream);
 
   packet.js.seq = parseInt(packet.js.seq);
-  if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from);
+  if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from.address);
   stream.inSeq = packet.js.seq;
 
   // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
@@ -628,7 +628,7 @@ function inStream(self, packet)
   // process any valid newer incoming ack/miss
   var ack = parseInt(packet.js.ack);
   var miss = Array.isArray(packet.js.miss) ? packet.js.miss : [];
-  if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from);
+  if(miss.length > 100) return warn("too many misses", miss.length, stream.id, packet.from.address);
 //console.log(">>>ACK", ack, stream.lastAck, stream.outSeq, "len", stream.outq.length, stream.outq.map(function(p){return p.js.seq}).join(","));
   if(ack > stream.lastAck && ack <= stream.outSeq)
   {
@@ -653,7 +653,7 @@ function inStream(self, packet)
   }
   
   // drop out of bounds
-  if(packet.js.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from);
+  if(packet.js.seq - stream.inDone > 100) return warn("stream too far behind, dropping", stream.id, packet.from.address);
 
   // stash this seq and process any in sequence
   packet.stream = stream;
@@ -821,11 +821,11 @@ function inConnect(self, packet)
 // be the middleman to help NAT hole punch
 function inPeer(self, packet)
 {
-  if(!Array.isArray(packet.js.peer) || packet.js.peer.length == 0) return warn("invalid peer of", packet.js.peer, "from", packet.from);
+  if(!Array.isArray(packet.js.peer) || packet.js.peer.length == 0) return warn("invalid peer of", packet.js.peer, "from", packet.from.address);
 
   packet.js.peer.forEach(function(hn){
     var peer = seen(self, hn);
-    if(!peer.lineIn) return warn("peer requested for", hn, "but no line, from", packet.from);
+    if(!peer.lineIn) return; // these happen often as lines come/go, ignore dead peer requests
     addStream(self, peer).send({type:"connect", ip:packet.from.ip, port:packet.from.port}, packet.from.pubkey);
   });
 }
@@ -854,7 +854,7 @@ function nearby(self, hash)
 // return a see to anyone closer
 function inSeek(self, packet)
 {
-  if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from);
+  if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from.address);
 
   // now see if we have anyone to recommend
   var answer = {see:nearby(self, packet.js.seek).map(function(hn){ return hn.address; }), end:true};  

@@ -41,3 +41,9 @@ app.online(function(err){
   console.log("app online status", err?err:true);
 });
 ```
+
+# Apps
+
+* [hash-seed](https://github.com/quartzjer/hash-seed)
+* [hash-im](https://github.com/quartzjer/hash-im)
+

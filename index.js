@@ -54,6 +54,8 @@ exports.hashname = function(network, key, args)
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     var packet = decode(msg);
     if(!packet) return warn("failed to decode a packet from", rinfo.address, rinfo.port, msg.toString());
+    if(typeof packet.js.iv != "string" || packet.js.iv.length != 32) return warn("missing initialization vector (iv)", packet.sender);
+
     packet.sender = {ip:rinfo.address, port:rinfo.port};
     packet.id = counter++;
     packet.at = Date.now();
@@ -349,6 +351,7 @@ function addStream(self, to, handler, id)
   stream.id = id || dhash.quick();
   if(to) to.streams[stream.id] = stream; // sendStream handles invalid to
   stream.to = to;
+  stream.manual = false; // manual means no ordering/retrans/ack
 
   // how we process things in order
   stream.q = async.queue(function(packet, cbQ){
@@ -375,6 +378,13 @@ function sendStream(self, stream, packet)
     var err = {stream:stream, js:{err:"invalid hashname", end:true}};
     return stream.handler(self, err, function(){});
   }
+  
+  // these are just "ack" packets, drop if no reason to ack
+  if(!packet.js)
+  {
+    if(stream.outConfirmed == stream.inSeq && !stream.inDups) return;
+    packet.js = {};
+  }
 
   packet.js.stream = stream.id;
   packet.js.seq = stream.outSeq++;
@@ -396,13 +406,6 @@ function sendStream(self, stream, packet)
   stream.outq.push(packet);
   stream.ended = packet.js.end;
   
-  // any ack timer gets cancelled
-  if(stream.ackTimeout)
-  {
-    clearTimeout(stream.ackTimeout);
-    stream.ackTimeout = false;
-  }
-
   send(self, stream.to, packet);
 }
 
@@ -524,7 +527,7 @@ function sendOpen(self, to)
 
   debug("sendOpen sending", to.hashname);
   to.sentOpen = true;
-  if(!to.secretOut) to.secretOut = dhash.quick(); // gen random secret
+  if(!to.secretOut) to.secretOut = crypto.randomBytes(16); // gen random secret
   if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
   self.lines[to.lineOut] = to;
   bucketize(self, to); // make sure they're in a bucket
@@ -538,9 +541,11 @@ function sendOpen(self, to)
   // craft the special open packet wrapper
   var open = {js:{type:"open"}};
   // attach the aes secret, encrypted to the recipients public key
-  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.secretOut, "utf8", "base64", ursa.RSA_PKCS1_PADDING);
+  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.secretOut, undefined, "base64", ursa.RSA_PKCS1_PADDING);
+  var iv = crypto.randomBytes(16);
+  open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
-  var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
+  var aes = crypto.createCipheriv("AES-128-CBC", to.secretOut, iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
   open.js.sig = crypto.createSign("RSA-MD5").update(open.body).sign(self.prikey, "base64");
@@ -567,7 +572,9 @@ function send(self, to, packet)
 
     var enc = {js:{type:"line"}};
     enc.js.line = to.lineIn;
-    var aes = crypto.createCipher("AES-128-CBC", to.secretOut);
+    var iv = crypto.randomBytes(16);
+    enc.js.iv = iv.toString("hex");
+    var aes = crypto.createCipheriv("AES-128-CBC", to.secretOut, iv);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
     sendBuf(self, to, encode(self, to, enc))
@@ -619,8 +626,15 @@ function inStream(self, packet)
   if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from.address);
   stream.inSeq = packet.js.seq;
 
-  // so, if there's a lot of "gap" or or dups coming in, be kind and send an update
-  if(packet.js.seq - stream.outConfirmed > 30 || stream.inDups) sendStream(self, stream, {js:{}});
+  // manual streams skip all the auto/ack party
+  if(stream.manual) return inStreamSeries(self, packet, function(){});
+
+  // so, if there's a lot of "gap" or or dups coming in, be kind and send an update immediately, otherwise send one in a bit
+  if(packet.js.seq - stream.outConfirmed > 30 || stream.inDups) stream.send();
+  else if(!stream.flusher)
+  { // only have one flusher waiting at a time, silly to make a timer per incoming packet
+    stream.flusher = setTimeout(function(){ stream.send(); stream.flusher = false; }, 1000);
+  }
 
   // track and drop duplicate packets
   if(packet.js.seq <= stream.inDone || stream.inq[packet.js.seq - (stream.inDone+1)]) return stream.inDups++;
@@ -665,12 +679,6 @@ function inStream(self, packet)
     // sends them to the async queue that calls inStreamSeries()
     stream.q.push(packet);
   }
-  
-  // start an ack timer to send an ack, will also re-send misses
-  // TODO add backpressure support
-  if(packet.body && !stream.ackTimeout) stream.ackTimeout = setTimeout(function(){
-    packet.stream.send({js:{}}); // it'll fill in empty packet w/ ack and any misses
-  }, 200);
 }
 
 // worker on the ordered-packet-queue processing
@@ -727,12 +735,12 @@ function inOpen(self, packet)
 {
   // decrypt the open
   if(!packet.js.open) return warn("missing open value", packet.sender);
-  var secret = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", "utf8", ursa.RSA_PKCS1_PADDING);
+  var secret = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_PADDING);
   if(!secret) return warn("couldn't decrypt open", packet.sender);
   
   // decipher the body as a packet so we can examine it
   if(!packet.body) return warn("body missing on open", packet.sender);
-  var aes = crypto.createDecipher("AES-128-CBC", secret);
+  var aes = crypto.createDecipheriv("AES-128-CBC", secret, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
@@ -789,12 +797,11 @@ function inOpen(self, packet)
 function inLine(self, packet){
   packet.from = self.lines[packet.js.line];
 
-  // sometimes they come out of order, queue it waiting for the open just in case
   if(!packet.from) return warn("invalid line received", packet.js.line, packet.sender);
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
-  var aes = crypto.createDecipher("AES-128-CBC", packet.from.secretIn);
+  var aes = crypto.createDecipheriv("AES-128-CBC", packet.from.secretIn, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;

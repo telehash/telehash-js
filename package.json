@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.0.45",
+   "version": "0.0.46",
    "dependencies": {
    	  "async": "0.2.x",
       "ursa": "0.8.x"

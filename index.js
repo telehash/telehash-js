@@ -6,6 +6,7 @@ var async = require("async");
 var crypto = require("crypto");
 var dns = require("dns");
 var ursa = require("ursa"); // only need this to do the rsa encryption, not supported in crypto.*
+var ecc = require("ecc"); // for the elliptic curve diffie hellman  not in crypto.*
 var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
@@ -527,7 +528,7 @@ function sendOpen(self, to)
 
   debug("sendOpen sending", to.hashname);
   to.sentOpen = true;
-  if(!to.secretOut) to.secretOut = crypto.randomBytes(16); // gen random secret
+  if(!to.eccOut) to.eccOut = new ecc.ECKey(ecc.ECCurves.nistp256);
   if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
   self.lines[to.lineOut] = to;
   bucketize(self, to); // make sure they're in a bucket
@@ -540,12 +541,12 @@ function sendOpen(self, to)
 
   // craft the special open packet wrapper
   var open = {js:{type:"open"}};
-  // attach the aes secret, encrypted to the recipients public key
-  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.secretOut, undefined, "base64", ursa.RSA_PKCS1_PADDING);
+  // attach the session ecc public key, encrypted to the recipients public key
+  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.eccOut.PublicKey, undefined, "base64", ursa.RSA_PKCS1_PADDING);
   var iv = crypto.randomBytes(16);
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
-  var aes = crypto.createCipheriv("AES-128-CTR", to.secretOut, iv);
+  var aes = crypto.createCipheriv("AES-128-CTR", to.eccOut.PublicKey.slice(0, 16), iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
   open.js.sig = crypto.createSign("RSA-MD5").update(open.body).sign(self.prikey, "base64");
@@ -574,7 +575,7 @@ function send(self, to, packet)
     enc.js.line = to.lineIn;
     var iv = crypto.randomBytes(16);
     enc.js.iv = iv.toString("hex");
-    var aes = crypto.createCipheriv("AES-128-CTR", to.secretOut, iv);
+    var aes = crypto.createCipheriv("AES-128-CTR", to.lineShared, iv);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
     sendBuf(self, to, encode(self, to, enc))
@@ -735,12 +736,14 @@ function inOpen(self, packet)
 {
   // decrypt the open
   if(!packet.js.open) return warn("missing open value", packet.sender);
-  var secret = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_PADDING);
-  if(!secret) return warn("couldn't decrypt open", packet.sender);
+  var open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_PADDING);
+  if(!open) return warn("couldn't decrypt open", packet.sender);
+  var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
+  if(!eccKey) return warn("invalid open", packet.sender);
   
   // decipher the body as a packet so we can examine it
   if(!packet.body) return warn("body missing on open", packet.sender);
-  var aes = crypto.createDecipheriv("AES-128-CTR", secret, new Buffer(packet.js.iv, "hex"));
+  var aes = crypto.createDecipheriv("AES-128-CTR", open.slice(0, 16), new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
@@ -787,7 +790,7 @@ function inOpen(self, packet)
 
   // line is open now!
   from.lineIn = deciphered.js.line;
-  from.secretIn = secret;
+  from.lineShared = from.eccOut.deriveSharedSecret(eccKey).slice(0, 16);
 
   // could have queued packets to be sent, flush them
   send(self, from);
@@ -801,7 +804,7 @@ function inLine(self, packet){
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
-  var aes = crypto.createDecipheriv("AES-128-CTR", packet.from.secretIn, new Buffer(packet.js.iv, "hex"));
+  var aes = crypto.createDecipheriv("AES-128-CTR", packet.from.lineShared, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;

@@ -542,14 +542,14 @@ function sendOpen(self, to)
   // craft the special open packet wrapper
   var open = {js:{type:"open"}};
   // attach the session ecc public key, encrypted to the recipients public key
-  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.eccOut.PublicKey, undefined, "base64", ursa.RSA_PKCS1_PADDING);
+  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.eccOut.PublicKey, undefined, "base64", ursa.RSA_PKCS1_OAEP_PADDING);
   var iv = crypto.randomBytes(16);
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
   var aes = crypto.createCipheriv("AES-128-CTR", to.eccOut.PublicKey.slice(0, 16), iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
-  open.js.sig = crypto.createSign("RSA-MD5").update(open.body).sign(self.prikey, "base64");
+  open.js.sig = crypto.createSign("RSA-SHA256").update(open.body).sign(self.prikey, "base64");
   sendBuf(self, to, encode(self, to, open));
 }
 
@@ -736,7 +736,7 @@ function inOpen(self, packet)
 {
   // decrypt the open
   if(!packet.js.open) return warn("missing open value", packet.sender);
-  var open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_PADDING);
+  var open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING);
   if(!open) return warn("couldn't decrypt open", packet.sender);
   var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
   if(!eccKey) return warn("invalid open", packet.sender);
@@ -759,7 +759,7 @@ function inOpen(self, packet)
   if(!PEM_REGEX.exec(key)) return warn("invalid attached key from", packet.sender);
 
   // verify signature
-  var valid = crypto.createVerify("RSA-MD5").update(packet.body).verify(key, packet.js.sig, "base64");
+  var valid = crypto.createVerify("RSA-SHA256").update(packet.body).verify(key, packet.js.sig, "base64");
   if(!valid) return warn("invalid signature from:", packet.sender);
 
   // verify senders hashname

@@ -575,7 +575,7 @@ function send(self, to, packet)
     enc.js.line = to.lineIn;
     var iv = crypto.randomBytes(16);
     enc.js.iv = iv.toString("hex");
-    var aes = crypto.createCipheriv("AES-256-CTR", to.lineShared, iv);
+    var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
     sendBuf(self, to, encode(self, to, enc))
@@ -790,7 +790,17 @@ function inOpen(self, packet)
 
   // line is open now!
   from.lineIn = deciphered.js.line;
-  from.lineShared = from.eccOut.deriveSharedSecret(eccKey);
+  var ecdhe = from.eccOut.deriveSharedSecret(eccKey);
+  from.encKey = crypto.createHash("sha256")
+    .update(ecdhe)
+    .update(new Buffer(from.lineOut, "hex"))
+    .update(new Buffer(from.lineIn, "hex"))
+    .digest();
+  from.decKey = crypto.createHash("sha256")
+    .update(ecdhe)
+    .update(new Buffer(from.lineIn, "hex"))
+    .update(new Buffer(from.lineOut, "hex"))
+    .digest();
 
   // could have queued packets to be sent, flush them
   send(self, from);
@@ -804,7 +814,7 @@ function inLine(self, packet){
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
-  var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.lineShared, new Buffer(packet.js.iv, "hex"));
+  var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;

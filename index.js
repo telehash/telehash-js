@@ -546,7 +546,7 @@ function sendOpen(self, to)
   var iv = crypto.randomBytes(16);
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
-  var aes = crypto.createCipheriv("AES-128-CTR", to.eccOut.PublicKey.slice(0, 16), iv);
+  var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash('sha256').update(to.eccOut.PublicKey).digest(), iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
   open.js.sig = crypto.createSign("RSA-SHA256").update(open.body).sign(self.prikey, "base64");
@@ -575,7 +575,7 @@ function send(self, to, packet)
     enc.js.line = to.lineIn;
     var iv = crypto.randomBytes(16);
     enc.js.iv = iv.toString("hex");
-    var aes = crypto.createCipheriv("AES-128-CTR", to.lineShared, iv);
+    var aes = crypto.createCipheriv("AES-256-CTR", to.lineShared, iv);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
     sendBuf(self, to, encode(self, to, enc))
@@ -743,7 +743,7 @@ function inOpen(self, packet)
   
   // decipher the body as a packet so we can examine it
   if(!packet.body) return warn("body missing on open", packet.sender);
-  var aes = crypto.createDecipheriv("AES-128-CTR", open.slice(0, 16), new Buffer(packet.js.iv, "hex"));
+  var aes = crypto.createDecipheriv("AES-256-CTR", crypto.createHash('sha256').update(open).digest(), new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
@@ -790,7 +790,7 @@ function inOpen(self, packet)
 
   // line is open now!
   from.lineIn = deciphered.js.line;
-  from.lineShared = from.eccOut.deriveSharedSecret(eccKey).slice(0, 16);
+  from.lineShared = from.eccOut.deriveSharedSecret(eccKey);
 
   // could have queued packets to be sent, flush them
   send(self, from);
@@ -804,7 +804,7 @@ function inLine(self, packet){
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
-  var aes = crypto.createDecipheriv("AES-128-CTR", packet.from.lineShared, new Buffer(packet.js.iv, "hex"));
+  var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.lineShared, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
   if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
   packet.js = deciphered.js;

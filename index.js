@@ -55,6 +55,7 @@ exports.hashname = function(network, key, args)
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     var packet = decode(msg);
     if(!packet) return warn("failed to decode a packet from", rinfo.address, rinfo.port, msg.toString());
+    if(Object.keys(packet.js).length == 0) return; // empty packets are NAT pings
     if(typeof packet.js.iv != "string" || packet.js.iv.length != 32) return warn("missing initialization vector (iv)", packet.sender);
 
     packet.sender = {ip:rinfo.address, port:rinfo.port};
@@ -132,7 +133,13 @@ function online(self, callback)
     addStream(self, seed, function(self, packet, cbStream){
       cbStream();
       delete packet.stream.handler; // so we don't get called again
-      if(Array.isArray(packet.js.see)) return cbSeed(true);
+      if(Array.isArray(packet.js.see)) {
+        // store who told us about this hashname and what they said their address is
+        packet.js.see.forEach(function(address){
+          addVia(self, seed, address);        
+        });
+        return cbSeed(true);
+      }
       cbSeed();
     }).send({type:"seek", seek:self.hashname});
   }, function(on){
@@ -371,7 +378,6 @@ function addStream(self, to, handler, id)
 
 function sendStream(self, stream, packet)
 {
-  if(stream.ended) return warn("sending to an ended stream", stream.id);
   if(!stream.to)
   {
     stream.ended = true;
@@ -414,7 +420,7 @@ function sendStream(self, stream, packet)
 function addVia(self, from, address)
 {
   var see = seen(self, address);
-  if(!see) return;
+  if(!see || see == self) return;
   if(!see.via) see.via = {};
   if(see.via[from.hashname]) return;
   see.via[from.hashname] = address; // TODO handle multiple addresses per hn (ipv4+ipv6)
@@ -559,7 +565,10 @@ function send(self, to, packet)
   if(typeof to == "string") to = seen(self, to);
   if(!to.outq) to.outq = [];
   if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname);
-  if(packet) to.outq.push(packet);
+  if(packet) {
+    to.outq.push(packet);
+    if(to.outq.length > 1) return; // already trying to connect/send
+  }
 
   // if we don't know how to reach them, go find them
   if(!to.ip && !to.via) return openSeek(self, to);
@@ -632,10 +641,13 @@ function inStream(self, packet)
 
   // so, if there's a lot of "gap" or or dups coming in, be kind and send an update immediately, otherwise send one in a bit
   if(packet.js.seq - stream.outConfirmed > 30 || stream.inDups) stream.send();
+
+/* not sure this auto-ack stuff is wise
   else if(!stream.flusher)
   { // only have one flusher waiting at a time, silly to make a timer per incoming packet
     stream.flusher = setTimeout(function(){ stream.send(); stream.flusher = false; }, 1000);
   }
+*/
 
   // track and drop duplicate packets
   if(packet.js.seq <= stream.inDone || stream.inq[packet.js.seq - (stream.inDone+1)]) return stream.inDups++;
@@ -781,7 +793,7 @@ function inOpen(self, packet)
 
   // was an existing line already, being replaced
   if(from.lineIn && from.lineIn !== deciphered.js.line) {
-    debug("changing lines",from);
+    debug("changing lines",from.hashname);
     from.sentOpen = false; // trigger resending them our open again
   }
 
@@ -850,25 +862,32 @@ function inPeer(self, packet)
   });
 }
 
-// return array of nearby addresses (for .see)
+// return array of nearby hashname objects
 function nearby(self, hash)
 {
-  var ret = [];
-  if(hash === self.hashname) ret.push(self.address);
+  var ret = {};
   
   // return up to 5 closest, in the same or higher (further) bucket
   var bucket = self.hash.distanceTo(new dhash.Hash(null, hash));
-  var max = 5;
-  while(bucket <= 159 && max > 0)
+  while(bucket <= 159 && Object.keys(ret).length < 5)
   {
     if(self.buckets[bucket]) self.buckets[bucket].forEach(function(hn){
       if(!hn.lineIn) return; // only see ones we have a line with
-      max--;
-      ret.push(hn);
+      ret[hn.hashname] = hn;
     });
     bucket++;
   }
-  return ret;
+
+  // use any if still not full
+  if(Object.keys(ret).length < 5) Object.keys(self.lines).forEach(function(line){
+    if(Object.keys(ret).length >= 5) return;
+    ret[self.lines[line].hashname] = self.lines[line];
+  });
+  var reta = [];
+  Object.keys(ret).forEach(function(hn){
+    reta.push(ret[hn]);
+  });
+  return reta;
 }
 
 // return a see to anyone closer

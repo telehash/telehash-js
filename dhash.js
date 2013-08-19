@@ -1,19 +1,12 @@
 var crypto = require('crypto');
 
 // just return true/false if it's at least the format of a sha1
-exports.isSHA1 = function(str)
+exports.isHEX = function(str, len)
 {
   if(typeof str !== "string") return false;
-  if(str.length !== 40) return false;
+  if(str.length !== len) return false;
   if(str.replace(/[a-f0-9]+/i, "").length !== 0) return false;
   return true;
-}
-
-// convenience, sha1 hash of arg, or random if none
-exports.quick = function(str)
-{
-  if(!str) return crypto.randomBytes(20).toString("hex");
-  return crypto.createHash("sha1").update(str).digest('hex');
 }
 
 /**
@@ -26,7 +19,7 @@ function Hash(value, hex) {
     if(hex) this.digest = hex2buf(hex);
     // if failed still, just treat as a string
     if (!this.digest) {
-        var hashAlgorithm = crypto.createHash("SHA1");
+        var hashAlgorithm = crypto.createHash("SHA256");
         hashAlgorithm.update(value);
         this.digest = new Buffer(hashAlgorithm.digest("base64"), "base64");
     }
@@ -39,7 +32,7 @@ function Hash(value, hex) {
 
 function hex2buf(str)
 {
-    var buf = new Buffer(20);
+    var buf = new Buffer(32);
     for (var i = 0; i < str.length / 2; i ++) {
         var byte = parseInt(str.substr(i * 2, 2), 16);
         if (isNaN(byte)) return null;
@@ -98,11 +91,11 @@ Hash.prototype.cmp = function(h) {
 }
 
 /**
- * XOR distance between two sha1 hex hashes, 159 is furthest bit, 0 is closest bit, -1 is same hash
+ * XOR distance between two sha1 hex hashes, 255 is furthest bit, 0 is closest bit, -1 is same hash
  */
 Hash.prototype.distanceTo = function(h) {
     var sbtab = [-1,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3];
-    var ret = 156;
+    var ret = 252;
     for (var i = 0; i < this.nibbles.length; i++) {
         var diff = this.nibbles[i] ^ h.nibbles[i];
         if (diff) {

@@ -31,24 +31,25 @@ exports.genkey = function(callback){
 }
 
 // start a hashname listening and ready to go
-exports.hashname = function(network, key, args)
+exports.hashname = function(key, args)
 {
-  if(!network || !key || !key.public || !key.private) {
-    warn("bad args to hashname, requires network, key.public and key.private");
+  if(!key || !key.public || !key.private) {
+    warn("bad args to hashname, requires key.public and key.private");
     return undefined;
   }
   if(!args) args = {};
 
   // configure defaults
-  var self = {network:network, seeds:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
+  var self = {seeds:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
   // parse/validate the private key
   self.prikey = key.private;
   self.pubkey = key.public;
-  self.hash = new dhash.Hash(self.pubkey+network);
+  self.hash = new dhash.Hash(self.pubkey);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
   self.port = parseInt(args.port) || 0;
+  if(args.family) self.family = args.family;
 
   // udp socket
   var counter = 1;
@@ -93,7 +94,7 @@ exports.hashname = function(network, key, args)
   // need some seeds to connect to
   self.addSeed = function(arg) {
     if(!arg.ip || !arg.port || !arg.pubkey) return warn("invalid args to addSeed");
-    var hashname = (new dhash.Hash(arg.pubkey+self.network)).toString();
+    var hashname = (new dhash.Hash(arg.pubkey)).toString();
     var seed = seen(self, hashname);
     seed.pubkey = arg.pubkey;
     seed.ip = arg.ip;
@@ -127,7 +128,7 @@ exports.hashname = function(network, key, args)
 function online(self, callback)
 {
   if(Object.keys(self.lines).length > 0) return callback();
-  if(self.seeds.length == 0) return callback("no seeds for "+self.network);
+  if(self.seeds.length == 0) return callback("no seeds");
   // try to open a line to any seed
   async.forEachSeries(self.seeds, function(seed, cbSeed){
     addStream(self, seed, function(self, packet, cbStream){
@@ -212,7 +213,7 @@ function bucketize(self, hn, force)
 function meshElect(self)
 {
   // sort all lines into their bucket, rebuild buckets from scratch (some may be GC'd)
-  self.buckets = []; // sparse array, one for each distance 0...159
+  self.buckets = []; // sparse array, one for each distance 0...255
   Object.keys(self.lines).forEach(function(line){
     bucketize(self, self.lines[line], true)
   });
@@ -356,7 +357,7 @@ function wrapStream(self, stream, cbExtra)
 function addStream(self, to, handler, id)
 {
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
-  stream.id = id || dhash.quick();
+  stream.id = id || crypto.randomBytes(16).toString("hex");
   if(to) to.streams[stream.id] = stream; // sendStream handles invalid to
   stream.to = to;
   stream.manual = false; // manual means no ordering/retrans/ack
@@ -487,7 +488,7 @@ function seen(self, hashname)
   // validations
   if(!typeof hashname != "string") hashname = hashname.toString();
   hashname = hashname.split(",")[0]; // convenience if an address is passed in
-  if(!dhash.isSHA1(hashname)) { warn("seen called without a valid hashname", hashname); return false; }
+  if(!dhash.isHEX(hashname, 64)) { warn("seen called without a valid hashname", hashname); return false; }
 
   // so we can check === self
   if(hashname === self.hashname) return self;
@@ -535,7 +536,7 @@ function sendOpen(self, to)
   debug("sendOpen sending", to.hashname);
   to.sentOpen = true;
   if(!to.eccOut) to.eccOut = new ecc.ECKey(ecc.ECCurves.nistp256);
-  if(!to.lineOut) to.lineOut = dhash.quick(); // gen random outgoing line id
+  if(!to.lineOut) to.lineOut = crypto.randomBytes(16).toString("hex"); // gen random outgoing line id
   self.lines[to.lineOut] = to;
   bucketize(self, to); // make sure they're in a bucket
   
@@ -628,7 +629,7 @@ function decode(buf)
 
 function inStream(self, packet)
 {
-  if(!dhash.isSHA1(packet.js.stream)) return warn("invalid stream value", packet.js.stream, packet.from.address);
+  if(!dhash.isHEX(packet.js.stream, 32)) return warn("invalid stream value", packet.js.stream, packet.from.address);
 
   var stream = (packet.from.streams[packet.js.stream]) ? packet.from.streams[packet.js.stream] : addStream(self, packet.from, false, packet.js.stream);
 
@@ -748,7 +749,8 @@ function inOpen(self, packet)
 {
   // decrypt the open
   if(!packet.js.open) return warn("missing open value", packet.sender);
-  var open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING);
+  var open;
+  try{ open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING); }catch(E){}
   if(!open) return warn("couldn't decrypt open", packet.sender);
   var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
   if(!eccKey) return warn("invalid open", packet.sender);
@@ -763,7 +765,7 @@ function inOpen(self, packet)
   if(deciphered.js.to !== self.hashname) return warn("open for wrong hashname", deciphered.js.to);
 
   // make sure it has a valid line
-  if(!dhash.isSHA1(deciphered.js.line)) return warn("invalid line id contained");
+  if(!dhash.isHEX(deciphered.js.line, 32)) return warn("invalid line id contained");
 
   // extract attached public key
   if(!deciphered.body) return warn("open missing attached key", packet.sender);
@@ -777,7 +779,7 @@ function inOpen(self, packet)
   // verify senders hashname
 
   // load the sender
-  var from = seen(self, (new dhash.Hash(key+self.network)).toString());
+  var from = seen(self, (new dhash.Hash(key)).toString());
 
   // make sure this open is newer (if any others)
   if(typeof deciphered.js.at != "number" || (from.openAt && deciphered.js.at < from.openAt)) return warn("invalid at", deciphered.js.at);
@@ -839,7 +841,7 @@ function inLine(self, packet){
 // someone's trying to connect to us, send an open to them
 function inConnect(self, packet)
 {
-  var to = seen(self, (new dhash.Hash(packet.body.toString()+self.network)).toString());
+  var to = seen(self, (new dhash.Hash(packet.body.toString())).toString());
   if(!to.ip) {
     to.ip = packet.js.ip;
     to.port = parseInt(packet.js.port);
@@ -869,7 +871,7 @@ function nearby(self, hash)
   
   // return up to 5 closest, in the same or higher (further) bucket
   var bucket = self.hash.distanceTo(new dhash.Hash(null, hash));
-  while(bucket <= 159 && Object.keys(ret).length < 5)
+  while(bucket <= 255 && Object.keys(ret).length < 5)
   {
     if(self.buckets[bucket]) self.buckets[bucket].forEach(function(hn){
       if(!hn.lineIn) return; // only see ones we have a line with
@@ -893,7 +895,7 @@ function nearby(self, hash)
 // return a see to anyone closer
 function inSeek(self, packet)
 {
-  if(!dhash.isSHA1(packet.js.seek)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from.address);
+  if(!dhash.isHEX(packet.js.seek, 64)) return warn("invalid seek of ", packet.js.seek, "from:", packet.from.address);
 
   // now see if we have anyone to recommend
   var answer = {see:nearby(self, packet.js.seek).map(function(hn){ return hn.address; }), end:true};  

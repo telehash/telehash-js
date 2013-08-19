@@ -436,6 +436,7 @@ function openSeek(self, to)
   var asked = {};
   var closest = self;
   var q = async.queue(function(hn, cbQ){
+    if(hn === self) return cbQ();
     if(to.via) return cbQ(); // already found!
     if(asked[hn.hashname]) return cbQ(); // someone else already asked
     asked[hn.hashname] = true;

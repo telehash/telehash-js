@@ -487,6 +487,7 @@ function encode(self, to, packet)
 function seen(self, hashname)
 {
   // validations
+  if(!hashname) { warn("seen called without a hashname", hashname); return false; }
   if(!typeof hashname != "string") hashname = hashname.toString();
   hashname = hashname.split(",")[0]; // convenience if an address is passed in
   if(!dhash.isHEX(hashname, 64)) { warn("seen called without a valid hashname", hashname); return false; }
@@ -554,10 +555,10 @@ function sendOpen(self, to)
   var iv = crypto.randomBytes(16);
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
-  var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash('sha256').update(to.eccOut.PublicKey).digest(), iv);
+  var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash("sha256").update(to.eccOut.PublicKey).digest(), iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
-  open.js.sig = crypto.createSign("RSA-SHA256").update(open.body).sign(self.prikey, "base64");
+  open.js.sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, "base64", ursa.RSA_PKCS1_PSS_PADDING);
   sendBuf(self, to, encode(self, to, open));
 }
 
@@ -774,7 +775,7 @@ function inOpen(self, packet)
   if(!PEM_REGEX.exec(key)) return warn("invalid attached key from", packet.sender);
 
   // verify signature
-  var valid = crypto.createVerify("RSA-SHA256").update(packet.body).verify(key, packet.js.sig, "base64");
+  var valid = ursa.coercePublicKey(key).hashAndVerify("sha256", packet.body, packet.js.sig, "base64", ursa.RSA_PKCS1_PSS_PADDING)
   if(!valid) return warn("invalid signature from:", packet.sender);
 
   // verify senders hashname

@@ -11,10 +11,10 @@ var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
-var debug = function(){}; // switch to console.log to enable
+var debug = console.log;//function(){}; // switch to console.log to enable
 var MESH_MAX = 200; // how many peers to maintain at most
 
-var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n[\/+=a-zA-Z0-9\r\n]*\r?\n-----END \2 KEY-----\r?\n)/m;
+var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n([\/+=a-zA-Z0-9\r\n]*)\r?\n-----END \2 KEY-----\r?\n)/m;
 
 exports.hash = function(string)
 {
@@ -33,8 +33,8 @@ exports.genkey = function(callback){
 // start a hashname listening and ready to go
 exports.hashname = function(key, args)
 {
-  if(!key || !key.public || !key.private) {
-    warn("bad args to hashname, requires key.public and key.private");
+  if(!key || !key.public || !key.private || !pem2der(key.public)) {
+    warn("bad args to hashname, requires key.public and key.private in PEM format");
     return undefined;
   }
   if(!args) args = {};
@@ -43,7 +43,8 @@ exports.hashname = function(key, args)
   var self = {seeds:[], lines:{}, seen:{}, buckets:[], customs:{}, allowed:{}};
   // parse/validate the private key
   self.prikey = key.private;
-  self.pubkey = key.public;
+  self.pubkeypem = key.public;
+  self.pubkey = pem2der(key.public);
   self.hash = new dhash.Hash(self.pubkey);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
@@ -93,6 +94,7 @@ exports.hashname = function(key, args)
   
   // need some seeds to connect to
   self.addSeed = function(arg) {
+    if(arg) arg.pubkey = pem2der(arg.pubkey);
     if(!arg.ip || !arg.port || !arg.pubkey) return warn("invalid args to addSeed");
     var hashname = (new dhash.Hash(arg.pubkey)).toString();
     var seed = seen(self, hashname);
@@ -122,6 +124,22 @@ exports.hashname = function(key, args)
   self.proxy = function(check) { self.proxyCheck = check };
   
   return self;
+}
+
+function pem2der(pem)
+{
+  if(!pem) return false;
+  var r = PEM_REGEX.exec(pem);
+  if(!r[3]) return false;
+  return new Buffer(r[3], "base64");
+}
+
+function der2pem(der)
+{
+  if(!der || !Buffer.isBuffer(der)) return false;
+  var b64 = der.toString("base64");
+  b64 = b64.match(/.{1,60}/g).join("\n");
+  return "-----BEGIN PUBLIC KEY-----\n"+b64+"\n-----END PUBLIC KEY-----\n";
 }
 
 // start/return online status
@@ -551,7 +569,7 @@ function sendOpen(self, to)
   // craft the special open packet wrapper
   var open = {js:{type:"open"}};
   // attach the session ecc public key, encrypted to the recipients public key
-  open.js.open = ursa.coercePublicKey(to.pubkey).encrypt(to.eccOut.PublicKey, undefined, "base64", ursa.RSA_PKCS1_OAEP_PADDING);
+  open.js.open = ursa.coercePublicKey(der2pem(to.pubkey)).encrypt(to.eccOut.PublicKey, undefined, "base64", ursa.RSA_PKCS1_OAEP_PADDING);
   var iv = crypto.randomBytes(16);
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
@@ -771,11 +789,13 @@ function inOpen(self, packet)
 
   // extract attached public key
   if(!deciphered.body) return warn("open missing attached key", packet.sender);
-  var key = deciphered.body.toString("utf8");
-  if(!PEM_REGEX.exec(key)) return warn("invalid attached key from", packet.sender);
+  var key = deciphered.body;
+  var ukey = ursa.coercePublicKey(der2pem(key));
+  if(!ukey) return warn("invalid attached key from", packet.sender);
+  if(ukey.getModulus().length < 256) return warn("key to small from", packet.sender);
 
   // verify signature
-  var valid = ursa.coercePublicKey(key).hashAndVerify("sha256", packet.body, packet.js.sig, "base64", ursa.RSA_PKCS1_PSS_PADDING)
+  var valid = ukey.hashAndVerify("sha256", packet.body, packet.js.sig, "base64", ursa.RSA_PKCS1_PSS_PADDING)
   if(!valid) return warn("invalid signature from:", packet.sender);
 
   // verify senders hashname
@@ -826,7 +846,7 @@ function inOpen(self, packet)
 function inLine(self, packet){
   packet.from = self.lines[packet.js.line];
 
-  if(!packet.from) return warn("invalid line received", packet.js.line, packet.sender);
+  if(!packet.from) return debug("unknown line received", packet.js.line, packet.sender);
 
   // a matching line is required to decode the packet
   packet.from.recvAt = Date.now();
@@ -850,7 +870,7 @@ function inConnect(self, packet)
   }
   // only do this once, prevent abuse
   if(to.openSent) return warn("redundant connect from",packet.from.hashname,"for",to.hashname);
-  to.pubkey = packet.body.toString();
+  to.pubkey = packet.body;
   sendOpen(self, to);
 }
 

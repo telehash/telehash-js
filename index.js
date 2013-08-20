@@ -11,7 +11,7 @@ var dhash = require("./dhash");
 
 var REQUEST_TIMEOUT = 5 * 1000; // default timeout for any request
 var warn = console.log; // switch to function(){} to disable
-var debug = console.log;//function(){}; // switch to console.log to enable
+var debug = function(){}; // switch to console.log to enable
 var MESH_MAX = 200; // how many peers to maintain at most
 
 var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n([\/+=a-zA-Z0-9\r\n]*)\r?\n-----END \2 KEY-----\r?\n)/m;
@@ -782,7 +782,7 @@ function inOpen(self, packet)
   if(!deciphered) return warn("invalid body attached", packet.sender);
 
   // make sure any to is us (for multihosting)
-  if(deciphered.js.to !== self.hashname) return warn("open for wrong hashname", deciphered.js.to);
+  if(deciphered.js.to !== self.hashname) return warn("open for wrong hashname", deciphered.js.to, self.hashname);
 
   // make sure it has a valid line
   if(!dhash.isHEX(deciphered.js.line, 32)) return warn("invalid line id contained");
@@ -863,7 +863,7 @@ function inLine(self, packet){
 // someone's trying to connect to us, send an open to them
 function inConnect(self, packet)
 {
-  var to = seen(self, (new dhash.Hash(packet.body.toString())).toString());
+  var to = seen(self, (new dhash.Hash(packet.body)).toString());
   if(!to.ip) {
     to.ip = packet.js.ip;
     to.port = parseInt(packet.js.port);

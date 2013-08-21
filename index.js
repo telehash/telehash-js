@@ -181,24 +181,29 @@ function meshLoop(self)
   setTimeout(function(){meshLoop(self)}, 25*1000);
 }
 
+function hashDel(self, who, why)
+{
+  Object.keys(who.streams).forEach(function(streamid){
+    endStream(self, who.streams[streamid], why);
+  })
+  if(who.lineIn) delete self.lines[who.lineIn];
+  delete self.seen[who.hashname];
+  debug("reaping ", who.hashname, why);
+}
+
+
 // delete any dead hashnames!
 function meshReap(self)
 {
-  function del(who, why)
-  {
-    if(who.lineIn) delete self.lines[who.lineIn];
-    delete self.seen[who.hashname];
-    debug("reaping ", who.hashname, why);
-  }
   Object.keys(self.seen).forEach(function(h){
     var hn = self.seen[h];
     if(!hn.sentAt) return; // TODO never if these are from app? remove old ones from .see hints?
     if(!hn.recvAt) {
-      if(Date.now() - hn.at > 120*1000) return del(hn, "sent, never received, older than 2min");
+      if(Date.now() - hn.at > 120*1000) return hashDel(self, hn, "sent, never received, older than 2min");
       return; // allow non-response for up to 2min
     }
-    if(Date.now() - hn.sentAt > 60*1000) return del(hn, "we stopped sending to them for more than 1min");
-    if(hn.sentAt - hn.recvAt > 60*1000) return del(hn, "no response in 30sec");
+    if(Date.now() - hn.sentAt > 60*1000) return hashDel(self, hn, "we stopped sending to them for more than 1min");
+    if(hn.sentAt - hn.recvAt > 60*1000) return hashDel(self, hn, "no response in 30sec");
   });
 }
 
@@ -376,18 +381,21 @@ function addStream(self, to, handler, id)
 {
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1}
   stream.id = id || crypto.randomBytes(16).toString("hex");
-  if(to) to.streams[stream.id] = stream; // sendStream handles invalid to
   stream.to = to;
   stream.manual = false; // manual means no ordering/retrans/ack
+
+  // as a convenience, as soon as we send out a stream, ensure there's at least a dummy handler
+  stream.handler = handler;
+  if(stream.handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
+
+  if(!to) return endStream(self, stream, "invalid hashname of "+to);
+  if(to == self) return endStream(self, stream, "can't send to yourself");
+  to.streams[stream.id] = stream;
 
   // how we process things in order
   stream.q = async.queue(function(packet, cbQ){
     inStreamSeries(self, packet, cbQ);
   }, 1);
-
-  // as a convenience, as soon as we send out a stream, ensure there's at least a dummy handler
-  stream.handler = handler;
-  if(stream.handler === undefined) stream.handler = function(self, packet, callback){ callback(); };
 
   // handy util, send just one anytime explicitly
   stream.send = function(js, body){ sendStream(self, stream, {js:js, body:body}); return stream; };
@@ -395,16 +403,16 @@ function addStream(self, to, handler, id)
   return stream;
 }
 
+function endStream(self, stream, err)
+{
+  stream.ended = true;
+  var end = {stream:stream, from:stream.to, js:{end:true}};
+  if(err) end.js.err = err;
+  if(stream.handler) stream.handler(self, end, function(){});  
+}
+
 function sendStream(self, stream, packet)
 {
-  if(!stream.to)
-  {
-    stream.ended = true;
-    if(!stream.handler) return warn("stream missing to and handler", stream.id);
-    var err = {stream:stream, js:{err:"invalid hashname", end:true}};
-    return stream.handler(self, err, function(){});
-  }
-  
   // these are just "ack" packets, drop if no reason to ack
   if(!packet.js)
   {
@@ -481,7 +489,7 @@ function openSeek(self, to)
   // when all done, if we found the hashname, trigger the open!
   q.drain = function(){
     if(to.via) return send(self, to);
-    warn("seek failed to", to.hashname);
+    hashDel(self, to, "seek failed");
   };
 
   // take the closest lines and ask them
@@ -545,7 +553,7 @@ function sendOpen(self, to)
     // if we didn't have a working via, try again
     if(!peered) {
       delete to.via;
-      if(to.retries) return warn("abandoning after second attempt to seek", to.hashname);
+      if(to.retries) return hashDel(self, to, "abandoning after second attempt to seek");
       to.retries = 1; // prevent a loop of failed connections/seeking
       warn("re-seeking since via failed", to.hashname);
       openSeek(self, to);
@@ -585,7 +593,7 @@ function send(self, to, packet)
 {
   if(typeof to == "string") to = seen(self, to);
   if(!to.outq) to.outq = [];
-  if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname);
+  if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname, packet.js);
   if(packet) {
     to.outq.push(packet);
     if(to.outq.length > 1) return; // already trying to connect/send
@@ -608,6 +616,7 @@ function send(self, to, packet)
     var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
     enc.body = Buffer.concat([aes.update(buf), aes.final()]);
 
+    to.sentAt = Date.now();
     sendBuf(self, to, encode(self, to, enc))
   });
   to.outq = [];
@@ -618,7 +627,6 @@ function sendBuf(self, to, buf)
 {
   // track some stats
   to.sent ? to.sent++ : to.sent = 1;
-  to.sentAt = Date.now();
 
   debug("out",to.ip+":"+to.port, buf.length);
   self.server.send(buf, 0, buf.length, to.port, to.ip);

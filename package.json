@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.0.51",
+   "version": "0.0.52",
    "dependencies": {
    	  "async": "0.2.x",
       "ursa": "git+https://github.com/quartzjer/ursa.git",

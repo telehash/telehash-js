@@ -45,7 +45,7 @@ exports.hashname = function(key, args)
   self.prikey = key.private;
   self.pubkeypem = key.public;
   self.pubkey = pem2der(key.public);
-  self.hash = new dhash.Hash(self.pubkey);
+  self.hash = key2hash(self.pubkey);
   self.hashname = self.hash.toString();
   if (!args.ip || args.natted) self.nat = true;
   self.ip = args.ip || "0.0.0.0";
@@ -96,7 +96,7 @@ exports.hashname = function(key, args)
   self.addSeed = function(arg) {
     if(arg) arg.pubkey = pem2der(arg.pubkey);
     if(!arg.ip || !arg.port || !arg.pubkey) return warn("invalid args to addSeed");
-    var hashname = (new dhash.Hash(arg.pubkey)).toString();
+    var hashname = key2hash(arg.pubkey).toString();
     var seed = seen(self, hashname);
     seed.pubkey = arg.pubkey;
     seed.ip = arg.ip;
@@ -124,6 +124,18 @@ exports.hashname = function(key, args)
   self.proxy = function(check) { self.proxyCheck = check };
   
   return self;
+}
+
+// gen a hashname from an rsa public key
+function key2hash(key)
+{
+  // validate it by parsing and regenerating it
+  var val = pem2der(ursa.coercePublicKey(der2pem(key)).toPublicPem("utf8"));
+  if(key.toString("hex") != val.toString("hex")) {
+    debug("key validation failed");
+    return false;
+  }
+  return new dhash.Hash(val);
 }
 
 function pem2der(pem)
@@ -809,7 +821,7 @@ function inOpen(self, packet)
   // verify senders hashname
 
   // load the sender
-  var from = seen(self, (new dhash.Hash(key)).toString());
+  var from = seen(self, key2hash(key).toString());
 
   // make sure this open is newer (if any others)
   if(typeof deciphered.js.at != "number" || (from.openAt && deciphered.js.at < from.openAt)) return warn("invalid at", deciphered.js.at);
@@ -871,7 +883,7 @@ function inLine(self, packet){
 // someone's trying to connect to us, send an open to them
 function inConnect(self, packet)
 {
-  var to = seen(self, (new dhash.Hash(packet.body)).toString());
+  var to = seen(self, key2hash(packet.body).toString());
   if(!to.ip) {
     to.ip = packet.js.ip;
     to.port = parseInt(packet.js.port);

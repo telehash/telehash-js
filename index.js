@@ -596,7 +596,7 @@ function sendOpen(self, to)
   var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash("sha256").update(to.eccOut.PublicKey).digest(), iv);
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
-  open.js.sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, "base64", ursa.RSA_PKCS1_PSS_PADDING);
+  open.js.sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, "base64", ursa.RSA_PKCS1_PADDING);
   sendBuf(self, to, encode(self, to, open));
 }
 
@@ -815,7 +815,8 @@ function inOpen(self, packet)
   if(ukey.getModulus().length < 256) return warn("key to small from", packet.sender);
 
   // verify signature
-  var valid = ukey.hashAndVerify("sha256", packet.body, packet.js.sig, "base64", ursa.RSA_PKCS1_PSS_PADDING)
+  var valid;
+  try{ valid = ukey.hashAndVerify("sha256", packet.body, packet.js.sig, "base64", ursa.RSA_PKCS1_PADDING); }catch(E){}
   if(!valid) return warn("invalid signature from:", packet.sender);
 
   // verify senders hashname

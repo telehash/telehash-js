@@ -21,6 +21,11 @@ exports.hash = function(string)
   return new dhash.Hash(string);
 }
 
+exports.isHashname = function(hex)
+{
+  return dhash.isHEX(hex, 64);
+}
+
 // useful for dev
 exports.debug = function(cb){ debug = cb; };
 
@@ -122,6 +127,9 @@ exports.hashname = function(key, args)
   // have a callback to determine if a socket proxy request can pass through, fn(ip, port, hn) returns true/false
   self.proxyCheck = function(){ return false; };
   self.proxy = function(check) { self.proxyCheck = check };
+  
+  // turn a stream into a native node one, extra will optionally get called w/ incoming packets too if
+  self.wrap = function(stream, extra) { return wrapStream(self, stream, extra); }
   
   return self;
 }
@@ -332,7 +340,7 @@ function wrapStream(self, stream, cbExtra)
       var len = 1024 - JSON.stringify(jsout).length; // max body size for a packet
       if(duplex.bufBody.length < len) len = duplex.bufBody.length;
       bodyout = duplex.bufBody.slice(0, len);
-      duplex.bufBody = duplex.bufBody.slice(len, duplex.bufBody.length - len);
+      duplex.bufBody = duplex.bufBody.slice(len);
     }
     // send it!
     sendStream(self, stream, {js:jsout, body:bodyout, done:function(){

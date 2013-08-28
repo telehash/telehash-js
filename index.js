@@ -236,9 +236,17 @@ function meshSeen(self)
     return self.hash.distanceTo(a.hash) - self.hash.distanceTo(b.hash);
   }).slice(0,100).forEach(function(hn){
     if(!nearest) nearest = hn;
-    if(hn.lineIn) return; // line is open or already tried opening a line to them at least once
-    // try sending them a line request, no line == !hn.forApp
-    sendOpen(self, hn);
+    if(hn.sentOpen) return; // already sent an open
+    if(!hn.via) return; // only mesh ones we can talk to directly
+    // connect by seeking
+    addStream(self, hn, function(self, packet, cbStream){
+      cbStream();
+      if(Array.isArray(packet.js.see)) {
+        packet.js.see.forEach(function(address){
+          addVia(self, hn, address);        
+        });
+      }
+    }).send({type:"seek", seek:self.hashname});
   });
   self.nearest = nearest;
 }
@@ -551,7 +559,8 @@ function seen(self, hashname)
   return ret;
 }
 
-function sendOpen(self, to)
+// direct overrides the ipp of to
+function sendOpen(self, to, direct)
 {
   // only way to get it is to peer whoever told us about the hashname
   if(!to.pubkey)
@@ -605,7 +614,7 @@ function sendOpen(self, to)
   open.body = Buffer.concat([aes.update(encode(self, to, packet)), aes.final()]);
   // now attach a signature so the recipient can verify the sender
   open.js.sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, "base64", ursa.RSA_PKCS1_PADDING);
-  sendBuf(self, to, encode(self, to, open));
+  sendBuf(self, direct||to, encode(self, to, open));
 }
 
 // wiring wrapper, to is a hashname object from seen(), does the work to open a line first
@@ -613,7 +622,7 @@ function send(self, to, packet)
 {
   if(typeof to == "string") to = seen(self, to);
   if(!to.outq) to.outq = [];
-  if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname, packet.js);
+  if(to.outq.length > 5) return warn("dropping packet, flooding not allowed to", to.hashname);
   if(packet) {
     to.outq.push(packet);
     if(to.outq.length > 1) return; // already trying to connect/send
@@ -881,7 +890,7 @@ function inLine(self, packet){
   packet.from.recvAt = Date.now();
   var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
   var deciphered = decode(Buffer.concat([aes.update(packet.body), aes.final()]));
-  if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.toString())
+  if(!deciphered) return warn("decryption failed for", packet.from.hashname, packet.body.length);
   packet.js = deciphered.js;
   packet.body = deciphered.body;
   
@@ -893,14 +902,22 @@ function inLine(self, packet){
 function inConnect(self, packet)
 {
   var to = seen(self, key2hash(packet.body).toString());
+  if(!to || !packet.js.ip || typeof packet.js.port != 'number') return warn("invalid connect request from",packet.from.address,packet.js);
+  // if no ipp yet, save them
   if(!to.ip) {
     to.ip = packet.js.ip;
     to.port = parseInt(packet.js.port);
   }
-  // only do this once, prevent abuse
-  if(to.openSent) return warn("redundant connect from",packet.from.hashname,"for",to.hashname);
-  to.pubkey = packet.body;
-  sendOpen(self, to);
+  if(to.sentOpen)
+  {
+    // don't resend to fast to prevent abuse/amplification
+    if(to.resentOpen && (Date.now() - to.resentOpen) < 5000) return warn("told to connect too fast, ignoring from",packet.from.address,"to",to.address, Date.now() - to.resentOpen);
+    to.resentOpen = Date.now();
+    to.sentOpen = false;
+  }else{
+    to.pubkey = packet.body;    
+  }
+  sendOpen(self, to, packet.js); // use the given ipp override since new connects happen from restarts
 }
 
 // be the middleman to help NAT hole punch

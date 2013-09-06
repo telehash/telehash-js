@@ -599,7 +599,7 @@ function sendOpen(self, to, direct)
         var parts = to.via[hn].split(",");
         sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
         // if on the same NAT'd IP, also relay our local IPP
-        if(parts[1] == self.pubip) js.local = {ip:self.pubip, port:self.pubport};
+        if(parts[1] == self.pubip) js.local = {ip:self.ip, port:self.port};
       }
       js.peer = [to.hashname];
       addStream(self, via, "peer").send(js);

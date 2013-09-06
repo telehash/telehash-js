@@ -490,7 +490,16 @@ function sendStream(self, stream, packet)
 function addVia(self, from, address)
 {
   var see = seen(self, address);
-  if(!see || see == self) return;
+  if(!see) return;
+  if(see == self)
+  {
+    // track what our public ip and port are
+    var parts = address.split(",");
+    if(self.pubip != parts[1]) debug("set our public ipp to "+parts.slice(1).join(":"));
+    self.pubip = parts[1];
+    self.pubport = parseInt(parts[2]);
+    return;
+  }
   if(!see.via) see.via = {};
   if(see.via[from.hashname]) return;
   see.via[from.hashname] = address; // TODO handle multiple addresses per hn (ipv4+ipv6)
@@ -584,12 +593,14 @@ function sendOpen(self, to, direct)
     if(to.via) Object.keys(to.via).forEach(function(hn){
       var via = seen(self, hn);
       if(!via.lineIn) return;
+      var js = {};
       // send an empty packet to the target to open any NAT
       if(self.nat) {
         var parts = to.via[hn].split(",");
         sendBuf(self, {port:parseInt(parts[2]), ip:parts[1]}, encode(self, to, {js:{}}));
+        // if on the same NAT'd IP, also relay our local IPP
+        if(parts[1] == self.pubip) js.local = {ip:self.pubip, port:self.pubport};
       }
-      var js = {};
       js.peer = [to.hashname];
       addStream(self, via, "peer").send(js);
       peered = true;
@@ -630,6 +641,8 @@ function sendOpen(self, to, direct)
   // now attach a signature so the recipient can verify the sender
   open.js.sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, "base64", ursa.RSA_PKCS1_PADDING);
   sendBuf(self, direct||to, encode(self, to, open));
+  // also try to send via local network if known
+  if(to.local) sendBuf(self, to.local, encode(self, to, open));
 }
 
 // wiring wrapper, to is a hashname object from seen(), does the work to open a line first
@@ -926,6 +939,8 @@ function inConnect(self, packet)
     to.ip = packet.js.ip;
     to.port = parseInt(packet.js.port);
   }
+  // if local given, cache that for the open flow too
+  if(packet.js.local && typeof packet.js.local.ip == "string" && typeof packet.js.local.port == "number" && packet.js.local.ip != to.ip) to.local = packet.js.local;
   if(to.sentOpen)
   {
     // don't resend to fast to prevent abuse/amplification
@@ -946,7 +961,9 @@ function inPeer(self, packet)
   packet.js.peer.forEach(function(hn){
     var peer = seen(self, hn);
     if(!peer.lineIn) return; // these happen often as lines come/go, ignore dead peer requests
-    addStream(self, peer, "connect").send({ip:packet.from.ip, port:packet.from.port}, packet.from.pubkey);
+    var js = {ip:packet.from.ip, port:packet.from.port};
+    if(packet.js.local && packet.js.local.ip != packet.from.ip) js.local = packet.js.local; // relay any optional local information
+    addStream(self, peer, "connect").send(js, packet.from.pubkey);
   });
 }
 

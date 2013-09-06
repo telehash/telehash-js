@@ -113,7 +113,7 @@ exports.hashname = function(key, args)
   self.online = function(callback) { online(self, callback); };
 
   // create your own custom streams
-  self.stream = function(hn, type, handler) {return addStream(self, seen(self, hn), type, handler); };
+  self.stream = function(hn, type, handler) {return addStream(self, seen(self, hn), "_"+type, handler); };
 
   // handle new streams coming in
   self.listen = function(type, callback) {
@@ -324,6 +324,7 @@ function doSocket(self, args, callback)
 // use node's stream api wrapper
 function wrapStream(self, stream, cbExtra)
 {
+  stream.app = false; // for our callback structure
   var duplex = new require("stream").Duplex();
 
   // allow for manually injected json
@@ -410,6 +411,7 @@ function addStream(self, to, type, handler, id)
   var stream = {inq:[], outq:[], inSeq:0, outSeq:0, inDone:-1, outConfirmed:0, inDups:0, lastAck:-1, type:type}
   stream.id = id || crypto.randomBytes(16).toString("hex");
   stream.to = to;
+  stream.hashname = to.hashname; // for convenience
   stream.manual = false; // manual means no ordering/retrans/ack
   stream.app = (type.indexOf("_") == 0); // if it's an app custom stream
 
@@ -420,8 +422,7 @@ function addStream(self, to, type, handler, id)
     if(!stream.handler) return callback();
     if(!stream.app) return stream.handler(self, packet, callback);
     // now do the app-custom style handler of cb(err, js, body);
-    if(packet.js.end) return stream.handler(packet.js.err||"ended", packet.js["_"], packet.body);
-    stream.handler(null, packet.js["_"], packet.body);
+    stream.handler((packet.js.end&&(packet.js.err||true)), stream, packet.js["_"], packet.body);
     callback();
   }
 
@@ -460,7 +461,8 @@ function sendStream(self, stream, packet)
     packet.js = {};
   }
   
-  if(stream.outSeq == 0) packet.js.type = stream.type;
+  // always send the type only on the first outgoing packet (not in answer)
+  if(stream.inDone == -1 && stream.outSeq == 0) packet.js.type = stream.type;
   packet.js.stream = stream.id;
   packet.js.seq = stream.outSeq++;
   packet.js.ack = stream.inSeq;
@@ -773,7 +775,7 @@ function inStreamSeries(self, packet, callback)
 
   // only new incoming streams end up here, require a type
   if(typeof packet.js.type != "string") {
-    warn("unknown stream packet", JSON.stringify(packet.js));
+    if(!packet.js.end) warn("unknown stream packet", JSON.stringify(packet.js));
     return callback();
   }
 
@@ -782,10 +784,13 @@ function inStreamSeries(self, packet, callback)
   else if(packet.js.type === "peer") inPeer(self, packet);
   else if(packet.js.type === "connect") inConnect(self, packet);
   else if(packet.js.type === "seek") inSeek(self, packet);
-  else if(self.customs[packet.js.type]) self.customs[packet.js.type](self, packet);
-  else {
+  else if(packet.js.type.indexOf("_") == 0 && self.customs[packet.js.type.substr(1)]) {
+    packet.stream.app = true;
+    packet.stream.handler = self.customs[packet.js.type.substr(1)];
+    return packet.stream.handle(self, packet, callback);
+  } else {
     warn("unknown stream packet type", packet.js.type);
-    packet.stream.send({js:{end:true, err:"unknown type"}});
+    packet.stream.send({end:true, err:"unknown type"});
   }
 
   // if nobody is handling or has replied, automatically end it

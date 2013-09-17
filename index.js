@@ -422,7 +422,7 @@ function addStream(self, to, type, handler, id)
     if(!stream.handler) return callback();
     if(!stream.app) return stream.handler(self, packet, callback);
     // now do the app-custom style handler of cb(err, js, body);
-    stream.handler((packet.js.end&&(packet.js.err||true)), stream, packet.js["_"], packet.body);
+    stream.handler((packet.js.end&&(packet.js.err||true)), stream, packet.js["_"]||{}, packet.body);
     callback();
   }
 
@@ -838,8 +838,11 @@ function inOpen(self, packet)
   // decrypt the open
   if(!packet.js.open) return warn("missing open value", packet.sender);
   var open;
-  try{ open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING); }catch(E){}
-  if(!open) return warn("couldn't decrypt open", packet.sender);
+  var err;
+  try{ open = ursa.coercePrivateKey(self.prikey).decrypt(packet.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING); }catch(E){
+    err = E;
+  }
+  if(!open) return warn("couldn't decrypt open", packet.sender, err);
   var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
   if(!eccKey) return warn("invalid open", packet.sender);
   
@@ -896,6 +899,7 @@ function inOpen(self, packet)
   // line is open now!
   from.lineIn = deciphered.js.line;
   var ecdhe = from.eccOut.deriveSharedSecret(eccKey);
+  debug("ECDHE",ecdhe.length, ecdhe.toString("hex"));
   from.encKey = crypto.createHash("sha256")
     .update(ecdhe)
     .update(new Buffer(from.lineOut, "hex"))

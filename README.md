@@ -1,5 +1,7 @@
 # Overview
 
+[![node-telehash](https://nodei.co/npm/node-telehash.png)](https://nodei.co/npm/node-telehash/)
+	
 This module presents a simple high-level API for using [telehash v2](https://github.com/quartzjer/TeleHash/blob/master/org/v2.md).
 
 Every instance of an app using telehash is identified by a unique `hashname` which is created from it's RSA public key.  Every app must bundle a list of one or more seeds to help it get connected to the DHT.

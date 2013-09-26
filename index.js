@@ -150,8 +150,8 @@ function pem2der(pem)
 {
   if(!pem) return false;
   var r = PEM_REGEX.exec(pem);
-  if(!r[3]) return false;
-  return new Buffer(r[3], "base64");
+  var b64 = r ? r[3] : pem;
+  return new Buffer(b64, "base64");
 }
 
 function der2pem(der)

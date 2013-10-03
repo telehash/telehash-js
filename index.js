@@ -843,8 +843,11 @@ function inOpen(self, packet)
     err = E;
   }
   if(!open) return warn("couldn't decrypt open", packet.sender, err);
-  var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
-  if(!eccKey) return warn("invalid open", packet.sender);
+  var eccKey;
+  try {
+	  eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, open, true); // ecc public key only
+	}catch(E){};
+  if(!eccKey) return warn("invalid open ecc key", open.toString("hex"), packet.sender);
   
   // decipher the body as a packet so we can examine it
   if(!packet.body) return warn("body missing on open", packet.sender);
@@ -861,7 +864,10 @@ function inOpen(self, packet)
   // extract attached public key
   if(!deciphered.body) return warn("open missing attached key", packet.sender);
   var key = deciphered.body;
-  var ukey = ursa.coercePublicKey(der2pem(key));
+  var ukey;
+	try{
+		ukey = ursa.coercePublicKey(der2pem(key));
+	}catch(E){}
   if(!ukey) return warn("invalid attached key from", packet.sender);
   if(ukey.getModulus().length < 256) return warn("key to small from", packet.sender);
 

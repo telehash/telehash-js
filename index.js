@@ -637,10 +637,12 @@ function sendOpen(self, to, direct)
   open.js.iv = iv.toString("hex");
   // now encrypt the original open packet
   var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash("sha256").update(to.eccOut.PublicKey).digest(), iv);
-  open.body = aes.update(encode(self, to, packet));
+  open.body = Buffer.concat([aes.update(encode(self, to, packet)),aes.final()]);
   // now attach a signature so the recipient can verify the sender, and encrypt it too
   var sig = ursa.coercePrivateKey(self.prikey).hashAndSign("sha256", open.body, undefined, undefined, ursa.RSA_PKCS1_PADDING);
-  open.js.sig = aes.update(sig).toString("base64");
+  var aeskey = crypto.createHash("sha256").update(to.eccOut.PublicKey).update(new Buffer(to.lineOut,"hex")).digest();
+  var aes = crypto.createCipheriv("AES-256-CTR", aeskey, iv);
+  open.js.sig = Buffer.concat([aes.update(sig),aes.final()]).toString("base64");
 	
   sendBuf(self, direct||to, encode(self, to, open));
   // also try to send via local network if known
@@ -854,9 +856,8 @@ function inOpen(self, packet)
   // decipher the body as a packet so we can examine it
   if(!packet.body) return warn("body missing on open", packet.sender);
   var aes = crypto.createDecipheriv("AES-256-CTR", crypto.createHash('sha256').update(open).digest(), new Buffer(packet.js.iv, "hex"));
-  var deciphered = decode(aes.update(packet.body));
+  var deciphered = decode(Buffer.concat([aes.update(packet.body),aes.final()]));
   if(!deciphered) return warn("invalid body attached", packet.sender);
-  var decsig = aes.update(packet.js.sig, "base64");
 
   // make sure any to is us (for multihosting)
   if(deciphered.js.to !== self.hashname) return warn("open for wrong hashname", deciphered.js.to, self.hashname);
@@ -874,6 +875,11 @@ function inOpen(self, packet)
   if(!ukey) return warn("invalid attached key from", packet.sender);
   if(ukey.getModulus().length < 256) return warn("key to small from", packet.sender);
 
+  // decrypt signature
+  var aeskey = crypto.createHash('sha256').update(open).update(new Buffer(deciphered.js.line,"hex")).digest()
+  var aes = crypto.createDecipheriv("AES-256-CTR", aeskey, new Buffer(packet.js.iv, "hex"));
+  var decsig = Buffer.concat([aes.update(packet.js.sig, "base64"),aes.final()]);
+  
   // verify signature
   var valid;
   try{ valid = ukey.hashAndVerify("sha256", packet.body, decsig, undefined, ursa.RSA_PKCS1_PADDING); }catch(E){}

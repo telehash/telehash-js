@@ -463,7 +463,7 @@ function sendStream(self, stream, packet)
   
   // always send the type only on the first outgoing packet (not in answer)
   if(stream.inDone == -1 && stream.outSeq == 0) packet.js.type = stream.type;
-  packet.js.stream = stream.id;
+  packet.js.c = stream.id;
   packet.js.seq = stream.outSeq++;
   packet.js.ack = stream.inSeq;
 
@@ -552,7 +552,7 @@ function openSeek(self, to)
 function encode(self, to, packet)
 {
 
-  var jsbuf = new Buffer(JSON.stringify(packet.js), "utf8");
+  var jsbuf = new Buffer(packet.js?JSON.stringify(packet.js):"", "utf8");
   if(typeof packet.body === "string") packet.body = new Buffer(packet.body, "utf8");
   packet.body = packet.body || new Buffer(0);
   var len = new Buffer(2);
@@ -698,12 +698,12 @@ function decode(buf)
 {
   // read and validate the json length
   var len = buf.readUInt16BE(0);
-  if(len == 0 || len > (buf.length - 2)) return undefined;
+  if(len > (buf.length - 2)) return undefined;
 
   // parse out the json
   var packet = {js:{}};
   try {
-      packet.js = JSON.parse(buf.toString("utf8",2,len+2));
+      packet.js = (len>0)?JSON.parse(buf.toString("utf8",2,len+2)):{};
   } catch(E) {
     return undefined;
   }
@@ -718,9 +718,9 @@ function decode(buf)
 
 function inStream(self, packet)
 {
-  if(!dhash.isHEX(packet.js.stream, 32)) return warn("invalid stream value", packet.js.stream, packet.from.address);
+  if(!dhash.isHEX(packet.js.c, 32)) return warn("invalid stream value", packet.js.c, packet.from.address);
 
-  var stream = (packet.from.streams[packet.js.stream]) ? packet.from.streams[packet.js.stream] : addStream(self, packet.from, "unknown", false, packet.js.stream);
+  var stream = (packet.from.streams[packet.js.c]) ? packet.from.streams[packet.js.c] : addStream(self, packet.from, "unknown", false, packet.js.c);
 
   packet.js.seq = parseInt(packet.js.seq);
   if(!(packet.js.seq >= 0)) return warn("invalid sequence on stream", packet.js.seq, stream.id, packet.from.address);

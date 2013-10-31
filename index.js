@@ -601,7 +601,7 @@ function sendOpen(self, to, direct)
         // if on the same NAT'd IP, also relay our local IPP
         if(parts[1] == self.pubip) js.local = {ip:self.ip, port:self.port};
       }
-      js.peer = [to.hashname];
+      js.peer = to.hashname;
       addStream(self, via, "peer").send(js);
       peered = true;
     });
@@ -975,15 +975,13 @@ function inConnect(self, packet)
 // be the middleman to help NAT hole punch
 function inPeer(self, packet)
 {
-  if(!Array.isArray(packet.js.peer) || packet.js.peer.length == 0) return warn("invalid peer of", packet.js.peer, "from", packet.from.address);
+  if(!dhash.isHEX(packet.js.peer, 64)) return warn("invalid peer of", packet.js.peer, "from", packet.from.address);
 
-  packet.js.peer.forEach(function(hn){
-    var peer = seen(self, hn);
-    if(!peer.lineIn) return; // these happen often as lines come/go, ignore dead peer requests
-    var js = {ip:packet.from.ip, port:packet.from.port};
-    if(packet.js.local && packet.js.local.ip != packet.from.ip) js.local = packet.js.local; // relay any optional local information
-    addStream(self, peer, "connect").send(js, packet.from.pubkey);
-  });
+  var peer = seen(self, packet.js.peer);
+  if(!peer.lineIn) return; // these happen often as lines come/go, ignore dead peer requests
+  var js = {ip:packet.from.ip, port:packet.from.port};
+  if(packet.js.local && packet.js.local.ip != packet.from.ip) js.local = packet.js.local; // relay any optional local information
+  addStream(self, peer, "connect").send(js, packet.from.pubkey);
 }
 
 // return array of nearby hashname objects

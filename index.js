@@ -137,8 +137,13 @@ exports.hashname = function(key, args)
 // gen a hashname from an rsa public key
 function key2hash(key)
 {
+  if(!key) return "";
   // validate it by parsing and regenerating it
-  var val = pem2der(ursa.coercePublicKey(der2pem(key)).toPublicPem("utf8"));
+  var val;
+  try{
+    val = pem2der(ursa.coercePublicKey(der2pem(key)).toPublicPem("utf8"));
+  }catch(E){}
+  if(!val) return "";
   if(key.toString("hex") != val.toString("hex")) {
     debug("key validation failed");
     return false;

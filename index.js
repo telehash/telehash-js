@@ -62,7 +62,7 @@ exports.hashname = function(key, args)
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     var packet = decode(msg);
     if(!packet) return warn("failed to decode a packet from", rinfo.address, rinfo.port, msg.toString());
-    if(Object.keys(packet.js).length == 0) return; // empty packets are NAT pings
+    if(typeof packet.js !== "object" || Object.keys(packet.js).length == 0) return; // empty packets are NAT pings
     if(typeof packet.js.iv != "string" || packet.js.iv.length != 32) return warn("missing initialization vector (iv)", packet.sender);
 
     packet.sender = {ip:rinfo.address, port:rinfo.port};
@@ -710,6 +710,7 @@ function decode(buf)
   try {
       packet.js = (len>0)?JSON.parse(buf.toString("utf8",2,len+2)):{};
   } catch(E) {
+    warn("couldn't parse JS",buf.toString("utf8",2,len+2),E);
     return undefined;
   }
 

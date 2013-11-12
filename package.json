@@ -1,10 +1,13 @@
 {
    "name": "telehash",
-   "version": "0.0.61",
+   "version": "0.1.0",
    "dependencies": {
-   	  "async": "0.2.x",
-      "ursa": "git+https://github.com/quartzjer/ursa.git",
-      "ecc": "git+https://github.com/quartzjer/ecc.git"
+     "node-forge": "0.2.x",
+     "thjs":"0.0.x"
+   },
+   "optionalDependencies": {
+     "ursa": "git+https://github.com/quartzjer/ursa.git",
+     "ecc": "git+https://github.com/quartzjer/ecc.git"
    },
   "keywords": [
     "telehash",
@@ -14,7 +17,7 @@
     "json",
     "mesh"
   ],
-  "description": "A generic telehash switch library",
+  "description": "A generic telehash switch library for node",
   "homepage": "https://github.com/quartzjer/node-telehash",
   "repository": {
     "type": "git",

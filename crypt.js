@@ -3,13 +3,22 @@ try{
   var ecc = require("ecc"); // for the elliptic curve diffie hellman  not in crypto.*
 }catch(E){}
 
+var crypto = require("crypto");
+
 exports.validate = function(){
-  return false;
-  // TODO check ecc since old openssl versions fail
-  if(ursa && ecc) return true;
+  if(!ecc || !ursa) return false;
+  try {
+    var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256);
+    var aes = crypto.createCipheriv("AES-256-CTR", crypto.randomBytes(32), crypto.randomBytes(16));
+  }catch(E){};
+  if(!eccKey || !aes) return false;
+  
+  return true;
 }
 
 // these are all the crypto/binary dependencies needed by thjs
+exports.pub2key = pub2key;
+exports.pri2key = pri2key;
 exports.der2hn = der2hn;
 exports.key2der = key2der;
 exports.der2key = der2key;
@@ -22,7 +31,6 @@ exports.lineize = lineize;
 exports.delineize = delineize;
 exports.pencode = pencode;
 exports.pdecode = pdecode;
-exports.ecdh = ecdh;
 exports.genkey = genkey;
 
 function genkey(callback){
@@ -30,23 +38,47 @@ function genkey(callback){
   callback(null, {public:key.toPublicPem("utf8"), private:key.toPrivatePem("utf8")});
 }
 
+// pem conversion to local key format
+function pub2key(pem)
+{
+  try{
+    var ret = ursa.coercePublicKey(pem);
+  }catch(E){}
+  return ret;
+}
+function pri2key(pem)
+{
+  try{
+    var ret = ursa.coercePrivateKey(pem);
+  }catch(E){}
+  return ret;
+}
+
 // der format key to string hashname
 function der2hn(der)
 {
-	var md = forge.md.sha256.create();
-	md.update(der);
-	return md.digest().toHex();	
+  var sha = crypto.createHash("SHA256");
+  sha.update(der);
+  return sha.digest("hex");
 }
 
 // wrapper to get raw der bytes from native key format (or pem) and vice versa
+// ursa only supports PEM so we have to mangle DER around for it
+var PEM_REGEX = /^(-----BEGIN (.*) KEY-----\r?\n([\/+=a-zA-Z0-9\r\n]*)\r?\n-----END \2 KEY-----\r?\n)/m;
 function key2der(key)
 {
-  if(typeof key == "string") key = pki.publicKeyFromPem(key);
-  return asn1.toDer(pki.publicKeyToAsn1(key)).bytes();
+  if(typeof key == "string") key = pub2key(key);
+  var pem = key.toPublicPem("utf8");
+  var r = PEM_REGEX.exec(pem);
+  var b64 = r ? r[3] : pem;
+  return new Buffer(b64, "base64");
 }
 function der2key(der)
 {
-  return pki.publicKeyFromAsn1(asn1.fromDer(der));
+  if(!der || !Buffer.isBuffer(der)) return false;
+  var b64 = der.toString("base64");
+  b64 = b64.match(/.{1,60}/g).join("\n");
+  return pub2key("-----BEGIN PUBLIC KEY-----\n"+b64+"\n-----END PUBLIC KEY-----\n");
 }
 
 // validate der
@@ -58,39 +90,12 @@ function der2der(der)
 // return random bytes, in hex
 function randomHEX(len)
 {
-	return forge.util.bytesToHex(forge.random.getBytesSync(len));
-}
-
-// zero prepad
-function unstupid(hex,len)
-{
-	return (hex.length >= len) ? hex : unstupid("0"+hex,len);
-}
-
-function ecKey()
-{
-	var c = getSECCurveByName("secp256r1");
-	//var curve = new ECCurveFp(c.getCurve().getQ(), c.getCurve().getA().toBigInteger(), c.getCurve().getB().toBigInteger());
-	//console.log(curve);
-	var n = c.getN();
-	var n1 = n.subtract(BigInteger.ONE);
-	var r = new BigInteger(n.bitLength(), new SecureRandom());
-	var priecc = r.mod(n1).add(BigInteger.ONE);
-	//console.log(priecc);
-
-	//var G = new ECPointFp(c.getCurve(), c.getCurve().fromBigInteger(c.getG().getX().toBigInteger(), c.getG().getY().toBigInteger());
-	//console.log(G);
-	var P = c.getG().multiply(priecc);
-	var pubhex = "04"+unstupid(P.getX().toBigInteger().toString(16),64)+unstupid(P.getY().toBigInteger().toString(16),64);
-	P.uncompressed = forge.util.hexToBytes(pubhex);
-	//console.log(forge.util.createBuffer(forge.util.hexToBytes(P.getX().toBigInteger().toString(16))).toHex());
-//  console.log(P.uncompressed.length,pubhex,forge.util.bytesToHex(P.uncompressed));
-	return {curve:c, private:priecc, public:P};
+	return crypto.randomBytes(len).toString("hex");
 }
 
 function openize(id, to)
 {
-	if(!to.ecc) to.ecc = ecKey();
+	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.nistp256);
 	if(!to.lineOut) to.lineOut = randomHEX(16);
   if(!to.public) to.public = der2key(to.der);
 	var inner = {}
@@ -99,165 +104,138 @@ function openize(id, to)
 	inner.line = to.lineOut;
 	var body = pencode(inner, id.der);
 	var open = {type:"open"};
-	var iv = forge.random.getBytesSync(16);
-	open.iv = forge.util.bytesToHex(iv);
+	var iv = crypto.randomBytes(16);
+	open.iv = iv.toString("hex");
 
 	// now encrypt the body
-	var md = forge.md.sha256.create();
-	md.update(to.ecc.public.uncompressed);
-	var cipher = forge.aes.createEncryptionCipher(md.digest(), "CTR");
-	cipher.start(iv);
-	cipher.update(body);
-	cipher.finish();
-	body = cipher.output;
+  var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash("sha256").update(to.ecc.PublicKey).digest(), iv);
+  body = Buffer.concat([aes.update(body),aes.final()]);
 
 	// sign & encrypt the sig
-	var md = forge.md.sha256.create();
-	md.update(body.bytes());
-	var sig = id.private.sign(md);
-	var md = forge.md.sha256.create();
-	md.update(to.ecc.public.uncompressed);
-	md.update(forge.util.hexToBytes(to.lineOut));
-	var cipher = forge.aes.createEncryptionCipher(md.digest(), "CTR");
-	cipher.start(iv);
-  cipher.update(forge.util.createBuffer(sig));
-	cipher.finish();
-  open.sig = forge.util.encode64(cipher.output.bytes());
+  var sig = id.private.hashAndSign("sha256", body, undefined, undefined, ursa.RSA_PKCS1_PADDING);
+  var aeskey = crypto.createHash("sha256").update(to.ecc.PublicKey).update(new Buffer(to.lineOut,"hex")).digest();
+  var aes = crypto.createCipheriv("AES-256-CTR", aeskey, iv);
+  open.sig = Buffer.concat([aes.update(sig),aes.final()]).toString("base64");
 
 	// encrypt the ecc key
-	open.open = forge.util.encode64(to.public.encrypt(to.ecc.public.uncompressed, "RSA-OAEP"));
-//	console.log(open, body.length());
-	var packet = pencode(open, body.bytes());
-	return packet.bytes();
+  open.open = to.public.encrypt(to.ecc.PublicKey, undefined, "base64", ursa.RSA_PKCS1_OAEP_PADDING);
+
+  //	console.log(open, body.length());
+	var packet = pencode(open, body);
+	return packet;
 }
 
 function deopenize(id, open)
 {
-	// decrypt the ecc key
-	var dec = forge.util.decode64(open.js.open);
-	var ecpub = id.private.decrypt(dec, "RSA-OAEP");
-//	console.log(ecpub.length);
-	// compose the aes key
-	var md = forge.md.sha256.create();
-	md.update(ecpub);
-	var cipher = forge.aes.createDecryptionCipher(md.digest(), "CTR");
-	cipher.start(forge.util.hexToBytes(open.js.iv));
-	cipher.update(forge.util.createBuffer(open.body));
-	cipher.finish();
-	var inner = pdecode(cipher.output);
-//	console.log(inner);
-	var rsapub = der2key(inner.body);
-//	console.log("from", key2hn(rsapub));
-	// decode the signature
-	var md = forge.md.sha256.create();
-	md.update(ecpub);
-	md.update(forge.util.hexToBytes(inner.js.line));
-	var cipher = forge.aes.createDecryptionCipher(md.digest(), "CTR");
-	cipher.start(forge.util.hexToBytes(open.js.iv));
-	cipher.update(forge.util.createBuffer(forge.util.decode64(open.js.sig)));
-	cipher.finish();
-	var md = forge.md.sha256.create()
-	md.update(open.body);
-	var verify = rsapub.verify(md.digest().bytes(), cipher.output.bytes());
-//	console.log("verify", verify);
-	return {ecc:ecpub, rsa:key2der(rsapub), js:inner.js, verify:verify};
+  // decrypt the ecc public key and verify/load it
+  try{
+    var eccpub = id.private.decrypt(open.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING);
+  }catch(E){
+    err = E;
+  }
+  if(!eccpub) return {err:"couldn't decrypt open"};
+  try {
+    var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, eccpub, true);
+  }catch(E){};
+  if(!eccKey) return {err:"invalid open ecc key "+eccpub.toString("hex")};
+  
+  // decipher the body as a packet so we can examine it
+  if(!open.body) return {err:"body missing on open"};
+  var aes = crypto.createDecipheriv("AES-256-CTR", crypto.createHash('sha256').update(eccpub).digest(), new Buffer(open.js.iv, "hex"));
+  var deciphered = pdecode(Buffer.concat([aes.update(open.body),aes.final()]));
+  if(!deciphered) return {err:"invalid body attached"};
+
+  // extract attached public key
+  if(!deciphered.body) return {err:"open missing attached key"};
+	var ukey = der2key(deciphered.body);
+  if(!ukey) return {err:"invalid attached key"};
+  if(ukey.getModulus().length < 256) return {err:"key to small "+ukey.getModulus().length};
+
+  // decrypt signature
+  var aeskey = crypto.createHash('sha256').update(eccpub).update(new Buffer(deciphered.js.line,"hex")).digest()
+  var aes = crypto.createDecipheriv("AES-256-CTR", aeskey, new Buffer(open.js.iv, "hex"));
+  var decsig = Buffer.concat([aes.update(open.js.sig, "base64"),aes.final()]);
+
+  // verify signature
+  try{
+    var verify = ukey.hashAndVerify("sha256", open.body, decsig, undefined, ursa.RSA_PKCS1_PADDING);
+  }catch(E){}
+  return {ecc:eccKey, rsa:key2der(ukey), js:deciphered.js, verify:verify};
 }
 
 // set up the line enc/dec keys
 function openline(from, open)
 {
-  var ecdhe = ecdh(from.ecc.private, open.ecc);
-//  console.log("ECDHE",ecdhe.length, ecdhe, from.lineOut, from.lineIn);
-	var md = forge.md.sha256.create()
-	md.update(forge.util.hexToBytes(ecdhe));
-	md.update(forge.util.hexToBytes(from.lineOut));
-	md.update(forge.util.hexToBytes(from.lineIn));
-	from.encKey = md.digest();
-	var md = forge.md.sha256.create()
-	md.update(forge.util.hexToBytes(ecdhe));
-	md.update(forge.util.hexToBytes(from.lineIn));
-	md.update(forge.util.hexToBytes(from.lineOut));
-	from.decKey = md.digest();
-//	console.log("encKey",from.encKey.toHex(),"decKey",from.decKey.toHex());
+  var ecdhe = from.ecc.deriveSharedSecret(open.ecc);
+  from.encKey = crypto.createHash("sha256")
+    .update(ecdhe)
+    .update(new Buffer(from.lineOut, "hex"))
+    .update(new Buffer(from.lineIn, "hex"))
+    .digest();
+  from.decKey = crypto.createHash("sha256")
+    .update(ecdhe)
+    .update(new Buffer(from.lineIn, "hex"))
+    .update(new Buffer(from.lineOut, "hex"))
+    .digest();
+  return true;
 }
 
 // encrypt the packet
 function lineize(to, packet)
 {
-	var wrap = {type:"line"};
-	wrap.line = to.lineIn;
-	var iv = forge.random.getBytesSync(16);
-	wrap.iv = forge.util.bytesToHex(iv);
-	var buf = forge.util.createBuffer(pencode(packet.js,packet.body).bytes())
-//	console.log("LINE",buf.toHex(),packet.toHex(),wrap.iv,to.encKey.toHex());
-
-	// now encrypt the packet
-	var cipher = forge.aes.createEncryptionCipher(to.encKey.copy(), "CTR");
-	cipher.start(iv);
-	cipher.update(buf);
-	cipher.finish();
-//	console.log("COUT",cipher.output.toHex());
-	return pencode(wrap,cipher.output.bytes()).bytes();
+  var wrap = {type:"line"};
+  wrap.line = to.lineIn;
+  var iv = crypto.randomBytes(16);
+  wrap.iv = iv.toString("hex");
+  var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
+  var body = Buffer.concat([aes.update(pencode(packet.js,packet.body)), aes.final()]);
+	return pencode(wrap,body);
 }
 
 // decrypt the contained packet
 function delineize(packet)
 {
-	var cipher = forge.aes.createDecryptionCipher(packet.from.decKey.copy(), "CTR");
-	cipher.start(forge.util.hexToBytes(packet.js.iv));
-	cipher.update(forge.util.createBuffer(packet.body));
-	cipher.finish();
-	if(!cipher.output) return console.log("couldn't decrypt packet",packet.js.line, packet.sender);
-	var deciphered = pdecode(cipher.output);
-	if(!deciphered) return console.log("invalid decrypted packet", cipher.output);
+  var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
+  var deciphered = pdecode(Buffer.concat([aes.update(packet.body), aes.final()]));
+  if(!deciphered) return;
   packet.js = deciphered.js;
   packet.body = deciphered.body;
-	packet.lineok = true;
+  packet.lineok = true;
 }
 
 function ecdh(priv, pubbytes) {
-  var curve = getSECCurveByName("secp256r1").getCurve();
-  var uncompressed = forge.util.createBuffer(pubbytes);
-//console.log(uncompressed.length(), uncompressed.bytes());
-  uncompressed.getByte(); // chop off the 0x04
-  var x = uncompressed.getBytes(32);
-  var y = uncompressed.getBytes(32);
-//console.log(x.length, y.length);
-  if(y.length != 32) return false;
-  var P = new ECPointFp(curve,
-    curve.fromBigInteger(new BigInteger(forge.util.bytesToHex(x), 16)),
-    curve.fromBigInteger(new BigInteger(forge.util.bytesToHex(y), 16)));
-  var S = P.multiply(priv);
-  return S.getX().toBigInteger().toString(16);
 }
 
 // encode a packet
 function pencode(js, body)
 {
-  var jsbuf = forge.util.createBuffer(js?JSON.stringify(js):"", "utf8");
-  var len = jsbuf.length();
-  var ret = forge.util.createBuffer();
-  // network order
-  ret.putInt16(len);
-  ret.putBytes(jsbuf.getBytes());
-  if(body) ret.putBytes(body);
-  return ret;
+  var jsbuf = new Buffer(js?JSON.stringify(js):"", "utf8");
+  if(typeof body == "string") body = new Buffer(body, "binary");
+  body = body || new Buffer(0);
+  var len = new Buffer(2);
+  len.writeInt16BE(jsbuf.length, 0);
+  return Buffer.concat([len, jsbuf, body]);
 }
 
 // packet decoding
 function pdecode(packet)
 {
-  if(typeof packet == "string") packet = forge.util.createBuffer(packet);
-  var len = packet.getInt16(packet);
-  if(packet.length() < len) return console.log("packet too short",len,packet.length(),packet) && false;
-  var jsonb = packet.getBytes(len);
-  var body = packet.getBytes();
-  var js;
-	if(len > 0)
-	{
-	  try{ js = JSON.parse(jsonb); } catch(E){ return console.log("parse failed",jsonb) && false; }		
-	}else{
-		js = {};
-	}
+  var buf = (typeof packet == "string") ? new Buffer(packet, "binary") : packet;
+
+  // read and validate the json length
+  var len = buf.readUInt16BE(0);
+  if(len > (buf.length - 2)) return undefined;
+
+  // parse out the json
+  try {
+      var js = (len>0)?JSON.parse(buf.toString("utf8",2,len+2)):{};
+  } catch(E) {
+    console.log("couldn't parse JS",buf.toString("utf8",2,len+2),E);
+    return undefined;
+  }
+
+  // attach any body
+  var body = buf.slice(len + 2);
+
   return {js:js, body:body};
 }

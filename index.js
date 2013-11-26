@@ -1,6 +1,7 @@
 var crypt = require("./crypt");
 var thjs = require("thjs");
 var dgram = require("dgram");
+var os = require("os");
 
 // use either the crypt (compiled, faster) libs or the forge-based pure js ones
 if(!crypt.validate()) crypt = require("./cryptjs").load();
@@ -26,8 +27,20 @@ exports.hashname = function(key, args)
     self.receive(msg.toString("binary"), {ip:rinfo.address, port:rinfo.port});
   });
   self.server.bind(self.port, self.ip, function(){
-    // update address after listen completed to be besty
+    // update port after listen completed to be accurate
     self.port = self.server.address().port;
+    // regularly update w/ real local ipv4 address
+    function interfaces()
+    {
+      var ifaces = os.networkInterfaces()
+      for (var dev in ifaces) {
+        ifaces[dev].forEach(function(details){
+          if(details.family == "IPv4" && !details.internal) self.ip = details.address;
+        });
+      }
+      setTimeout(interfaces,10000);
+    }
+    interfaces();
   });
   return self;
 }

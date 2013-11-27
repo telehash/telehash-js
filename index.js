@@ -19,7 +19,7 @@ exports.genkey = crypt.genkey;
 exports.hashname = function(key, args)
 {
   var self = thjs.hashname(key, function(to, msg){
-    var buf = new Buffer(msg, "binary");
+    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data, "binary");
     self.server.send(buf, 0, buf.length, to.port, to.ip);
   }, args);
   if(!self) return false;

@@ -9,6 +9,13 @@
      "ursa": "git+https://github.com/quartzjer/ursa.git",
      "ecc": "git+https://github.com/quartzjer/ecc.git"
    },
+ 	"devDependencies": {
+ 		"optimist": "*"
+ 	},
+  "bin" : {
+    "tseed": "./seed/seed.js",
+    "tft": "./fieldtest/tft.js"
+  },
   "keywords": [
     "telehash",
     "crypto",

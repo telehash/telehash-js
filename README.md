@@ -2,51 +2,65 @@
 
 [![node-telehash](https://nodei.co/npm/node-telehash.png)](https://nodei.co/npm/node-telehash/)
 	
-This module presents a simple high-level API for using [telehash v2](https://github.com/quartzjer/TeleHash/blob/master/org/v2.md).
+This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md). It is still in development and not stable yet, but issues and pull requests are welcome.
 
-Every instance of an app using telehash is identified by a unique `hashname` which is created from it's RSA public key.  Every app must bundle a list of one or more seeds to help it get connected to the DHT.
+# Seeds
 
-# From Scratch
+Telehash apps always need one or more seeds to bootstrap from, the default ones are in [seeds.json](seeds.json).  You can run your own seed via:
 
-To create an entire standalone setup you'll need at least one seed and one other hashname for them to connect to each other.  These examples are also included in the demo folder.
+`node seed/seed.js`
 
-Start by generating two RSA keypairs:
+Take the output JSON, put it in an array and in your own seeds.json file, then load it with `.addSeeds("./seeds.json")`.
 
-``` js
-var tele = require("..");
-var fs = require("fs");
-tele.genkey(function(err, key){
-  fs.writeFileSync("./seed.json", JSON.stringify(key, null, 4));  
-});
-tele.genkey(function(err, key){
-  fs.writeFileSync("./app.json", JSON.stringify(key, null, 4));  
+# "Field Test" Utility
+
+A way to explore telehash is using the field test app which provides a command line of utilities to explore the DHT and connect to other hashnames:
+
+`node fieldtest/tft.js`
+
+# Library Interface
+
+In all of these examples, the `th` object is created via `var th = require("telehash");`.
+
+## Identity / Keypair Generation
+
+```js
+th.genkey(function(err, key){
+  if(err) return console.log("key generation failed",err);
+  // key contains a .public and .private of the PEM-encoded RSA-2048 public and private values
 });
 ```
 
-Then start up the seed:
-``` js
-var tele = require("telehash");
-var key = require("./seed.json"); // loads the keypair
+## Hashname Initialization / Startup
 
-// start a new hashname in the given space with these keys, listen on this specific port
-var seed = tele.hashname(key, {port:42424});
-console.log("seed online at", seed.ip+":"+seed.port, "with the hashname", seed.hashname);
-```
+Needs a key object containing a .public and .private (generated above) to create our own hashname:
 
-Now start the test app:
-``` js
-var tele = require("telehash");
-var seed = require("./seed.json");
-var app = tele.hashname(require("./app.json"));
-app.addSeed({ip:"localhost", port:42424, pubkey:seed.public});
+```js
+var app = th.hashname(key);
+console.log("hashname created",app.hashname);
+app.addSeeds("./seeds.json"); // optional, uses bundled seeds otherwise
 app.online(function(err){
-  console.log("app online status", err?err:true);
+  if(err) return console.log("hashname failed to come online");
 });
 ```
 
-# Apps
+The `.online` takes a callback that is fired when the hashname is able to connect to any seeds and become part of the DHT or fails to do so.
 
-* [hash-seed](https://github.com/quartzjer/hash-seed)
-* [hash-im](https://github.com/quartzjer/hash-im)
-* [hash-chatroom](https://github.com/quartzjer/hash-chatroom)
+## Listening for incoming channels
 
+```js
+app.listen("chat", function(end, arg, chan, callback){
+  // end is `true` when the incoming channel is ended
+  // arg.js contains the incoming json, arg.body any binary body
+  // chan is the channel interface
+  // callback() must be called when done to continue
+});
+```
+
+## Starting a new channel
+
+```js
+app.whois("hashname").start("type", argOut, function(end, argIn, chan, callback){
+  // same as listening, except argOut contains an optional .js and .body to be sent in the initial channel request
+});
+```

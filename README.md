@@ -1,6 +1,6 @@
 # Overview
 
-[![node-telehash](https://nodei.co/npm/node-telehash.png)](https://nodei.co/npm/node-telehash/)
+[![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
 	
 This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md). It is still in development and not stable yet, but issues and pull requests are welcome.
 

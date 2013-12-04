@@ -6,17 +6,13 @@ This module presents a simple high-level API for using [telehash](https://github
 
 # Seeds
 
-Telehash apps always need one or more seeds to bootstrap from, the default ones are in [seeds.json](seeds.json).  You can run your own seed via:
-
-`node seed/seed.js`
+Telehash apps always need one or more seeds to bootstrap from, the default ones are in [seeds.json](seeds.json).  You can run your own seed via `npm start` or manually via `node seed/seed.js`.
 
 Take the output JSON, put it in an array and in your own seeds.json file, then load it with `.addSeeds("./seeds.json")`.
 
 # "Field Test" Utility
 
-A way to explore telehash is using the field test app which provides a command line of utilities to explore the DHT and connect to other hashnames:
-
-`node fieldtest/tft.js`
+There is a field test command line utility included to explore the DHT and connect to other hashnames, just run `node fieldtest/tft.js`.
 
 # Library Interface
 

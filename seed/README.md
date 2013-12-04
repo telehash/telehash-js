@@ -1,11 +1,8 @@
-hash-seed
-=======
+A minimal telehash seed
+=======================
 
-A minimal [telehash](http://telehash.org) seed.
+Just run `node seed.js` to start it, and it will give you a JSON entry of it's information.  
 
-```
-npm install
-npm start
-```
+To be a seed you need a well-known / accessible IP address and port, so it tries to guess your network address and use that by default.  To manually set either use `--ip 1.2.3.4 --port 5678`.
 
-You can also do a `node seed.js -v` to see debug output, and `--seeds ./seeds.json` to have this seed connect/mesh with others.
+You can also do a `-v` to see debug output.

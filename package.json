@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.1.3",
+   "version": "0.1.4",
    "dependencies": {
      "node-forge": "0.2.x",
      "thjs":"0.0.x"
@@ -15,6 +15,11 @@
   "bin" : {
     "tseed": "./seed/seed.js",
     "tft": "./fieldtest/tft.js"
+  },
+  "scripts": {
+    "start":"./seed/seed.js",
+    "seed":"./seed/seed.js",
+    "tft":"./fieldtest/tft.js"
   },
   "keywords": [
     "telehash",

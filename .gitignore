@@ -1,5 +1,4 @@
 node_modules
 npm-debug.log
-seed/*.json
-fieldtest/*.json
-fieldtest/debug.log
+*.json
+*.log

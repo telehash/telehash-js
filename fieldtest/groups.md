@@ -1,30 +1,17 @@
-hash-chatroom
-=========
+### Group Testing Protocol
 
-Experimental [telehash](http://telehash.org) based command-line chatroom app.
-
-Run:
-```
-npm install
-node chat.js room@memberhash
-```
-
-The room name can be anything and you just need to provide the hashname of any other member of the same room to join it, or leave off the "@memberhash" to create a new room.  Try 42@32663be9a07889fccd78904fcbeae820a7ebb4869af9c6a956931de91c614748 and look for me (jer).
-
-### Protocol
-
-The protocol used here is very simplistic, just a MVP to get basic groupchat working.  There are two basic channels used, one to get a list of members, and one to join a room and send/receive messages.
+The protocol used here is very simplistic, just a MVP to experiment with group connection testing.  There are two basic channels used, one to get a list of members, and one to join a group and send/receive messages.
 
 #### "members"
 
-Create a reliable channel to any hashname of type `memebers` and include a `"room":"nameofroom"` with it, and if the receiving hashname is a member of that room, it will return one or more packets with lists of members.
+Create a reliable channel to any hashname of type `memebers` and include a `"group":"nameofgroup"` with it, and if the receiving hashname is a member of that group, it will return one or more packets with lists of members.
 
 To request the list (raw telehash packet, switch should set the `c` and `seq`):
 
 ```json
 {
   "type":"_members",
-  "_":{"room":"theroom"},
+  "_":{"group":"thegroup"},
   "c":"...",
   "seq":0
 }
@@ -49,16 +36,16 @@ The response will be a channel `err` or if successful it would look like (switch
 
 If multiple packets are needed because the member list is long, they are sent in sequence and the last packet will contain an `end`.
 
-#### "chat"
+#### "group"
 
-To join a chatroom, create a reliable channel of type `chat` and include the same `"room":"nameofroom"` and a `"nick":"mynickname"` with it.  You must send this to every known member in a chatroom, as it's a full mesh, and each member is responsible for connecting to every other one.  If the recipient isn't part of that room it should return an `err` otherwise it returns it's nickname and the sender is then joined on that channel.
+To join a group, create a reliable channel of type `group` and include the same `"group":"nameofgroup"` and a `"nick":"mynickname"` with it.  You must send this to every known member in a group, as it's a full mesh, and each member is responsible for connecting to every other one.  If the recipient isn't part of that group it should return an `err` otherwise it returns it's nickname and the sender is then joined on that channel.
 
 To request to join:
 
 ```json
 {
   "type":"_chat",
-  "_":{"room":"theroom", "nick":"jer"},
+  "_":{"group":"thegroup", "nick":"jer"},
   "c":"...",
   "seq":0
 }
@@ -86,4 +73,4 @@ To send/receive a message (id is epoch timestamp in milliseconds):
 }
 ```
 
-To leave a room, close the channel by sending a packet with an `"end":true`.
+To leave a group, close the channel by sending a packet with an `"end":true`.

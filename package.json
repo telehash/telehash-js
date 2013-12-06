@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.1.4",
+   "version": "0.1.5",
    "dependencies": {
      "node-forge": "0.2.x",
      "thjs":"0.0.x"

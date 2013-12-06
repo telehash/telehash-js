@@ -5,7 +5,10 @@ exports.load = function(){
   var window = GLOBAL;
   var navigator = GLOBAL;
   var eccinc = ["jsbn.js","jsbn2.js","ec.js","sec.js","prng4.js","rng.js"];
-  for(var i in eccinc) try{ eval(require("fs").readFileSync(__dirname+"/node_modules/thjs/includes/"+eccinc[i]).toString()); }catch(E){ console.log(inc,E); }
+  for(var i in eccinc) try{
+    var inc = require("path").join(__dirname,"/node_modules/thjs/includes/",eccinc[i]);
+    eval(require("fs").readFileSync(inc).toString()); }catch(E){ console.log(inc,E);
+  }
   global.getSECCurveByName = getSECCurveByName;
   global.BigInteger = BigInteger;
   global.SecureRandom = SecureRandom;

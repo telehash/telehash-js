@@ -3,7 +3,7 @@
    "version": "0.1.5",
    "dependencies": {
      "node-forge": "0.2.x",
-     "thjs":"0.0.x"
+     "thjs":">=0.0.16"
    },
    "optionalDependencies": {
      "ursa": "git+https://github.com/quartzjer/ursa.git",

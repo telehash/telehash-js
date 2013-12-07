@@ -11,20 +11,8 @@ var argv = require("optimist")
   .argv;
 
 if(argv.v) tele.debug(console.log);
-
-// use/get port and IP
 var port = parseInt(argv.port);
-var ip;
-var ifaces = os.networkInterfaces();
-for (var dev in ifaces) {
-  for(var i in ifaces[dev])
-  {
-    var iface = ifaces[dev][i];
-    if(iface.family == "IPv4" && !iface.internal) ip = iface.address;    
-  }
-}
-if(argv.ip) ip = argv.ip;
-if(!ip) return console.log("unable to determine IP address, use -ip '1.2.3.4' to set one.");
+var ip = argv.ip || "0.0.0.0";
 
 // localize our id file
 var idfile = path.join(__dirname, argv.id);
@@ -43,9 +31,12 @@ if(fs.existsSync(idfile))
 function init(key)
 {
   var seed = tele.hashname(key, {port:port, ip:ip});
-  console.log(JSON.stringify({ip:seed.ip, port:seed.port, hashname:seed.hashname, pubkey:key.public}, null, 4));
   if(argv.seeds) seed.addSeeds(argv.seeds);
   seed.online(function(err){
+    var ip = seed.pubip||seed.ip;
+    var port = seed.pubport||seed.port;
+    console.log(JSON.stringify({ip:ip, port:port, hashname:seed.hashname, pubkey:key.public}, null, 4));
+    if(seed.nat) console.log("warning, may be behind a NAT, IP and Port may not be stable");
     console.log((err?err:"connected to mesh seed peers"));
   });
 }

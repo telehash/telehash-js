@@ -6,7 +6,7 @@ This module presents a simple high-level API for using [telehash](https://github
 
 # Seeds
 
-Telehash apps always need one or more seeds to bootstrap from, the default ones are in [seeds.json](seeds.json).  You can run your own seed via `npm start` or manually via `node seed/seed.js`.
+Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/telehash/thjs/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed/seed.js`.
 
 Take the output JSON, put it in an array and in your own seeds.json file, then load it with `.addSeeds("./seeds.json")`.
 

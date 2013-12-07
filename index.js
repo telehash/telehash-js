@@ -49,10 +49,15 @@ exports.hashname = function(key, args)
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
     self.receive(msg.toString("binary"), {ip:rinfo.address, port:rinfo.port});
   });
+  self.server.on("error", function(err){
+    console.log("error from the UDP socket",err);
+    process.exit(1);
+  })
   self.server.bind(self.port, self.ip, function(){
     // update port after listen completed to be accurate
     self.port = self.server.address().port;
-    // regularly update w/ real local ipv4 address
+    if(args.pubip) return self.ip = args.pubip;
+    // if no ip is set, regularly update w/ local ipv4 address
     function interfaces()
     {
       var ifaces = os.networkInterfaces()

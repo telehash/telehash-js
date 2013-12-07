@@ -8,11 +8,11 @@ var argv = require("optimist")
   .default("id", "./seed.json")
   .default("port", 42424)
   .boolean("v").describe("v", "verbose")
+  .default("ip", "0.0.0.0").describe("ip", "the locally bound IP address")
+  .describe("pubip", "force set the public IP address to override any NAT detection")
   .argv;
 
 if(argv.v) tele.debug(console.log);
-var port = parseInt(argv.port);
-var ip = argv.ip || "0.0.0.0";
 
 // localize our id file
 var idfile = path.join(__dirname, argv.id);
@@ -30,7 +30,7 @@ if(fs.existsSync(idfile))
 
 function init(key)
 {
-  var seed = tele.hashname(key, {port:port, ip:ip});
+  var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, pubip:argv.pubip});
   if(argv.seeds) seed.addSeeds(argv.seeds);
   seed.online(function(err){
     var ip = seed.pubip||seed.ip;

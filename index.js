@@ -19,6 +19,7 @@ exports.genkey = crypt.genkey;
 
 exports.hashname = function(key, args)
 {
+  if(!args) args = {};
   var self = thjs.hashname(key, function(to, msg){
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data, "binary");
     self.server.send(buf, 0, buf.length, to.port, to.ip);
@@ -56,7 +57,9 @@ exports.hashname = function(key, args)
   self.server.bind(self.port, self.ip, function(){
     // update port after listen completed to be accurate
     self.port = self.server.address().port;
+    // check IP settings, important for seed style usage
     if(args.pubip) return self.ip = args.pubip;
+    if(args.ip && args.ip != "0.0.0.0") return;
     // if no ip is set, regularly update w/ local ipv4 address
     function interfaces()
     {

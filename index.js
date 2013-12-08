@@ -55,7 +55,7 @@ exports.hashname = function(key, args)
     console.log("error from the UDP socket",err);
     process.exit(1);
   })
-  self.server.bind(self.port, self.ip, function(){
+  self.server.bind(args.port, args.ip, function(){
     // update port after listen completed to be accurate
     self.port = self.server.address().port;
     if(args.pubip) return;

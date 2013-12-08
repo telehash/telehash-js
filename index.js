@@ -25,7 +25,11 @@ exports.hashname = function(key, args)
     self.server.send(buf, 0, buf.length, to.port, to.ip);
   }, args);
   if(!self) return false;
-  if(args.pubip) self.ip = args.pubip;
+  // when given a public ip, force not in NAT mode
+  if(args.pubip) {
+    self.ip = args.pubip;
+    self.nat = false;
+  }
   
   // to be nice, background-load seeds if none were set
   self._addSeed = self.addSeed;

@@ -25,6 +25,7 @@ exports.hashname = function(key, args)
     self.server.send(buf, 0, buf.length, to.port, to.ip);
   }, args);
   if(!self) return false;
+  if(args.pubip) self.ip = args.pubip;
   
   // to be nice, background-load seeds if none were set
   self._addSeed = self.addSeed;
@@ -57,10 +58,9 @@ exports.hashname = function(key, args)
   self.server.bind(self.port, self.ip, function(){
     // update port after listen completed to be accurate
     self.port = self.server.address().port;
-    // check IP settings, important for seed style usage
-    if(args.pubip) return self.ip = args.pubip;
+    if(args.pubip) return;
     if(args.ip && args.ip != "0.0.0.0") return;
-    // if no ip is set, regularly update w/ local ipv4 address
+    // if no ip is force set (useful for seed style usage), regularly update w/ local ipv4 address
     function interfaces()
     {
       var ifaces = os.networkInterfaces()

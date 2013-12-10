@@ -248,7 +248,7 @@ cmds.ping = function(arg)
 {
   var hn = me.whois(arg[0]);
   if(!hn) return log("invalid hashname",arg[0]);
-  hn.seekping(function(err){
+  hn.seek(me.hashname,function(err){
     if(err) return log("ping failed",hn.hashname,err);
     log("ping",hn.address);
   });

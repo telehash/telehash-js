@@ -13,9 +13,9 @@
  		"optimist": "*"
  	},
   "scripts": {
-    "start":"./seed/seed.js",
-    "seed":"./seed/seed.js",
-    "tft":"./fieldtest/tft.js"
+    "start":"node ./seed/seed.js",
+    "seed":"node ./seed/seed.js",
+    "tft":"node ./fieldtest/tft.js"
   },
   "keywords": [
     "telehash",

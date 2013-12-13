@@ -31,12 +31,15 @@ if(fs.existsSync(idfile))
 function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, pubip:argv.pubip});
+  seed.lanseed(); // enable lan seeding too
   if(argv.seeds) seed.addSeeds(argv.seeds);
   if(argv.http) seed.http(argv.http, require('socket.io').listen(parseInt(argv.http.split(":").pop())));
   seed.online(function(err){
     var ip = seed.pubip||seed.ip;
     var port = seed.pubport||seed.port;
-    console.log(JSON.stringify({ip:ip, port:port, hashname:seed.hashname, pubkey:key.public}, null, 4));
+    var info = {ip:ip, port:port, hashname:seed.hashname, pubkey:key.public};
+    if(argv.http) info.http = argv.http;
+    console.log(JSON.stringify(info, null, 4));
     if(seed.nat) console.log("warning, may be behind a NAT, IP and Port may not be stable");
     console.log((err?err:"connected to mesh seed peers"));
   });

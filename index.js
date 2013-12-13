@@ -22,7 +22,12 @@ exports.hashname = function(key, args)
   if(!args) args = {};
   var self = thjs.hashname(key, function(to, msg){
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data, "binary");
-    if(to.type == "ipv4") self.server.send(buf, 0, buf.length, to.port, to.ip);
+    if(to.type == "ipv4") {
+      if(to.lan) self.server.setBroadcast(true);
+      self.server.send(buf, 0, buf.length, to.port, to.ip, function(){
+        if(to.lan) self.server.setBroadcast(false);        
+      });
+    }
     if(to.type == "http" && self.io && self.io.sockets.sockets[to.id])
     {
       self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
@@ -47,14 +52,19 @@ exports.hashname = function(key, args)
     self.seeded = true;
     require(file).forEach(self.addSeed, self);
   }
-  // we trigger auto-loading seeds with an online
-  self._online = self.online;
-  self.online = function(callback)
-  {
-    if(!self.seeded) self.addSeeds(path.join(__dirname,"/node_modules/thjs/seeds.json"));
-    return self._online(callback);
-  }
   
+  // optionally do lan listening
+  self.lanseed = function()
+  {
+    if(self.lan) return; // already going
+    self.lan = dgram.createSocket("udp4", function(msg, rinfo){
+      self.receive(msg.toString("binary"), {lan:true, type:"ipv4", ip:rinfo.address, port:rinfo.port});
+    });
+    self.lan.bind(42424, "0.0.0.0", function(err){
+      self.lan.setBroadcast(true);      
+    });
+  }
+
   // optionally support http networks
   self.http = function(http, io)
   {
@@ -75,25 +85,37 @@ exports.hashname = function(key, args)
   self.server.on("error", function(err){
     console.log("error from the UDP socket",err);
     process.exit(1);
-  })
-  self.server.bind(args.port, args.ip, function(){
-    // update port after listen completed to be accurate
-    self.port = self.server.address().port;
-    if(args.pubip) return;
-    if(args.ip && args.ip != "0.0.0.0") return;
-    // if no ip is force set (useful for seed style usage), regularly update w/ local ipv4 address
-    function interfaces()
-    {
-      var ifaces = os.networkInterfaces()
-      for (var dev in ifaces) {
-        ifaces[dev].forEach(function(details){
-          if(details.family == "IPv4" && !details.internal) self.setIP(details.address);
-        });
-      }
-      setTimeout(interfaces,10000);
-    }
-    interfaces();
   });
+  self._online = self.online;
+  self.online = function(callback)
+  {
+    // we trigger auto-loading seeds with an online
+    if(!self.seeded) self.addSeeds(path.join(__dirname,"/node_modules/thjs/seeds.json"));
+
+    // ensure udp socket is bound
+    self.server.bind(args.port, args.ip, function(){
+      // update port after listen completed to be accurate
+      self.port = self.server.address().port;
+      if(args.pubip) return;
+      if(args.ip && args.ip != "0.0.0.0") return;
+      // if no ip is force set (useful for seed style usage), regularly update w/ local ipv4 address
+      function interfaces()
+      {
+        var ifaces = os.networkInterfaces()
+        for (var dev in ifaces) {
+          ifaces[dev].forEach(function(details){
+            if(details.family == "IPv4" && !details.internal) self.setIP(details.address);
+          });
+        }
+        setTimeout(interfaces,10000);
+      }
+      interfaces();
+
+      // let the switch start up now
+      self._online(callback);
+    });
+  }
+
   
   return self;
 }

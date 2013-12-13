@@ -22,7 +22,11 @@ exports.hashname = function(key, args)
   if(!args) args = {};
   var self = thjs.hashname(key, function(to, msg){
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data, "binary");
-    self.server.send(buf, 0, buf.length, to.port, to.ip);
+    if(to.type == "ipv4") self.server.send(buf, 0, buf.length, to.port, to.ip);
+    if(to.type == "http" && self.io && self.io.sockets.sockets[to.id])
+    {
+      self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
+    }
   }, args);
   if(!self) return false;
   // when given a public ip, force not in NAT mode
@@ -51,9 +55,22 @@ exports.hashname = function(key, args)
     return self._online(callback);
   }
   
+  // optionally support http networks
+  self.http = function(http, io)
+  {
+    self.path_http = http;
+    self.io = io;
+    io.on("connection", function(socket){
+      socket.on("packet", function(packet) {
+        if(!packet.data) return;
+        self.receive((new Buffer(packet.data, "base64")).toString("binary"), {type:"http", id:socket.id});
+      });
+    });
+  }
+  
   // do our udp server bindings
   self.server = dgram.createSocket("udp4", function(msg, rinfo){
-    self.receive(msg.toString("binary"), {ip:rinfo.address, port:rinfo.port});
+    self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port});
   });
   self.server.on("error", function(err){
     console.log("error from the UDP socket",err);
@@ -77,6 +94,7 @@ exports.hashname = function(key, args)
     }
     interfaces();
   });
+  
   return self;
 }
 

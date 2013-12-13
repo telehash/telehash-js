@@ -97,9 +97,10 @@ function openize(id, to)
 {
 	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.nistp256);
 	if(!to.lineOut) to.lineOut = randomHEX(16);
+  if(!to.lineAt) to.lineAt = Date.now();
   if(!to.public) to.public = der2key(to.der);
 	var inner = {}
-	inner.at = Date.now();
+	inner.at = to.lineAt;
 	inner.to = to.hashname;
 	inner.line = to.lineOut;
 	var body = pencode(inner, id.der);
@@ -230,7 +231,7 @@ function pdecode(packet)
   try {
       var js = (len>0)?JSON.parse(buf.toString("utf8",2,len+2)):{};
   } catch(E) {
-    console.log("couldn't parse JS",buf.toString("utf8",2,len+2),E);
+    console.log("couldn't parse JS",buf.toString("hex"),E,packet.sender);
     return undefined;
   }
 

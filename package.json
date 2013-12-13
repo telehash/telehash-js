@@ -1,16 +1,17 @@
 {
    "name": "telehash",
-   "version": "0.1.6",
+   "version": "0.1.7",
    "dependencies": {
      "node-forge": "0.2.x",
-     "thjs":">=0.0.20"
+     "thjs":">=0.0.22"
    },
    "optionalDependencies": {
      "ursa": "git+https://github.com/quartzjer/ursa.git",
      "ecc": "git+https://github.com/quartzjer/ecc.git"
    },
  	"devDependencies": {
- 		"optimist": "*"
+ 		"optimist": "*",
+    "socket.io": "*"
  	},
   "scripts": {
     "start":"node ./seed/seed.js",

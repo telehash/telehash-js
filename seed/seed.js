@@ -32,6 +32,7 @@ function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, pubip:argv.pubip});
   if(argv.seeds) seed.addSeeds(argv.seeds);
+  if(argv.http) seed.http(argv.http, require('socket.io').listen(parseInt(argv.http.split(":").pop())));
   seed.online(function(err){
     var ip = seed.pubip||seed.ip;
     var port = seed.pubport||seed.port;

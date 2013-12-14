@@ -32,11 +32,12 @@ exports.hashname = function(key, args)
     // blast the packet out on the lan with a temp socket
     if(to.type == "lan")
     {
+      if(args.nolan) return;
       var lan = dgram.createSocket("udp4");
       lan.bind(self.server.address().port, "0.0.0.0", function(err){
         lan.setBroadcast(true);
         // brute force to common subnets and all
-        var parts = self.ip.split(".");
+        var parts = self.networkIP.split(".");
         for(var i = 3; i >= 0; i--)
         {
           parts[i] = "255";
@@ -78,7 +79,7 @@ exports.hashname = function(key, args)
   // optionally support http networks
   self.http = function(http, io)
   {
-    self.path_http = http;
+    self.pathSet({type:"http",http:http});
     self.io = io;
     io.on("connection", function(socket){
       socket.on("packet", function(packet) {
@@ -106,24 +107,27 @@ exports.hashname = function(key, args)
 
     // ensure udp socket is bound
     self.server.bind(args.port, "0.0.0.0", function(){
-      // update port after listen completed to be accurate
-      self.port = self.server.address().port;
-
       // regularly update w/ local ipv4 address changes
       function interfaces()
       {
         var ifaces = os.networkInterfaces()
+        var address = self.server.address();
         for (var dev in ifaces) {
           ifaces[dev].forEach(function(details){
-            if(details.family == "IPv4" && !details.internal) self.setIP(details.address);
+            // upgrade to actual interface ip
+            if(details.family == "IPv4" && !details.internal) address.address = details.address;
           });
         }
+        self.networkIP = address.address; // used for local broadcasting above
+        // allow overridden lan4 ip address
+        if(args.ip) address.address = args.ip;
+        self.pathSet({type:"lan4",ip:address.address,port:address.port});
         setTimeout(interfaces,10000);
       }
+      interfaces();
 
-      // monitor network ip unless locked to one
-      if(!args.ip) interfaces();
-
+      if(args.nolan) return self._online(callback);        
+      
       // start the lan * listener
       var lan = dgram.createSocket("udp4", msgs);
       lan.bind(42420, "0.0.0.0", function(err){

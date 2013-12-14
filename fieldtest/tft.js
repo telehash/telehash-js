@@ -170,7 +170,7 @@ cmds.quit = cmds.exit = function(arg){
   process.exit();
 }
 cmds.whoami = function(){
-  log("I am",id.nick,me.address);
+  log("I am",id.nick,me.hashname,JSON.stringify(me.paths));
 }
 cmds["42"] = function(){
   log("I hash, therefore I am.");
@@ -248,9 +248,10 @@ cmds.ping = function(arg)
 {
   var hn = me.whois(arg[0]);
   if(!hn) return log("invalid hashname",arg[0]);
+  var start = Date.now();
   hn.seek(me.hashname,function(err){
     if(err) return log("ping failed",hn.hashname,err);
-    log("ping",hn.address);
+    log("ping",hn.address,Date.now()-start);
   });
 }
 cmds.h = function(arg){

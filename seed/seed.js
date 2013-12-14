@@ -14,6 +14,12 @@ var argv = require("optimist")
 
 if(argv.v) tele.debug(console.log);
 
+if(argv.port == 42420)
+{
+  console.log("that port is reserved");
+  process.exit(1);
+}
+
 // localize our id file
 var idfile = path.join(__dirname, argv.id);
 

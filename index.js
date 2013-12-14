@@ -20,6 +20,11 @@ exports.genkey = crypt.genkey;
 exports.hashname = function(key, args)
 {
   if(!args) args = {};
+  if(args.port == 42420)
+  {
+    console.log("can't use reserved port 42420");
+    return false;
+  }
   var self = thjs.hashname(key, function(to, msg){
     // since msg can come from crypt.js or thforge (or a raw bin string), flex
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
@@ -31,13 +36,13 @@ exports.hashname = function(key, args)
       lan.bind(self.server.address().port, "0.0.0.0", function(err){
         lan.setBroadcast(true);
         // brute force to common subnets and all
-        var parts = to.ip.split(".");
+        var parts = self.ip.split(".");
         for(var i = 3; i >= 0; i--)
         {
           parts[i] = "255";
-          lan.send(buf, 0, buf.length, to.port, parts.join("."));
+          lan.send(buf, 0, buf.length, 42420, parts.join("."));
         }
-        lan.send(buf, 0, buf.length, to.port, "239.42.42.42", function(){
+        lan.send(buf, 0, buf.length, 42420, "239.42.42.42", function(){
           lan.close();
         });
       });
@@ -88,27 +93,7 @@ exports.hashname = function(key, args)
     self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port});
   }
   self.server = dgram.createSocket("udp4", msgs);
-  
-  // do (optional) lan bindings
-  function lanbind(callback)
-  {
-    function setup(sock)
-    {
-      sock.setMulticastLoopback(true)
-      sock.addMembership("239.42.42.42");
-      sock.setBroadcast(true);
-      callback();
-    }
-
-    if(args.port == 42424) return setup(self.server);
-
-    // need another socket for local 42424 port
-    var lan = dgram.createSocket("udp4", msgs);
-    lan.bind(42424, "0.0.0.0", function(err){
-      setup(lan);
-    });
-  }
-  
+    
   self.server.on("error", function(err){
     console.log("error from the UDP socket",err);
     process.exit(1);
@@ -139,8 +124,12 @@ exports.hashname = function(key, args)
       // monitor network ip unless locked to one
       if(!args.ip) interfaces();
 
-      // start the lan listener
-      lanbind(function(){
+      // start the lan * listener
+      var lan = dgram.createSocket("udp4", msgs);
+      lan.bind(42420, "0.0.0.0", function(err){
+        lan.setMulticastLoopback(true)
+        lan.addMembership("239.42.42.42");
+        lan.setBroadcast(true);
         // fire up switch
         self._online(callback);        
       });

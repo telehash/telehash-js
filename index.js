@@ -21,7 +21,8 @@ exports.hashname = function(key, args)
 {
   if(!args) args = {};
   var self = thjs.hashname(key, function(to, msg){
-    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data, "binary");
+    // since msg can come from crypt.js or thforge (or a raw bin string), flex
+    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
     if(to.type == "ipv4") {
       if(to.lan) self.server.setBroadcast(true);
       self.server.send(buf, 0, buf.length, to.port, to.ip, function(){

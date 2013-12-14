@@ -253,3 +253,13 @@ cmds.ping = function(arg)
     log("ping",hn.address);
   });
 }
+cmds.h = function(arg){
+  var host = me.whois(arg[0]);
+  if(!host) return log("invalid hashname",arg[0]);
+  Object.keys(host.paths).forEach(function(id){
+    log("path",JSON.stringify(host.paths[id]));                        
+  });
+  Object.keys(host.chans).forEach(function(c){
+    log("chan",host.chans[c].type,host.chans[c].id);
+  });
+}

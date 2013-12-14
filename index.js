@@ -23,23 +23,39 @@ exports.hashname = function(key, args)
   var self = thjs.hashname(key, function(to, msg){
     // since msg can come from crypt.js or thforge (or a raw bin string), flex
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
-    if(to.type == "ipv4") {
-      if(to.lan) self.server.setBroadcast(true);
-      self.server.send(buf, 0, buf.length, to.port, to.ip, function(){
-        if(to.lan) self.server.setBroadcast(false);        
+
+    // blast the packet out on the lan with a temp socket
+    if(to.type == "lan")
+    {
+      var lan = dgram.createSocket("udp4");
+      lan.bind(self.server.address().port, "0.0.0.0", function(err){
+        lan.setBroadcast(true);
+        // brute force to common subnets and all
+        var parts = to.ip.split(".");
+        for(var i = 3; i >= 0; i--)
+        {
+          parts[i] = "255";
+          lan.send(buf, 0, buf.length, to.port, parts.join("."));
+        }
+        lan.send(buf, 0, buf.length, to.port, "239.42.42.42", function(){
+          lan.close();
+        });
       });
     }
+
+    if(to.type == "ipv4") {
+      self.server.send(buf, 0, buf.length, to.port, to.ip);        
+    }
+
     if(to.type == "http" && self.io && self.io.sockets.sockets[to.id])
     {
       self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
     }
   }, args);
   if(!self) return false;
-  // when given a public ip, force not in NAT mode
-  if(args.pubip) {
-    self.ip = args.pubip;
-    self.nat = false;
-  }
+
+  // when given an ip, force not in NAT mode
+  if(args.ip) self.nat = false;
   
   // to be nice, background-load seeds if none were set
   self._addSeed = self.addSeed;
@@ -54,18 +70,6 @@ exports.hashname = function(key, args)
     require(file).forEach(self.addSeed, self);
   }
   
-  // optionally do lan listening
-  self.lanseed = function()
-  {
-    if(self.lan) return; // already going
-    self.lan = dgram.createSocket("udp4", function(msg, rinfo){
-      self.receive(msg.toString("binary"), {lan:true, type:"ipv4", ip:rinfo.address, port:rinfo.port});
-    });
-    self.lan.bind(42424, "0.0.0.0", function(err){
-      self.lan.setBroadcast(true);      
-    });
-  }
-
   // optionally support http networks
   self.http = function(http, io)
   {
@@ -80,9 +84,31 @@ exports.hashname = function(key, args)
   }
   
   // do our udp server bindings
-  self.server = dgram.createSocket("udp4", function(msg, rinfo){
+  function msgs(msg, rinfo){
     self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port});
-  });
+  }
+  self.server = dgram.createSocket("udp4", msgs);
+  
+  // do (optional) lan bindings
+  function lanbind(callback)
+  {
+    function setup(sock)
+    {
+      sock.setMulticastLoopback(true)
+      sock.addMembership("239.42.42.42");
+      sock.setBroadcast(true);
+      callback();
+    }
+
+    if(args.port == 42424) return setup(self.server);
+
+    // need another socket for local 42424 port
+    var lan = dgram.createSocket("udp4", msgs);
+    lan.bind(42424, "0.0.0.0", function(err){
+      setup(lan);
+    });
+  }
+  
   self.server.on("error", function(err){
     console.log("error from the UDP socket",err);
     process.exit(1);
@@ -94,12 +120,11 @@ exports.hashname = function(key, args)
     if(!self.seeded) self.addSeeds(path.join(__dirname,"/node_modules/thjs/seeds.json"));
 
     // ensure udp socket is bound
-    self.server.bind(args.port, args.ip, function(){
+    self.server.bind(args.port, "0.0.0.0", function(){
       // update port after listen completed to be accurate
       self.port = self.server.address().port;
-      if(args.pubip) return;
-      if(args.ip && args.ip != "0.0.0.0") return;
-      // if no ip is force set (useful for seed style usage), regularly update w/ local ipv4 address
+
+      // regularly update w/ local ipv4 address changes
       function interfaces()
       {
         var ifaces = os.networkInterfaces()
@@ -110,10 +135,15 @@ exports.hashname = function(key, args)
         }
         setTimeout(interfaces,10000);
       }
-      interfaces();
 
-      // let the switch start up now
-      self._online(callback);
+      // monitor network ip unless locked to one
+      if(!args.ip) interfaces();
+
+      // start the lan listener
+      lanbind(function(){
+        // fire up switch
+        self._online(callback);        
+      });
     });
   }
 

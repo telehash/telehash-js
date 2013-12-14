@@ -9,8 +9,7 @@ var argv = require("optimist")
   .default("port", 42424)
   .boolean("bridge").default(true)
   .boolean("v").describe("v", "verbose")
-  .default("ip", "0.0.0.0").describe("ip", "the locally bound IP address")
-  .describe("pubip", "force set the public IP address to override any NAT detection")
+  .describe("ip", "force set the public IP address to override any NAT detection")
   .argv;
 
 if(argv.v) tele.debug(console.log);
@@ -31,8 +30,7 @@ if(fs.existsSync(idfile))
 
 function init(key)
 {
-  var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, pubip:argv.pubip});
-  seed.lanseed(); // enable lan seeding too
+  var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip});
   if(argv.seeds) seed.addSeeds(argv.seeds);
   if(argv.http) seed.http(argv.http, require('socket.io').listen(parseInt(argv.http.split(":").pop())));
   if(argv.http || argv.bridge) seed.bridging = true; // enable bridging

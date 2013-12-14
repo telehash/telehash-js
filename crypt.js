@@ -77,6 +77,7 @@ function der2key(der)
 {
   if(!der || !Buffer.isBuffer(der)) return false;
   var b64 = der.toString("base64");
+  if(!b64) return false;
   b64 = b64.match(/.{1,60}/g).join("\n");
   return pub2key("-----BEGIN PUBLIC KEY-----\n"+b64+"\n-----END PUBLIC KEY-----\n");
 }

@@ -35,6 +35,16 @@ if(fs.existsSync(idfile))
   });
 }
 
+// right now we're very leaky, so we need this
+function safe()
+{
+  var usage = process.memoryUsage().rss/(1024*1024);
+  console.log("RAM",Math.floor(usage));
+  if(usage > 500) process.exit(1);
+  setTimeout(safe,60*1000);
+}
+safe();
+
 function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});

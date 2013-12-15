@@ -46,7 +46,7 @@ function init(key)
     var pub4 = seed.paths.pub4 || {};
     var ip = pub4.ip||lan4.ip;
     var port = pub4.port||lan4.port;
-    var info = {ip:ip, port:port, hashname:seed.hashname, pubkey:key.public};
+    var info = {ip:ip, port:port, ip6:seed.paths.lan6.ip, port6:seed.paths.lan6.port, hashname:seed.hashname, pubkey:key.public};
     if(argv.http) info.http = argv.http;
     if(seed.bridging) info.bridge = true;
     console.log(JSON.stringify(info, null, 4));

@@ -34,7 +34,7 @@ exports.hashname = function(key, args)
     {
       if(args.nolan) return;
       var lan = dgram.createSocket("udp4");
-      lan.bind(self.server.address().port, "0.0.0.0", function(err){
+      lan.bind(self.server4.address().port, "0.0.0.0", function(err){
         lan.setBroadcast(true);
         // brute force to common subnets and all
         var parts = self.networkIP.split(".");
@@ -50,7 +50,11 @@ exports.hashname = function(key, args)
     }
 
     if(to.type == "ipv4") {
-      self.server.send(buf, 0, buf.length, to.port, to.ip);        
+      self.server4.send(buf, 0, buf.length, to.port, to.ip);        
+    }
+
+    if(to.type == "ipv6") {
+      self.server6.send(buf, 0, buf.length, to.port, to.ip);
     }
 
     if(to.type == "http" && self.io && self.io.sockets.sockets[to.id])
@@ -90,12 +94,16 @@ exports.hashname = function(key, args)
   }
   
   // do our udp server bindings
-  function msgs(msg, rinfo){
-    self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port});
+  function msgs4(msg, rinfo){
+    self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port, id:rinfo.address+":"+rinfo.port});
   }
-  self.server = dgram.createSocket("udp4", msgs);
+  function msgs6(msg, rinfo){
+    self.receive(msg.toString("binary"), {type:"ipv6", ip:rinfo.address, port:rinfo.port, id:rinfo.address+":"+rinfo.port});
+  }
+  self.server4 = dgram.createSocket("udp4", msgs4);
+  self.server6 = dgram.createSocket("udp6", msgs6);
     
-  self.server.on("error", function(err){
+  self.server4.on("error", function(err){
     console.log("error from the UDP socket",err);
     process.exit(1);
   });
@@ -105,41 +113,45 @@ exports.hashname = function(key, args)
     // we trigger auto-loading seeds with an online
     if(!self.seeded) self.addSeeds(path.join(__dirname,"/node_modules/thjs/seeds.json"));
 
-    // ensure udp socket is bound
-    self.server.bind(args.port, "0.0.0.0", function(){
-      // regularly update w/ local ipv4 address changes
-      function interfaces()
-      {
-        var ifaces = os.networkInterfaces()
-        var address = self.server.address();
-        for (var dev in ifaces) {
-          ifaces[dev].forEach(function(details){
-            // upgrade to actual interface ip
-            if(details.family == "IPv4" && !details.internal) address.address = details.address;
-          });
+    // ensure udp sockets are bound
+    self.server4.bind(args.port, "0.0.0.0", function(){
+      self.server6.bind(args.port, "::0", function(err){
+        // regularly update w/ local ip address changes
+        function interfaces()
+        {
+          var ifaces = os.networkInterfaces()
+          var address4 = self.server4.address();
+          var address6 = self.server6.address();
+          for (var dev in ifaces) {
+            ifaces[dev].forEach(function(details){
+              // upgrade to actual interface ip
+              if(details.family == "IPv4" && !details.internal) address4.address = details.address;
+              if(details.family == "IPv6" && !details.internal) address6.address = details.address;
+            });
+          }
+          self.networkIP = address4.address; // used for local broadcasting above
+          // allow overridden lan4 ip address
+          if(args.ip) address4.address = args.ip;
+          self.pathSet({type:"lan4",ip:address4.address,port:address4.port});
+          self.pathSet({type:"lan6",ip:address6.address,port:address6.port});
+          setTimeout(interfaces,10000);
         }
-        self.networkIP = address.address; // used for local broadcasting above
-        // allow overridden lan4 ip address
-        if(args.ip) address.address = args.ip;
-        self.pathSet({type:"lan4",ip:address.address,port:address.port});
-        setTimeout(interfaces,10000);
-      }
-      interfaces();
+        interfaces();
 
-      if(args.nolan) return self._online(callback);        
+        if(args.nolan) return self._online(callback);        
       
-      // start the lan * listener
-      var lan = dgram.createSocket("udp4", msgs);
-      lan.bind(42420, "0.0.0.0", function(err){
-        lan.setMulticastLoopback(true)
-        lan.addMembership("239.42.42.42");
-        lan.setBroadcast(true);
-        // fire up switch
-        self._online(callback);        
+        // start the lan * listener, only ipv4 for now, can't find docs on node+ipv6 multicast
+        var lan = dgram.createSocket("udp4", msgs4);
+        lan.bind(42420, "0.0.0.0", function(err){
+          lan.setMulticastLoopback(true)
+          lan.addMembership("239.42.42.42");
+          lan.setBroadcast(true);
+          // fire up switch
+          self._online(callback);        
+        });
       });
     });
   }
-
   
   return self;
 }

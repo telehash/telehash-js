@@ -7,7 +7,7 @@ var tele = require("../index");
 var argv = require("optimist")
   .default("id", "./seed.json")
   .default("port", 42424)
-  .boolean("bridge").default(true)
+  .boolean("bridge").default("bridge",true)
   .boolean("v").describe("v", "verbose")
   .boolean("nolan").describe("nolan", "disable lan usage")
   .describe("ip", "force set the public IP address to override any NAT detection")
@@ -45,19 +45,20 @@ function safe()
 }
 safe();
 
+console.log(argv);
 function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});
   if(argv.seeds) seed.addSeeds(argv.seeds);
-  if(argv.http) seed.http(argv.http, require('socket.io').listen(parseInt(argv.http.split(":").pop())));
-  if(argv.http || argv.bridge) seed.bridging = true; // enable bridging
+  if(!argv.nohttp) seed.http(argv.http, require('socket.io').listen(argv.port));
+  seed.bridging = argv.bridge;
   seed.online(function(err){
     var lan4 = seed.paths.lan4 || {};
     var pub4 = seed.paths.pub4 || {};
     var ip = pub4.ip||lan4.ip;
     var port = pub4.port||lan4.port;
     var info = {ip:ip, port:port, ip6:seed.paths.lan6.ip, port6:seed.paths.lan6.port, hashname:seed.hashname, pubkey:key.public};
-    if(argv.http) info.http = argv.http;
+    if(!argv.nohttp) info.http = seed.paths.http.http;
     if(seed.bridging) info.bridge = true;
     console.log(JSON.stringify(info, null, 4));
     if(seed.nat) console.log("warning, may be behind a NAT, IP and Port may not be stable");

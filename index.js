@@ -83,7 +83,7 @@ exports.hashname = function(key, args)
   // optionally support http networks
   self.http = function(http, io)
   {
-    self.pathSet({type:"http",http:http});
+    if(http) self.pathSet({type:"http",http:http});
     self.io = io;
     io.on("connection", function(socket){
       socket.on("packet", function(packet) {
@@ -124,9 +124,9 @@ exports.hashname = function(key, args)
           var address6 = self.server6.address();
           for (var dev in ifaces) {
             ifaces[dev].forEach(function(details){
-              // upgrade to actual interface ip
-              if(details.family == "IPv4" && !details.internal) address4.address = details.address;
-              if(details.family == "IPv6" && !details.internal) address6.address = details.address;
+              // upgrade to actual interface ip, prefer local ones
+              if(details.family == "IPv4" && !details.internal && thjs.isLocalIP(address4.address)) address4.address = details.address;
+              if(details.family == "IPv6" && !details.internal && thjs.isLocalIP(address6.address)) address6.address = details.address;
             });
           }
           self.networkIP = address4.address; // used for local broadcasting above
@@ -134,6 +134,8 @@ exports.hashname = function(key, args)
           if(args.ip) address4.address = args.ip;
           self.pathSet({type:"lan4",ip:address4.address,port:address4.port});
           self.pathSet({type:"lan6",ip:address6.address,port:address6.port});
+          // set http url if not manually set
+          if(self.io && !self.paths.http) self.pathSet({type:"http",http:"http://"+address4.address+":"+address4.port})
           setTimeout(interfaces,10000);
         }
         interfaces();

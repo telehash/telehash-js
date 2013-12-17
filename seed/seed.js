@@ -45,7 +45,6 @@ function safe()
 }
 safe();
 
-console.log(argv);
 function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});

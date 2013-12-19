@@ -1,9 +1,9 @@
 {
    "name": "telehash",
-   "version": "0.1.15",
+   "version": "0.1.16",
    "dependencies": {
      "node-forge": "0.2.x",
-     "thjs":">=0.0.29"
+     "thjs":">=0.0.38"
    },
    "optionalDependencies": {
      "ursa": "git+https://github.com/quartzjer/ursa.git",

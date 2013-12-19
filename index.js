@@ -95,10 +95,10 @@ exports.hashname = function(key, args)
   
   // do our udp server bindings
   function msgs4(msg, rinfo){
-    self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port, id:rinfo.address+":"+rinfo.port});
+    self.receive(msg.toString("binary"), {type:"ipv4", ip:rinfo.address, port:rinfo.port});
   }
   function msgs6(msg, rinfo){
-    self.receive(msg.toString("binary"), {type:"ipv6", ip:rinfo.address, port:rinfo.port, id:rinfo.address+":"+rinfo.port});
+    self.receive(msg.toString("binary"), {type:"ipv6", ip:rinfo.address, port:rinfo.port});
   }
   self.server4 = dgram.createSocket("udp4", msgs4);
   self.server6 = dgram.createSocket("udp6", msgs6);

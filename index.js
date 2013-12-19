@@ -57,7 +57,7 @@ exports.hashname = function(key, args)
       self.server6.send(buf, 0, buf.length, to.port, to.ip);
     }
 
-    if(to.type == "custom" && self.io && self.io.sockets.sockets[to.id])
+    if(to.type == "bridge" && self.io && self.io.sockets.sockets[to.id])
     {
       self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
     }
@@ -88,7 +88,7 @@ exports.hashname = function(key, args)
     io.on("connection", function(socket){
       socket.on("packet", function(packet) {
         if(!packet.data) return;
-        self.receive((new Buffer(packet.data, "base64")).toString("binary"), {type:"custom", id:socket.id});
+        self.receive((new Buffer(packet.data, "base64")).toString("binary"), {type:"bridge", id:socket.id});
       });
     });
   }

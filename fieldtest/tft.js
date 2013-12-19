@@ -152,7 +152,7 @@ rl.on('line', function(line) {
 
 var cmds = {};
 cmds.help = cmds["?"] = function(arg){
-  log("'quit|done'","exit the app");
+  log("'quit|exit'","exit the app");
   log("'whoami'","your info");
   log("'seek hashname'","look for that hashname in the DHT");  
   log("'ping hashname'","try to connect to and get response from that hashname");
@@ -204,7 +204,7 @@ cmds.gw = cmds.gwho = function(arg){
     log(group.members[member].nick,group.members[member].hashname);
   });
 }
-cmds.g = function(arg){
+cmds.gm = function(arg){
   var group = groups.get(arg.shift());
   Object.keys(group.members).forEach(function(member){
     group.members[member].send({js:{message:arg.join(" ")}});

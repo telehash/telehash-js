@@ -49,7 +49,7 @@ function init(key)
 {
   var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});
   if(argv.seeds) seed.addSeeds(argv.seeds);
-  if(!argv.nohttp) seed.http(argv.http, require('socket.io').listen(argv.port));
+  if(!argv.nohttp) seed.http(argv.http, require('socket.io').listen(argv.port, {log:false}));
   seed.bridging = argv.bridge;
   seed.online(function(err){
     var lan4 = seed.paths.lan4 || {};

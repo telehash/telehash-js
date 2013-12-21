@@ -164,6 +164,7 @@ cmds.help = cmds["?"] = function(arg){
   log("'join group hashname'","join a group that exists via that hashname");
   log("'gw|gwho group'","see who's in the group");
   log("'gm group'","send a message to the group");
+  log("'h hashname'","show known details about a hashname");
 }
 cmds.quit = cmds.exit = function(arg){
   if(arg[0]) log(arg[0]);
@@ -257,6 +258,7 @@ cmds.ping = function(arg)
 cmds.h = function(arg){
   var host = me.whois(arg[0]);
   if(!host) return log("invalid hashname",arg[0]);
+  if(host.relay) log("relay",JSON.stringify(host.relay));
   Object.keys(host.paths).forEach(function(id){
     log("path",JSON.stringify(host.paths[id]));                        
   });

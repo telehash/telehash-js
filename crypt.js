@@ -159,9 +159,12 @@ function deopenize(id, open)
   var decsig = Buffer.concat([aes.update(open.js.sig, "base64"),aes.final()]);
 
   // verify signature
+  var verify;
   try{
-    var verify = ukey.hashAndVerify("sha256", open.body, decsig, undefined, ursa.RSA_PKCS1_PADDING);
-  }catch(E){}
+    verify = ukey.hashAndVerify("sha256", open.body, decsig, undefined, ursa.RSA_PKCS1_PADDING);
+  }catch(E){
+    console.log("verify failed",E,open.js.iv,aeskey.toString("hex"));
+  }
   return {ecc:eccKey, rsa:key2der(ukey), js:deciphered.js, verify:verify};
 }
 

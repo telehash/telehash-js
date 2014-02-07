@@ -37,19 +37,18 @@ process.stdin.on("keypress", function(s, key){
 // load or generate our crypto id
 var id;
 var idfile = path.join(process.cwd(),argv.id);
-if(fs.existsSync(idfile))
+if(fs.existsSync(idfile) && (id = require(idfile)) && id.parts)
 {
-  id = require(idfile);
   init();
 }else{
-  tele.genkey(function(err, key){
+  tele.genkeys(function(err, keys){
     if(err) return cmds.quit(err);
-    id = key;
+    id = keys;
     rl.question('nickname? ', function(nick) {
       id.nick = nick;
       fs.writeFileSync(idfile, JSON.stringify(id, null, 4));
       init();
-    });    
+    });
   });
 }
 

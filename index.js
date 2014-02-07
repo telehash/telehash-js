@@ -5,7 +5,7 @@ var os = require("os");
 var path = require("path");
 
 // use either the crypt (compiled, faster) libs or the forge-based pure js ones
-if(!crypt.validate()) crypt = require("./cryptjs").load();
+if(true||!crypt.validate()) crypt = require("./cryptjs").load();
 thjs.localize(crypt);
 
 // optional debug flag
@@ -16,6 +16,7 @@ exports.debug = function(cb){
 }
 
 exports.genkey = crypt.genkey;
+exports.genkeys = crypt.genkeys;
 
 exports.hashname = function(key, args)
 {

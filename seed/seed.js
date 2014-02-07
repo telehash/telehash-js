@@ -25,29 +25,21 @@ if(argv.port == 42420)
 var idfile = path.join(__dirname, argv.id);
 
 // load the pub/private key or create one
-if(fs.existsSync(idfile))
+var keys;
+if(fs.existsSync(idfile) && (keys = require(idfile)) && keys.parts)
 {
-  init(require(idfile));
+  init(keys);
 }else{
-  tele.genkey(function(err, key){
-    fs.writeFileSync(idfile, JSON.stringify(key, null, 4));
-    init(key);
+  tele.genkeys(function(err, keys){
+    fs.writeFileSync(idfile, JSON.stringify(keys, null, 4));
+    init(keys);
   });
 }
 
-// right now we're very leaky, so we need this
-function safe()
+function init(keys)
 {
-  var usage = process.memoryUsage().rss/(1024*1024);
-  console.log("RAM",Math.floor(usage));
-  if(usage > 500) process.exit(1);
-  setTimeout(safe,60*1000);
-}
-safe();
-
-function init(key)
-{
-  var seed = tele.hashname(key, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});
+  var seed = tele.hashname(keys, {port:parseInt(argv.port), ip:argv.ip, nolan:argv.nolan});
+  if(!seed) return console.log("something went wrong :(");
   if(argv.seeds) seed.addSeeds(argv.seeds);
   if(!argv.nohttp) seed.http(argv.http, require('socket.io').listen(argv.port, {log:false}));
   seed.bridging = argv.bridge;
@@ -56,8 +48,10 @@ function init(key)
     var pub4 = seed.paths.pub4 || {};
     var ip = pub4.ip||lan4.ip;
     var port = pub4.port||lan4.port;
-    var info = {ip:ip, port:port, ip6:seed.paths.lan6.ip, port6:seed.paths.lan6.port, hashname:seed.hashname, pubkey:key.public};
-    if(!argv.nohttp) info.http = seed.paths.http.http;
+    var info = {paths:[], hashname:seed.hashname, parts:seed.parts, keys:seed.keys};
+    info.paths.push({type:"ipv4",ip:ip,port:port});
+    if(seed.paths.lan6) info.paths.push({type:"ipv6",ip:seed.paths.lan6.ip,port:seed.paths.lan6.port});
+    if(!argv.nohttp) info.paths.push({type:"http",http:seed.paths.http.http});
     if(seed.bridging) info.bridge = true;
     console.log(JSON.stringify(info, null, 4));
     if(seed.nat) console.log("warning, may be behind a NAT, IP and Port may not be stable");

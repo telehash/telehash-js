@@ -18,6 +18,7 @@ tele.debug(function(){
   args.unshift(new Date().toISOString());
   vlog.write(args.join(" ")+"\n");
 });
+tele.info(function(){log.apply(console,arguments)});
 
 // set up our readline interface
 rl = require("readline").createInterface(process.stdin, process.stdout, null);

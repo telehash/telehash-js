@@ -14,6 +14,7 @@ exports.debug = function(cb){
   debug = cb;
   thjs.debug(cb);
 }
+exports.info = thjs.info;
 
 exports.genkey = crypt.genkey;
 exports.genkeys = crypt.genkeys;

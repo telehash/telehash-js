@@ -14,6 +14,7 @@ var argv = require("optimist")
   .argv;
 
 if(argv.v) tele.debug(console.log);
+tele.info(function(){console.log.apply(console,arguments)});
 
 if(argv.port == 42420)
 {

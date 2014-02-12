@@ -15,6 +15,7 @@ exports.debug = function(cb){
   thjs.debug(cb);
 }
 exports.info = thjs.info;
+exports.isLocalIP = thjs.isLocalIP;
 
 exports.genkey = crypt.genkey;
 exports.genkeys = crypt.genkeys;
@@ -79,7 +80,8 @@ exports.hashname = function(key, args)
   self.addSeeds = function(file)
   {
     self.seeded = true;
-    require(file).forEach(self.addSeed, self);
+    var seeds = require(file)
+    Object.keys(seeds).map(function(hn){return seeds[hn]}).forEach(self.addSeed, self);
   }
   
   // optionally support http networks

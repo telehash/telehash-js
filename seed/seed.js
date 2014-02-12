@@ -56,12 +56,14 @@ function init(keys)
     var pub4 = seed.paths.pub4 || {};
     var ip = pub4.ip||lan4.ip;
     var port = pub4.port||lan4.port;
-    var info = {paths:[], hashname:seed.hashname, parts:seed.parts, keys:seed.keys};
+    var info = {paths:[], parts:seed.parts, keys:seed.keys};
     info.paths.push({type:"ipv4",ip:ip,port:port});
     if(seed.paths.lan6) info.paths.push({type:"ipv6",ip:seed.paths.lan6.ip,port:seed.paths.lan6.port});
     if(!argv.nohttp) info.paths.push({type:"http",http:seed.paths.http.http});
     if(seed.bridging) info.bridge = true;
-    console.log("[\n\t"+JSON.stringify(info)+"\n]");
+    var seeds = {};
+    seeds[seed.hashname] = info;
+    console.log(JSON.stringify(seeds,null,2));
     if(seed.nat) console.log("warning, may be behind a NAT, IP and Port may not be stable");
     console.log((err?err:"connected to "+count+" mesh seed peers"));
   });

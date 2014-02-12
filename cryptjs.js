@@ -13,7 +13,10 @@ exports.load = function(){
   global.BigInteger = BigInteger;
   global.SecureRandom = SecureRandom;
   global.ECPointFp = ECPointFp;
-  return require("thjs/thforge").forge(require("node-forge"));
+  var thforge = require("thjs/thforge");
+  thforge.forge(require("node-forge"));
+  thforge.sjcl(require("sjcl"));
+  return thforge;
 }
 
 

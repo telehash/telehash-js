@@ -29,7 +29,7 @@ exports.hashname = function(key, args)
     return false;
   }
   var self = thjs.hashname(key, function(to, msg){
-    // since msg can come from crypt.js or thforge (or a raw bin string), flex
+    // since msg can come from crypt.js or thcrypt (or a raw bin string), flex
     var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
 
     // blast the packet out on the lan with a temp socket

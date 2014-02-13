@@ -1,11 +1,11 @@
-var crypt = require("./crypt");
 var thjs = require("thjs");
 var dgram = require("dgram");
 var os = require("os");
 var path = require("path");
 
-// use either the crypt (compiled, faster) libs or the forge-based pure js ones
-if(true||!crypt.validate()) crypt = require("./cryptjs").load();
+// load the pure-js and then try to load compiled ones
+var crypt = require("./cryptjs").load();
+require("./crypt").upgrade(crypt);
 thjs.localize(crypt);
 
 // optional debug flag

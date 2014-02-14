@@ -142,52 +142,39 @@ CS["1"] = {
   openline:function(from, open)
   {
     from.lineIV = 0;
-    var ecdhe = ecdh(from.ecc.private, open.linepub);
-    console.log("ECDHE LINE",ecdhe.length, ecdhe, from.lineOut, from.lineIn);
-  	var md = forge.md.sha1.create()
-  	md.update(forge.util.hexToBytes(ecdhe));
-  	md.update(forge.util.hexToBytes(from.lineOut));
-  	md.update(forge.util.hexToBytes(from.lineIn));
-  	from.encKey = forge.util.createBuffer(md.digest().getBytes(16));
-  	var md = forge.md.sha1.create()
-  	md.update(forge.util.hexToBytes(ecdhe));
-  	md.update(forge.util.hexToBytes(from.lineIn));
-  	md.update(forge.util.hexToBytes(from.lineOut));
-  	from.decKey = forge.util.createBuffer(md.digest().getBytes(16));
-  	console.log("encKey",from.encKey.toHex(),"decKey",from.decKey.toHex());
+    var ecdhe = from.ecc.deriveSharedSecret(open.linepub);
+    from.encKey = crypto.createHash("sha1")
+      .update(ecdhe)
+      .update(new Buffer(from.lineOut, "hex"))
+      .update(new Buffer(from.lineIn, "hex"))
+      .digest().slice(0,16);
+    from.decKey = crypto.createHash("sha1")
+      .update(ecdhe)
+      .update(new Buffer(from.lineIn, "hex"))
+      .update(new Buffer(from.lineOut, "hex"))
+      .digest().slice(0,16);
+    return true;
   },
 
   lineize:function(to, packet)
   {
   	var wrap = {type:"line"};
   	wrap.line = to.lineIn;
-    var iv = forge.util.hexToBytes(unstupid((to.lineIV++).toString(16),8));
-  	var buf = pencode(packet.js,packet.body);
-  //	console.log("LINE",buf.toHex(),packet.toHex(),wrap.iv,to.encKey.toHex());
 
   	// now encrypt the packet
-//    var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
-//    var body = Buffer.concat([aes.update(pencode(packet.js,packet.body)), aes.final()]);
-
-  	var cipher = forge.aes.createEncryptionCipher(to.encKey.copy(), "CTR");
-  	cipher.start(forge.util.hexToBytes(unstupid(forge.util.bytesToHex(iv),32))); // padd out the IV to 16 bytes
-  	cipher.update(buf);
-  	cipher.finish();
+    var iv = new Buffer(4);
+    iv.writeUInt32LE(to.lineIV++,0);
+    var ivz = new Buffer(12);
+    ivz.fill(0);
+    var aes = crypto.createCipheriv("AES-128-CTR", to.encKey, Buffer.concat([ivz,iv]));
+    var cbody = Buffer.concat([aes.update(pencode(packet.js,packet.body)), aes.final()]);
 
     // prepend the IV and hmac it
-    var macd = forge.util.createBuffer();
-    macd.putBytes(iv);
-    macd.putBytes(cipher.output.bytes());
-    var hmac = forge.hmac.create();
-    hmac.start("sha1", to.encKey.bytes());
-    hmac.update(macd.bytes());
+    var mac = crypto.createHmac('sha1', to.encKey).update(Buffer.concat([iv,cbody])).digest()
   
     // create final body
-    var body = forge.util.createBuffer();
-    body.putBytes(hmac.digest().bytes(4));
-    body.putBytes(macd.bytes());
-
-  	console.log("LOUT",wrap,body.toHex());
+    var body = Buffer.concat([mac.slice(0,4),iv,cbody]);
+  	console.log("LOUT",wrap,body.toString("hex"));
 
     return pencode(wrap, body);
   },
@@ -195,24 +182,21 @@ CS["1"] = {
   delineize:function(from, packet)
   {
     if(!packet.body) return "no body";
-    var body = forge.util.createBuffer(packet.body);
-    var mac = body.getBytes(4);
-    var hmac = forge.hmac.create();
-    hmac.start("sha1", from.decKey.bytes());
-    hmac.update(body.bytes());
-    if(hmac.digest().bytes(4) != mac) return "invalid hmac";
+    
+    // validate the hmac
+    var mac1 = packet.body.slice(0,4).toString("hex");
+    var mac2 = crypto.createHmac('sha1', from.decKey).update(packet.body.slice(4)).digest().slice(0,4).toString("hex");
+    if(mac1 != mac2) return "invalid hmac";
 
-//    var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
-//    var deciphered = pdecode(Buffer.concat([aes.update(packet.body), aes.final()]));
-
-    var iv = body.getBytes(4);
-  	var cipher = forge.aes.createDecryptionCipher(from.decKey.copy(), "CTR");
-  	cipher.start(forge.util.hexToBytes(unstupid(forge.util.bytesToHex(iv),32)));
-  	cipher.update(body);
-  	cipher.finish();
-  	if(!cipher.output) return "cipher failed";
-  	var deciphered = pdecode(cipher.output);
+    // decrypt body
+    var iv = packet.body.slice(4,8);
+    var ivz = new Buffer(12);
+    ivz.fill(0);
+    var body = packet.body.slice(8);
+    var aes = crypto.createDecipheriv("AES-128-CTR", from.decKey, Buffer.concat([ivz,iv]));
+    var deciphered = pdecode(Buffer.concat([aes.update(body), aes.final()]));
   	if(!deciphered) return "invalid decrypted packet";
+
     packet.js = deciphered.js;
     packet.body = deciphered.body;
     return false;

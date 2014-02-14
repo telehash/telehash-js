@@ -3,6 +3,7 @@ try{
   var ecc = require("ecc"); // for the elliptic curve diffie hellman  not in crypto.*
 }catch(E){}
 
+var sjcl = require("sjcl");
 var crypto = require("crypto");
 var CS = {"1":{},"1r":{}};
 
@@ -55,6 +56,166 @@ CS["1"] = {
       if(!id.private) return "private key load failed";
     }
     return false;
+  },
+  
+  openize:function(id, to, open, inner)
+  {
+  	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.secp160r1);
+    var eccpub = to.ecc.PublicKey.slice(1);
+
+    // get the shared secret to create the iv+key for the open aes
+    var secret = to.ecc.deriveSharedSecret(to.public);
+    var key = secret.slice(0,16);
+    var iv = new Buffer("00000000000000000000000000000001","hex");
+
+    // encrypt the inner
+    var aes = crypto.createCipheriv("AES-128-CTR", key, iv);
+    var body = pencode(inner,id.cs["1"].key);
+    console.log("X",body.length,body.toString("hex"));
+    var cbody = Buffer.concat([aes.update(body), aes.final()]);
+  
+    // prepend the line public key and hmac it  
+    var secret = id.cs["1"].private.deriveSharedSecret(to.public);
+    var macd = Buffer.concat([eccpub,cbody]);
+    var hmac = crypto.createHmac('sha1', secret).update(macd).digest();
+  
+    // create final body
+    var body = Buffer.concat([hmac,macd]);
+    return pencode(open, body);
+  },
+  
+  deopenize:function(id, open)
+  {
+    var ret = {verify:false};
+    if(!open.body) return ret;
+
+    var mac1 = open.body.slice(0,20).toString("hex");
+    var pub = open.body.slice(20,60);
+    var cbody = open.body.slice(60);
+
+    console.log("X",pub.toString("hex"));
+
+    try{
+      ret.linepub = new ecc.ECKey(ecc.ECCurves.secp160r1, Buffer.concat([new Buffer("04","hex"),pub]), true);      
+    }catch(E){
+      console.log("ecc err",E);
+    }
+    if(!ret.linepub) return ret;
+
+    var secret = id.cs["1"].private.deriveSharedSecret(ret.linepub);
+    var key = secret.slice(0,16);
+    var iv = new Buffer("00000000000000000000000000000001","hex");
+
+    // aes-128 decipher the inner
+    var aes = crypto.createDecipheriv("AES-128-CTR", key, iv);
+    var body = Buffer.concat([aes.update(cbody), aes.final()]);
+    console.log("X",body.length,body.toString("hex"));
+    var inner = pdecode(body);
+    if(!inner) return ret;
+
+    console.log("X");
+
+    // verify+load inner key info
+    var epub = new ecc.ECKey(ecc.ECCurves.secp160r1, Buffer.concat([new Buffer("04","hex"),inner.body]), true);
+    if(!epub) return ret;
+    ret.key = inner.body;
+    if(typeof inner.js.from != "object" || !inner.js.from["1"]) return ret;
+    if(crypto.createHash("SHA1").update(inner.body).digest("hex") != inner.js.from["1"]) return ret;
+
+    console.log("X");
+
+    // verify the hmac
+    var secret = id.cs["1"].private.deriveSharedSecret(epub);
+    var mac2 = crypto.createHmac('sha1', secret).update(open.body.slice(20)).digest("hex");
+    if(mac2 != mac1) return ret;
+  
+    console.log("X");
+
+    // all good, cache+return
+    ret.verify = true;
+    ret.js = inner.js;
+    console.log("INNER",inner.js,ret.key.length);
+    return ret;
+  },
+ 
+  // set up the line enc/dec keys
+  openline:function(from, open)
+  {
+    from.lineIV = 0;
+    var ecdhe = ecdh(from.ecc.private, open.linepub);
+    console.log("ECDHE LINE",ecdhe.length, ecdhe, from.lineOut, from.lineIn);
+  	var md = forge.md.sha1.create()
+  	md.update(forge.util.hexToBytes(ecdhe));
+  	md.update(forge.util.hexToBytes(from.lineOut));
+  	md.update(forge.util.hexToBytes(from.lineIn));
+  	from.encKey = forge.util.createBuffer(md.digest().getBytes(16));
+  	var md = forge.md.sha1.create()
+  	md.update(forge.util.hexToBytes(ecdhe));
+  	md.update(forge.util.hexToBytes(from.lineIn));
+  	md.update(forge.util.hexToBytes(from.lineOut));
+  	from.decKey = forge.util.createBuffer(md.digest().getBytes(16));
+  	console.log("encKey",from.encKey.toHex(),"decKey",from.decKey.toHex());
+  },
+
+  lineize:function(to, packet)
+  {
+  	var wrap = {type:"line"};
+  	wrap.line = to.lineIn;
+    var iv = forge.util.hexToBytes(unstupid((to.lineIV++).toString(16),8));
+  	var buf = pencode(packet.js,packet.body);
+  //	console.log("LINE",buf.toHex(),packet.toHex(),wrap.iv,to.encKey.toHex());
+
+  	// now encrypt the packet
+//    var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
+//    var body = Buffer.concat([aes.update(pencode(packet.js,packet.body)), aes.final()]);
+
+  	var cipher = forge.aes.createEncryptionCipher(to.encKey.copy(), "CTR");
+  	cipher.start(forge.util.hexToBytes(unstupid(forge.util.bytesToHex(iv),32))); // padd out the IV to 16 bytes
+  	cipher.update(buf);
+  	cipher.finish();
+
+    // prepend the IV and hmac it
+    var macd = forge.util.createBuffer();
+    macd.putBytes(iv);
+    macd.putBytes(cipher.output.bytes());
+    var hmac = forge.hmac.create();
+    hmac.start("sha1", to.encKey.bytes());
+    hmac.update(macd.bytes());
+  
+    // create final body
+    var body = forge.util.createBuffer();
+    body.putBytes(hmac.digest().bytes(4));
+    body.putBytes(macd.bytes());
+
+  	console.log("LOUT",wrap,body.toHex());
+
+    return pencode(wrap, body);
+  },
+
+  delineize:function(from, packet)
+  {
+    if(!packet.body) return "no body";
+    var body = forge.util.createBuffer(packet.body);
+    var mac = body.getBytes(4);
+    var hmac = forge.hmac.create();
+    hmac.start("sha1", from.decKey.bytes());
+    hmac.update(body.bytes());
+    if(hmac.digest().bytes(4) != mac) return "invalid hmac";
+
+//    var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
+//    var deciphered = pdecode(Buffer.concat([aes.update(packet.body), aes.final()]));
+
+    var iv = body.getBytes(4);
+  	var cipher = forge.aes.createDecryptionCipher(from.decKey.copy(), "CTR");
+  	cipher.start(forge.util.hexToBytes(unstupid(forge.util.bytesToHex(iv),32)));
+  	cipher.update(body);
+  	cipher.finish();
+  	if(!cipher.output) return "cipher failed";
+  	var deciphered = pdecode(cipher.output);
+  	if(!deciphered) return "invalid decrypted packet";
+    packet.js = deciphered.js;
+    packet.body = deciphered.body;
+    return false;
   }
 }
 
@@ -85,91 +246,100 @@ CS["1r"] = {
   openize:function(id, to, open, inner)
   {
   	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.nistp256);
-  	if(!to.lineOut) to.lineOut = randomHEX(16);
-    if(!to.lineAt) to.lineAt = Date.now();
-    if(!to.public) to.public = der2key(to.der);
-  	var inner = {}
-  	inner.at = to.lineAt;
-  	inner.to = to.hashname;
-  	inner.line = to.lineOut;
-  	var body = pencode(inner, id.der);
-  	var open = {type:"open"};
-  	var iv = crypto.randomBytes(16);
-  	open.iv = iv.toString("hex");
+    var eccpub = to.ecc.PublicKey.slice(1);
 
-  	// now encrypt the body
-    var aes = crypto.createCipheriv("AES-256-CTR", crypto.createHash("sha256").update(to.ecc.PublicKey).digest(), iv);
-    body = Buffer.concat([aes.update(body),aes.final()]);
+  	// encrypt the body
+  	var ibody = pencode(inner, id.cs["1r"].key);
+    var keyhex = crypto.createHash("sha256").update(eccpub).digest("hex");
+    var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
+    var iv = sjcl.codec.hex.toBits("00000000000000000000000000000001");
+    var cipher = sjcl.mode.gcm.encrypt(key, sjcl.codec.hex.toBits(ibody.toString("hex")), iv, [], 128);
+    var cbody = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
 
   	// sign & encrypt the sig
-    var sig = id.private.hashAndSign("sha256", body, undefined, undefined, ursa.RSA_PKCS1_PADDING);
-    var aeskey = crypto.createHash("sha256").update(to.ecc.PublicKey).update(new Buffer(to.lineOut,"hex")).digest();
-    var aes = crypto.createCipheriv("AES-256-CTR", aeskey, iv);
-    open.sig = Buffer.concat([aes.update(sig),aes.final()]).toString("base64");
+    var sig = id.cs["1r"].private.hashAndSign("sha256", cbody, undefined, undefined, ursa.RSA_PKCS1_PADDING);
+    var keyhex = crypto.createHash("sha256").update(eccpub).update(new Buffer(to.lineOut,"hex")).digest("hex");
+    var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
+    var cipher = sjcl.mode.gcm.encrypt(key, sjcl.codec.hex.toBits(sig.toString("hex")), iv, [], 32);
+    var csig = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
 
   	// encrypt the ecc key
-    open.open = to.public.encrypt(to.ecc.PublicKey, undefined, "base64", ursa.RSA_PKCS1_OAEP_PADDING);
+    var ekey = to.public.encrypt(eccpub, undefined, undefined, ursa.RSA_PKCS1_OAEP_PADDING);
 
-    //	console.log(open, body.length());
+    var body = Buffer.concat([ekey,csig,cbody]);    
+    //	console.log(open, body.length);
   	var packet = pencode(open, body);
   	return packet;
   },
 
   deopenize:function(id, open)
   {
+    var ret = {verify:false};
+    // grab the chunks
+    var ekey = open.body.slice(0,256);
+    var csig = open.body.slice(256,256+260);
+    var cbody = open.body.slice(256+260);
+    console.log("DEOPEN",ekey.length,csig.length,cbody.length);
+
     // decrypt the ecc public key and verify/load it
     try{
-      var eccpub = id.private.decrypt(open.js.open, "base64", undefined, ursa.RSA_PKCS1_OAEP_PADDING);
+      var eccpub = id.cs["1r"].private.decrypt(ekey, undefined, undefined, ursa.RSA_PKCS1_OAEP_PADDING);
     }catch(E){
       err = E;
     }
-    if(!eccpub) return {err:"couldn't decrypt open"};
+    if(!eccpub) return ret;
     try {
-      var eccKey = new ecc.ECKey(ecc.ECCurves.nistp256, eccpub, true);
+      ret.linepub = new ecc.ECKey(ecc.ECCurves.nistp256, Buffer.concat([new Buffer("04","hex"),eccpub]), true);
     }catch(E){};
-    if(!eccKey) return {err:"invalid open ecc key "+eccpub.toString("hex")};
+    if(!ret.linepub) return ret;
   
     // decipher the body as a packet so we can examine it
-    if(!open.body) return {err:"body missing on open"};
-    var aes = crypto.createDecipheriv("AES-256-CTR", crypto.createHash('sha256').update(eccpub).digest(), new Buffer(open.js.iv, "hex"));
-    var deciphered = pdecode(Buffer.concat([aes.update(open.body),aes.final()]));
-    if(!deciphered) return {err:"invalid body attached"};
+    var keyhex = crypto.createHash("sha256").update(eccpub).digest("hex");
+    var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
+    var iv = sjcl.codec.hex.toBits("00000000000000000000000000000001");
+    var cipher = sjcl.mode.gcm.decrypt(key, sjcl.codec.hex.toBits(cbody.toString("hex")), iv, [], 128);
+    var ibody = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
+    var deciphered = pdecode(ibody);
+    if(!deciphered || !deciphered.body) return ret;
+    ret.js = deciphered.js;
+    ret.key = deciphered.body;
 
     // extract attached public key
-    if(!deciphered.body) return {err:"open missing attached key"};
-  	var ukey = der2key(deciphered.body);
-    if(!ukey) return {err:"invalid attached key"};
-    if(ukey.getModulus().length < 256) return {err:"key to small "+ukey.getModulus().length};
+  	var ukey = ursa.coercePublicKey(der2pem(deciphered.body,"PUBLIC"));
+    if(!ukey) return ret;
+    if(ukey.getModulus().length < 256) return ret;
 
     // decrypt signature
-    var aeskey = crypto.createHash('sha256').update(eccpub).update(new Buffer(deciphered.js.line,"hex")).digest()
-    var aes = crypto.createDecipheriv("AES-256-CTR", aeskey, new Buffer(open.js.iv, "hex"));
-    var decsig = Buffer.concat([aes.update(open.js.sig, "base64"),aes.final()]);
+    var keyhex = crypto.createHash("sha256").update(eccpub).update(new Buffer(deciphered.js.line,"hex")).digest("hex");
+    var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
+    var cipher = sjcl.mode.gcm.decrypt(key, sjcl.codec.hex.toBits(csig.toString("hex")), iv, [], 32);
+    var sig = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
 
     // verify signature
-    var verify;
     try{
-      verify = ukey.hashAndVerify("sha256", open.body, decsig, undefined, ursa.RSA_PKCS1_PADDING);
+      ret.verify = ukey.hashAndVerify("sha256", cbody, sig, undefined, ursa.RSA_PKCS1_PADDING);
     }catch(E){
-      console.log("verify failed",E,open.js.iv,aeskey.toString("hex"));
+      console.log("verify failed",E);
     }
-    return {ecc:eccKey, rsa:key2der(ukey), js:deciphered.js, verify:verify};
+    return ret;
   },
 
   // set up the line enc/dec keys
   openline:function(from, open)
   {
-    var ecdhe = from.ecc.deriveSharedSecret(open.ecc);
-    from.encKey = crypto.createHash("sha256")
+    var ecdhe = from.ecc.deriveSharedSecret(open.linepub);
+    var hex = crypto.createHash("sha256")
       .update(ecdhe)
       .update(new Buffer(from.lineOut, "hex"))
       .update(new Buffer(from.lineIn, "hex"))
-      .digest();
-    from.decKey = crypto.createHash("sha256")
+      .digest("hex");
+    from.encKey = new sjcl.cipher.aes(sjcl.codec.hex.toBits(hex));
+    var hex = crypto.createHash("sha256")
       .update(ecdhe)
       .update(new Buffer(from.lineIn, "hex"))
       .update(new Buffer(from.lineOut, "hex"))
-      .digest();
+      .digest("hex");
+    from.decKey = new sjcl.cipher.aes(sjcl.codec.hex.toBits(hex));
     return true;
   },
 
@@ -178,20 +348,33 @@ CS["1r"] = {
     var wrap = {type:"line"};
     wrap.line = to.lineIn;
     var iv = crypto.randomBytes(16);
-    wrap.iv = iv.toString("hex");
-    var aes = crypto.createCipheriv("AES-256-CTR", to.encKey, iv);
-    var body = Buffer.concat([aes.update(pencode(packet.js,packet.body)), aes.final()]);
+    var buf = pencode(packet.js,packet.body);
+
+  	// now encrypt the packet
+    var cipher = sjcl.mode.gcm.encrypt(to.encKey, sjcl.codec.hex.toBits(buf.toString("hex")), sjcl.codec.hex.toBits(iv.toString("hex")), [], 128);
+    var cbody = new Buffer(sjcl.codec.hex.fromBits(cipher),"hex");
+
+    var body = Buffer.concat([iv,cbody]);
   	return pencode(wrap,body);
   },
 
   delineize:function(from, packet)
   {
-    var aes = crypto.createDecipheriv("AES-256-CTR", packet.from.decKey, new Buffer(packet.js.iv, "hex"));
-    var deciphered = pdecode(Buffer.concat([aes.update(packet.body), aes.final()]));
-    if(!deciphered) return;
+    if(!packet.body) return "missing body";
+    var iv = sjcl.codec.hex.toBits(packet.body.slice(0,16).toString("hex"));
+  
+    try{
+      var cipher = sjcl.mode.gcm.decrypt(from.decKey, sjcl.codec.hex.toBits(packet.body.slice(16).toString("hex")), iv, [], 128);    
+    }catch(E){
+      return E;
+    }
+    if(!cipher) return "no cipher output";
+    var deciphered = pdecode(new Buffer(sjcl.codec.hex.fromBits(cipher),"hex"));
+  	if(!deciphered) return "invalid decrypted packet";
+
     packet.js = deciphered.js;
     packet.body = deciphered.body;
-    packet.lineok = true;
+    return false;
   }
 }
 

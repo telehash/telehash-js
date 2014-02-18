@@ -22,6 +22,7 @@ exports.upgrade = function(crypt){
   if(!eccKey || !aes) return crypt;
 
   // upgrade functions to node native ones
+  crypt.parts2hn = parts2hn;
   crypt.pdecode = pdecode;
   crypt.pencode = pencode;
   crypt.randomHEX = randomHEX;
@@ -504,6 +505,20 @@ CS["3a"] = {
   }
 }
 
+function parts2hn(parts)
+{
+  var digests = [];
+  Object.keys(parts).sort().forEach(function(id){
+    digests.push(crypto.createHash("sha256").update(id).digest());
+    digests.push(crypto.createHash("sha256").update(parts[id]).digest());
+  });
+  var hash = crypto.createHash("sha256");
+  digests.forEach(function(digest){
+    hash.update(digest);
+  });
+  return hash.digest("hex");
+}
+
 // return random bytes, in hex
 function randomHEX(len)
 {
@@ -524,6 +539,7 @@ function pencode(js, body)
 // packet decoding
 function pdecode(packet)
 {
+  if(!packet) return undefined;
   var buf = (typeof packet == "string") ? new Buffer(packet, "binary") : packet;
 
   // read and validate the json length

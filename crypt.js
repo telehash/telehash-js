@@ -1,11 +1,12 @@
 try{
   var ursa = require("ursa"); // only need this to do the rsa encryption, not supported in crypto.*
   var ecc = require("ecc"); // for the elliptic curve diffie hellman  not in crypto.*
+  var sodium = require("sodium").api;
 }catch(E){}
 
 var sjcl = require("sjcl");
 var crypto = require("crypto");
-var CS = {"1":{},"1r":{}};
+var CS = {};
 
 exports.upgrade = function(crypt){
   if(!ecc || !ursa) return crypt;
@@ -24,18 +25,19 @@ exports.upgrade = function(crypt){
   crypt.pdecode = pdecode;
   crypt.pencode = pencode;
   crypt.randomHEX = randomHEX;
-  crypt.CS["1"] = CS["1"];
-  crypt.CS["1r"] = CS["1r"];
+  crypt.CS["1a"] = CS["1a"];
+  crypt.CS["2a"] = CS["2a"];
+  crypt.CS["3a"] = CS["3a"];
   return crypt;
 }
 
-CS["1"] = {
+CS["1a"] = {
   genkey:function(ret,cbDone,cbStep)
   {
     var k = new ecc.ECKey(ecc.ECCurves.secp160r1);
-    ret["1"] = k.PublicKey.slice(1).toString("base64");
-    ret["1_"] = k.PrivateKey.toString("base64");
-    ret.parts["1"] = crypto.createHash("SHA1").update(k.PublicKey.slice(1)).digest("hex");
+    ret["1a"] = k.PublicKey.slice(1).toString("base64");
+    ret["1a_"] = k.PrivateKey.toString("base64");
+    ret.parts["1a"] = crypto.createHash("SHA1").update(k.PublicKey.slice(1)).digest("hex");
     cbDone();
   },
 
@@ -70,12 +72,11 @@ CS["1"] = {
 
     // encrypt the inner
     var aes = crypto.createCipheriv("AES-128-CTR", key, iv);
-    var body = pencode(inner,id.cs["1"].key);
-    console.log("X",body.length,body.toString("hex"));
+    var body = pencode(inner,id.cs["1a"].key);
     var cbody = Buffer.concat([aes.update(body), aes.final()]);
   
     // prepend the line public key and hmac it  
-    var secret = id.cs["1"].private.deriveSharedSecret(to.public);
+    var secret = id.cs["1a"].private.deriveSharedSecret(to.public);
     var macd = Buffer.concat([eccpub,cbody]);
     var hmac = crypto.createHmac('sha1', secret).update(macd).digest();
   
@@ -93,8 +94,6 @@ CS["1"] = {
     var pub = open.body.slice(20,60);
     var cbody = open.body.slice(60);
 
-    console.log("X",pub.toString("hex"));
-
     try{
       ret.linepub = new ecc.ECKey(ecc.ECCurves.secp160r1, Buffer.concat([new Buffer("04","hex"),pub]), true);      
     }catch(E){
@@ -102,35 +101,28 @@ CS["1"] = {
     }
     if(!ret.linepub) return ret;
 
-    var secret = id.cs["1"].private.deriveSharedSecret(ret.linepub);
+    var secret = id.cs["1a"].private.deriveSharedSecret(ret.linepub);
     var key = secret.slice(0,16);
     var iv = new Buffer("00000000000000000000000000000001","hex");
 
     // aes-128 decipher the inner
     var aes = crypto.createDecipheriv("AES-128-CTR", key, iv);
     var body = Buffer.concat([aes.update(cbody), aes.final()]);
-    console.log("X",body.length,body.toString("hex"));
     var inner = pdecode(body);
     if(!inner) return ret;
-
-    console.log("X");
 
     // verify+load inner key info
     var epub = new ecc.ECKey(ecc.ECCurves.secp160r1, Buffer.concat([new Buffer("04","hex"),inner.body]), true);
     if(!epub) return ret;
     ret.key = inner.body;
-    if(typeof inner.js.from != "object" || !inner.js.from["1"]) return ret;
-    if(crypto.createHash("SHA1").update(inner.body).digest("hex") != inner.js.from["1"]) return ret;
-
-    console.log("X");
+    if(typeof inner.js.from != "object" || !inner.js.from["1a"]) return ret;
+    if(crypto.createHash("SHA1").update(inner.body).digest("hex") != inner.js.from["1a"]) return ret;
 
     // verify the hmac
-    var secret = id.cs["1"].private.deriveSharedSecret(epub);
+    var secret = id.cs["1a"].private.deriveSharedSecret(epub);
     var mac2 = crypto.createHmac('sha1', secret).update(open.body.slice(20)).digest("hex");
     if(mac2 != mac1) return ret;
   
-    console.log("X");
-
     // all good, cache+return
     ret.verify = true;
     ret.js = inner.js;
@@ -203,13 +195,13 @@ CS["1"] = {
   }
 }
 
-CS["1r"] = {
+CS["2a"] = {
   genkey:function(ret,cbDone,cbStep)
   {
     var kpair = ursa.generatePrivateKey();
-    ret["1r"] = str2der(kpair.toPublicPem("utf8")).toString("base64");
-    ret["1r_"] = str2der(kpair.toPrivatePem("utf8")).toString("base64");
-    ret.parts["1r"] = crypto.createHash("SHA256").update(str2der(kpair.toPublicPem("utf8"))).digest("hex");
+    ret["2a"] = str2der(kpair.toPublicPem("utf8")).toString("base64");
+    ret["2a_"] = str2der(kpair.toPrivatePem("utf8")).toString("base64");
+    ret.parts["2a"] = crypto.createHash("SHA256").update(str2der(kpair.toPublicPem("utf8"))).digest("hex");
     cbDone();
   },
 
@@ -233,7 +225,7 @@ CS["1r"] = {
     var eccpub = to.ecc.PublicKey.slice(1);
 
   	// encrypt the body
-  	var ibody = pencode(inner, id.cs["1r"].key);
+  	var ibody = pencode(inner, id.cs["2a"].key);
     var keyhex = crypto.createHash("sha256").update(eccpub).digest("hex");
     var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
     var iv = sjcl.codec.hex.toBits("00000000000000000000000000000001");
@@ -241,7 +233,7 @@ CS["1r"] = {
     var cbody = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
 
   	// sign & encrypt the sig
-    var sig = id.cs["1r"].private.hashAndSign("sha256", cbody, undefined, undefined, ursa.RSA_PKCS1_PADDING);
+    var sig = id.cs["2a"].private.hashAndSign("sha256", cbody, undefined, undefined, ursa.RSA_PKCS1_PADDING);
     var keyhex = crypto.createHash("sha256").update(eccpub).update(new Buffer(to.lineOut,"hex")).digest("hex");
     var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
     var cipher = sjcl.mode.gcm.encrypt(key, sjcl.codec.hex.toBits(sig.toString("hex")), iv, [], 32);
@@ -267,7 +259,7 @@ CS["1r"] = {
 
     // decrypt the ecc public key and verify/load it
     try{
-      var eccpub = id.cs["1r"].private.decrypt(ekey, undefined, undefined, ursa.RSA_PKCS1_OAEP_PADDING);
+      var eccpub = id.cs["2a"].private.decrypt(ekey, undefined, undefined, ursa.RSA_PKCS1_OAEP_PADDING);
     }catch(E){
       err = E;
     }
@@ -378,6 +370,139 @@ function der2pem(der,type)
   return "-----BEGIN "+type+" KEY-----\n"+b64+"\n-----END "+type+" KEY-----\n";  
 }
 
+CS["3a"] = {
+  genkey:function(ret,cbDone,cbStep)
+  {
+    var kp = sodium.crypto_box_keypair();
+    ret["3a"] = kp.publicKey.toString("base64");
+    ret["3a_"] = kp.secretKey.toString("base64");
+    ret.parts["3a"] = crypto.createHash("SHA256").update(kp.publicKey).digest("hex");
+    cbDone();
+  },
+
+  loadkey:function(id, pub, priv)
+  {
+    if(typeof pub == "string") pub = new Buffer(pub,"base64");
+    if(!Buffer.isBuffer(pub) || pub.length != 32) return "invalid public key";
+    id.key = pub;
+    id.public = pub;
+
+    if(priv)
+    {
+      if(typeof priv == "string") priv = new Buffer(priv,"base64");
+      if(!Buffer.isBuffer(priv) || priv.length != 32) return "invalid private key";
+      id.private = priv;
+    }
+    return false;
+  },
+  
+  openize:function(id, to, open, inner)
+  {
+  	if(!to.linekey) to.linekey = sodium.crypto_box_keypair();
+    var linepub = to.linekey.publicKey;
+
+    // get the shared secret to create the iv+key for the open aes
+    var secret = sodium.crypto_box_beforenm(to.public, to.linekey.secretKey);
+    var nonce = new Buffer("000000000000000000000000000000000000000000000001","hex");
+
+    // encrypt the inner
+    var body = pencode(inner,id.cs["3a"].key);
+    var cbody = sodium.crypto_secretbox(body, nonce, secret);
+  
+    // prepend the line public key and hmac it  
+    var secret = sodium.crypto_box_beforenm(to.public, id.cs["3a"].private);
+    var macd = Buffer.concat([linepub,cbody]);
+    var mac = sodium.crypto_onetimeauth(macd,secret);
+  
+    // create final body
+    var body = Buffer.concat([mac,macd]);
+    return pencode(open, body);
+  },
+  
+  deopenize:function(id, open)
+  {
+    var ret = {verify:false};
+    if(!open.body) return ret;
+
+    var mac1 = open.body.slice(0,16).toString("hex");
+    ret.linepub = open.body.slice(16,48);
+    var cbody = open.body.slice(48);
+
+    var secret = sodium.crypto_box_beforenm(ret.linepub,id.cs["3a"].private);
+    var nonce = new Buffer("000000000000000000000000000000000000000000000001","hex");
+
+    // decipher the inner
+    var body = sodium.crypto_secretbox_open(cbody,nonce,secret);
+    var inner = pdecode(body);
+    if(!inner) return ret;
+
+    // load inner key info
+    ret.key = inner.body;
+    if(!ret.key || ret.key.length != 32) return ret;
+    if(typeof inner.js.from != "object" || !inner.js.from["3a"]) return ret;
+    if(crypto.createHash("SHA256").update(inner.body).digest("hex") != inner.js.from["3a"]) return ret;
+
+    // verify the hmac
+    var secret = sodium.crypto_box_beforenm(ret.key, id.cs["3a"].private);
+    var mac2 = sodium.crypto_onetimeauth(open.body.slice(16),secret).toString("hex");
+    if(mac2 != mac1) return ret;
+  
+    // all good, cache+return
+    ret.verify = true;
+    ret.js = inner.js;
+    console.log("INNER",inner.js,ret.key.length);
+    return ret;
+  },
+ 
+  // set up the line enc/dec keys
+  openline:function(from, open)
+  {
+    from.lineIV = 0;
+    var secret = sodium.crypto_box_beforenm(open.linepub, from.linekey.secretKey);
+    from.encKey = crypto.createHash("sha256")
+      .update(secret)
+      .update(new Buffer(from.lineOut, "hex"))
+      .update(new Buffer(from.lineIn, "hex"))
+      .digest();
+    from.decKey = crypto.createHash("sha256")
+      .update(secret)
+      .update(new Buffer(from.lineIn, "hex"))
+      .update(new Buffer(from.lineOut, "hex"))
+      .digest();
+    return true;
+  },
+
+  lineize:function(to, packet)
+  {
+  	var wrap = {type:"line"};
+  	wrap.line = to.lineIn;
+
+  	// now encrypt the packet
+    var nonce = crypto.randomBytes(24);
+    var cbody = sodium.crypto_secretbox(pencode(packet.js,packet.body), nonce, to.encKey);
+
+    // create final body
+    var body = Buffer.concat([nonce,cbody]);
+  	console.log("LOUT",wrap,body.toString("hex"));
+
+    return pencode(wrap, body);
+  },
+
+  delineize:function(from, packet)
+  {
+    if(!packet.body) return "no body";
+    
+    // decrypt body
+    var nonce = packet.body.slice(0,24);
+    var cbody = packet.body.slice(24);
+    var deciphered = pdecode(sodium.crypto_secretbox_open(cbody,nonce,from.decKey));
+  	if(!deciphered) return "invalid decrypted packet";
+
+    packet.js = deciphered.js;
+    packet.body = deciphered.body;
+    return false;
+  }
+}
 
 // return random bytes, in hex
 function randomHEX(len)

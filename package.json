@@ -8,6 +8,7 @@
    },
    "optionalDependencies": {
      "ursa": "git+https://github.com/quartzjer/ursa.git",
+     "sodium": "1.0.x",
      "ecc": "git+https://github.com/quartzjer/ecc.git"
    },
  	"devDependencies": {

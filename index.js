@@ -18,7 +18,11 @@ exports.info = thjs.info;
 exports.isLocalIP = thjs.isLocalIP;
 
 exports.genkey = crypt.genkey;
-exports.genkeys = crypt.genkeys;
+exports.genkeys = function(cbDone,cbStep,sets)
+{
+  if(!sets) sets = {"1a":true,"2a":true,"3a":true}; // we do more
+  crypt.genkeys(cbDone,cbStep,sets);
+}
 
 exports.hashname = function(key, args)
 {

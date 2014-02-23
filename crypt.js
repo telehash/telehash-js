@@ -127,7 +127,7 @@ CS["1a"] = {
     // all good, cache+return
     ret.verify = true;
     ret.js = inner.js;
-    console.log("INNER",inner.js,ret.key.length);
+//    console.log("INNER",inner.js,ret.key.length);
     return ret;
   },
  
@@ -235,7 +235,7 @@ CS["2a"] = {
 
   	// sign & encrypt the sig
     var sig = id.cs["2a"].private.hashAndSign("sha256", cbody, undefined, undefined, ursa.RSA_PKCS1_PADDING);
-    var keyhex = crypto.createHash("sha256").update(eccpub).update(new Buffer(to.lineOut,"hex")).digest("hex");
+    var keyhex = crypto.createHash("sha256").update(Buffer.concat([eccpub,new Buffer(to.lineOut,"hex")])).digest("hex");
     var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
     var cipher = sjcl.mode.gcm.encrypt(key, sjcl.codec.hex.toBits(sig.toString("hex")), iv, [], 32);
     var csig = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
@@ -269,7 +269,7 @@ CS["2a"] = {
       ret.linepub = new ecc.ECKey(ecc.ECCurves.nistp256, Buffer.concat([new Buffer("04","hex"),eccpub]), true);
     }catch(E){};
     if(!ret.linepub) return ret;
-  
+
     // decipher the body as a packet so we can examine it
     var keyhex = crypto.createHash("sha256").update(eccpub).digest("hex");
     var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
@@ -287,7 +287,7 @@ CS["2a"] = {
     if(ukey.getModulus().length < 256) return ret;
 
     // decrypt signature
-    var keyhex = crypto.createHash("sha256").update(eccpub).update(new Buffer(deciphered.js.line,"hex")).digest("hex");
+    var keyhex = crypto.createHash("sha256").update(Buffer.concat([eccpub,new Buffer(deciphered.js.line,"hex")])).digest("hex");
     var key = new sjcl.cipher.aes(sjcl.codec.hex.toBits(keyhex));
     var cipher = sjcl.mode.gcm.decrypt(key, sjcl.codec.hex.toBits(csig.toString("hex")), iv, [], 32);
     var sig = new Buffer(sjcl.codec.hex.fromBits(cipher), "hex");
@@ -296,7 +296,7 @@ CS["2a"] = {
     try{
       ret.verify = ukey.hashAndVerify("sha256", cbody, sig, undefined, ursa.RSA_PKCS1_PADDING);
     }catch(E){
-      console.log("verify failed",E);
+//      console.log("verify failed",E);
     }
     return ret;
   },

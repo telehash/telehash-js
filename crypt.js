@@ -37,7 +37,7 @@ CS["1a"] = {
   {
     var k = new ecc.ECKey(ecc.ECCurves.secp160r1);
     ret["1a"] = k.PublicKey.slice(1).toString("base64");
-    ret["1a_"] = k.PrivateKey.toString("base64");
+    ret["1a_secret"] = k.PrivateKey.toString("base64");
     ret.parts["1a"] = crypto.createHash("SHA1").update(k.PublicKey.slice(1)).digest("hex");
     cbDone();
   },
@@ -201,7 +201,7 @@ CS["2a"] = {
   {
     var kpair = ursa.generatePrivateKey();
     ret["2a"] = str2der(kpair.toPublicPem("utf8")).toString("base64");
-    ret["2a_"] = str2der(kpair.toPrivatePem("utf8")).toString("base64");
+    ret["2a_secret"] = str2der(kpair.toPrivatePem("utf8")).toString("base64");
     ret.parts["2a"] = crypto.createHash("SHA256").update(str2der(kpair.toPublicPem("utf8"))).digest("hex");
     cbDone();
   },
@@ -376,7 +376,7 @@ CS["3a"] = {
   {
     var kp = sodium.crypto_box_keypair();
     ret["3a"] = kp.publicKey.toString("base64");
-    ret["3a_"] = kp.secretKey.toString("base64");
+    ret["3a_secret"] = kp.secretKey.toString("base64");
     ret.parts["3a"] = crypto.createHash("SHA256").update(kp.publicKey).digest("hex");
     cbDone();
   },
@@ -507,16 +507,12 @@ CS["3a"] = {
 
 function parts2hn(parts)
 {
-  var digests = [];
+  var rollup = new Buffer(0);
   Object.keys(parts).sort().forEach(function(id){
-    digests.push(crypto.createHash("sha256").update(id).digest());
-    digests.push(crypto.createHash("sha256").update(parts[id]).digest());
+    rollup = crypto.createHash("sha256").update(Buffer.concat([rollup,new Buffer(id)])).digest();
+    rollup = crypto.createHash("sha256").update(Buffer.concat([rollup,new Buffer(parts[id])])).digest();
   });
-  var hash = crypto.createHash("sha256");
-  digests.forEach(function(digest){
-    hash.update(digest);
-  });
-  return hash.digest("hex");
+  return rollup.toString("hex");
 }
 
 // return random bytes, in hex

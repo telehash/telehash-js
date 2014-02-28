@@ -167,7 +167,6 @@ CS["1a"] = {
   
     // create final body
     var body = Buffer.concat([to.lineInB,mac.slice(0,4),iv,cbody]);
-  	console.log("LOUT",body.toString("hex"));
 
     return pencode(null, body);
   },
@@ -258,7 +257,6 @@ CS["2a"] = {
     var ekey = open.body.slice(0,256);
     var csig = open.body.slice(256,256+260);
     var cbody = open.body.slice(256+260);
-    console.log("DEOPEN",ekey.length,csig.length,cbody.length);
 
     // decrypt the ecc public key and verify/load it
     try{
@@ -454,7 +452,7 @@ CS["3a"] = {
     // all good, cache+return
     ret.verify = true;
     ret.js = inner.js;
-    console.log("INNER",inner.js,ret.key.length);
+//    console.log("INNER",inner.js,ret.key.length);
     return ret;
   },
  
@@ -485,7 +483,6 @@ CS["3a"] = {
 
     // create final body
     var body = Buffer.concat([to.lineInB,nonce,cbody]);
-  	console.log("LOUT",body.toString("hex"));
 
     return pencode(null, body);
   },

@@ -26,6 +26,8 @@ exports.upgrade = function(crypt){
   crypt.pdecode = pdecode;
   crypt.pencode = pencode;
   crypt.randomHEX = randomHEX;
+  crypt.lineid = lineid;
+  crypt.hashHEX = hashHEX;
   crypt.CS["1a"] = CS["1a"];
   crypt.CS["2a"] = CS["2a"];
   crypt.CS["3a"] = CS["3a"];
@@ -61,7 +63,7 @@ CS["1a"] = {
     return false;
   },
   
-  openize:function(id, to, open, inner)
+  openize:function(id, to, inner)
   {
   	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.secp160r1);
     var eccpub = to.ecc.PublicKey.slice(1);
@@ -83,7 +85,7 @@ CS["1a"] = {
   
     // create final body
     var body = Buffer.concat([hmac,macd]);
-    return pencode(open, body);
+    return pencode(0x1a, body);
   },
   
   deopenize:function(id, open)
@@ -135,15 +137,16 @@ CS["1a"] = {
   openline:function(from, open)
   {
     from.lineIV = 0;
+    from.lineInB = new Buffer(from.lineIn, "hex");
     var ecdhe = from.ecc.deriveSharedSecret(open.linepub);
     from.encKey = crypto.createHash("sha1")
       .update(ecdhe)
       .update(new Buffer(from.lineOut, "hex"))
-      .update(new Buffer(from.lineIn, "hex"))
+      .update(from.lineInB)
       .digest().slice(0,16);
     from.decKey = crypto.createHash("sha1")
       .update(ecdhe)
-      .update(new Buffer(from.lineIn, "hex"))
+      .update(from.lineInB)
       .update(new Buffer(from.lineOut, "hex"))
       .digest().slice(0,16);
     return true;
@@ -151,9 +154,6 @@ CS["1a"] = {
 
   lineize:function(to, packet)
   {
-  	var wrap = {type:"line"};
-  	wrap.line = to.lineIn;
-
   	// now encrypt the packet
     var iv = new Buffer(4);
     iv.writeUInt32LE(to.lineIV++,0);
@@ -166,15 +166,17 @@ CS["1a"] = {
     var mac = crypto.createHmac('sha1', to.encKey).update(Buffer.concat([iv,cbody])).digest()
   
     // create final body
-    var body = Buffer.concat([mac.slice(0,4),iv,cbody]);
-  	console.log("LOUT",wrap,body.toString("hex"));
+    var body = Buffer.concat([to.lineInB,mac.slice(0,4),iv,cbody]);
+  	console.log("LOUT",body.toString("hex"));
 
-    return pencode(wrap, body);
+    return pencode(null, body);
   },
 
   delineize:function(from, packet)
   {
     if(!packet.body) return "no body";
+    // remove lineid
+    packet.body = packet.body.slice(16);
     
     // validate the hmac
     var mac1 = packet.body.slice(0,4).toString("hex");
@@ -220,7 +222,7 @@ CS["2a"] = {
     return false;
   },
 
-  openize:function(id, to, open, inner)
+  openize:function(id, to, inner)
   {
   	if(!to.ecc) to.ecc = new ecc.ECKey(ecc.ECCurves.nistp256);
     var eccpub = to.ecc.PublicKey.slice(1);
@@ -245,7 +247,7 @@ CS["2a"] = {
 
     var body = Buffer.concat([ekey,csig,cbody]);    
     //	console.log(open, body.length);
-  	var packet = pencode(open, body);
+  	var packet = pencode(0x2a, body);
   	return packet;
   },
 
@@ -305,6 +307,7 @@ CS["2a"] = {
   openline:function(from, open)
   {
     var ecdhe = from.ecc.deriveSharedSecret(open.linepub);
+    from.lineInB = new Buffer(from.lineIn, "hex");
     var hex = crypto.createHash("sha256")
       .update(ecdhe)
       .update(new Buffer(from.lineOut, "hex"))
@@ -322,8 +325,6 @@ CS["2a"] = {
 
   lineize:function(to, packet)
   {
-    var wrap = {type:"line"};
-    wrap.line = to.lineIn;
     var iv = crypto.randomBytes(16);
     var buf = pencode(packet.js,packet.body);
 
@@ -331,13 +332,15 @@ CS["2a"] = {
     var cipher = sjcl.mode.gcm.encrypt(to.encKey, sjcl.codec.hex.toBits(buf.toString("hex")), sjcl.codec.hex.toBits(iv.toString("hex")), [], 128);
     var cbody = new Buffer(sjcl.codec.hex.fromBits(cipher),"hex");
 
-    var body = Buffer.concat([iv,cbody]);
-  	return pencode(wrap,body);
+    var body = Buffer.concat([to.lineInB,iv,cbody]);
+  	return pencode(null,body);
   },
 
   delineize:function(from, packet)
   {
     if(!packet.body) return "missing body";
+    // remove lineid
+    packet.body = packet.body.slice(16);
     var iv = sjcl.codec.hex.toBits(packet.body.slice(0,16).toString("hex"));
   
     try{
@@ -397,7 +400,7 @@ CS["3a"] = {
     return false;
   },
   
-  openize:function(id, to, open, inner)
+  openize:function(id, to, inner)
   {
   	if(!to.linekey) to.linekey = sodium.crypto_box_keypair();
     var linepub = to.linekey.publicKey;
@@ -417,7 +420,7 @@ CS["3a"] = {
   
     // create final body
     var body = Buffer.concat([mac,macd]);
-    return pencode(open, body);
+    return pencode(0x3a, body);
   },
   
   deopenize:function(id, open)
@@ -459,6 +462,7 @@ CS["3a"] = {
   openline:function(from, open)
   {
     from.lineIV = 0;
+    from.lineInB = new Buffer(from.lineIn, "hex");
     var secret = sodium.crypto_box_beforenm(open.linepub, from.linekey.secretKey);
     from.encKey = crypto.createHash("sha256")
       .update(secret)
@@ -475,23 +479,22 @@ CS["3a"] = {
 
   lineize:function(to, packet)
   {
-  	var wrap = {type:"line"};
-  	wrap.line = to.lineIn;
-
   	// now encrypt the packet
     var nonce = crypto.randomBytes(24);
     var cbody = sodium.crypto_secretbox(pencode(packet.js,packet.body), nonce, to.encKey);
 
     // create final body
-    var body = Buffer.concat([nonce,cbody]);
-  	console.log("LOUT",wrap,body.toString("hex"));
+    var body = Buffer.concat([to.lineInB,nonce,cbody]);
+  	console.log("LOUT",body.toString("hex"));
 
-    return pencode(wrap, body);
+    return pencode(null, body);
   },
 
   delineize:function(from, packet)
   {
     if(!packet.body) return "no body";
+    // remove lineid
+    packet.body = packet.body.slice(16);
     
     // decrypt body
     var nonce = packet.body.slice(0,24);
@@ -513,6 +516,18 @@ function parts2hn(parts)
     rollup = crypto.createHash("sha256").update(Buffer.concat([rollup,new Buffer(parts[id])])).digest();
   });
   return rollup.toString("hex");
+}
+
+function lineid(buf)
+{
+  if(!buf) return "";
+  return buf.slice(0,16).toString("hex");
+}
+
+function hashHEX(buf)
+{
+  if(!buf) return "";
+  return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
 // return random bytes, in hex
@@ -555,6 +570,5 @@ function pdecode(packet)
       return undefined;
     }
   }
-
-  return {js:js, len:len, head:head, body:body};
+  return {js:js, length:buf.length, head:head.toString("binary"), body:body};
 }

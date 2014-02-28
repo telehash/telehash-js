@@ -524,12 +524,12 @@ function randomHEX(len)
 // encode a packet
 function pencode(js, body)
 {
-  var jsbuf = new Buffer(js?JSON.stringify(js):"", "utf8");
+  var head = (typeof js == "number") ? new Buffer(String.fromCharCode(js)) : new Buffer(js?JSON.stringify(js):"", "utf8");
   if(typeof body == "string") body = new Buffer(body, "binary");
   body = body || new Buffer(0);
   var len = new Buffer(2);
-  len.writeInt16BE(jsbuf.length, 0);
-  return Buffer.concat([len, jsbuf, body]);
+  len.writeInt16BE(head.length, 0);
+  return Buffer.concat([len, head, body]);
 }
 
 // packet decoding
@@ -541,17 +541,20 @@ function pdecode(packet)
   // read and validate the json length
   var len = buf.readUInt16BE(0);
   if(len > (buf.length - 2)) return undefined;
-
-  // parse out the json
-  try {
-      var js = (len>0)?JSON.parse(buf.toString("utf8",2,len+2)):{};
-  } catch(E) {
-    console.log("couldn't parse JS",buf.toString("hex"),E,packet.sender);
-    return undefined;
-  }
-
-  // attach any body
+  var head = buf.slice(2, len+2);
   var body = buf.slice(len + 2);
 
-  return {js:js, body:body};
+  // parse out the json
+  var js = {};
+  if(len > 1)
+  {
+    try {
+      js = JSON.parse(head.toString("utf8"));
+    } catch(E) {
+      console.log("couldn't parse JS",head.toString("hex"),E,packet.sender);
+      return undefined;
+    }
+  }
+
+  return {js:js, len:len, head:head, body:body};
 }

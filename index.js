@@ -24,7 +24,7 @@ exports.genkeys = function(cbDone,cbStep,sets)
   crypt.genkeys(cbDone,cbStep,sets);
 }
 
-exports.hashname = function(key, args)
+exports.hashname = function(keys, args)
 {
   if(!args) args = {};
   if(args.port == 42420)
@@ -32,43 +32,7 @@ exports.hashname = function(key, args)
     console.log("can't use reserved port 42420");
     return false;
   }
-  var self = thjs.hashname(key, function(to, msg){
-    // since msg can come from crypt.js or thcrypt (or a raw bin string), flex
-    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
-
-    // blast the packet out on the lan with a temp socket
-    if(to.type == "lan")
-    {
-      if(args.nolan) return;
-      var lan = dgram.createSocket("udp4");
-      lan.bind(self.server4.address().port, "0.0.0.0", function(err){
-        lan.setBroadcast(true);
-        // brute force to common subnets and all
-        var parts = self.networkIP.split(".");
-        for(var i = 3; i >= 0; i--)
-        {
-          parts[i] = "255";
-          lan.send(buf, 0, buf.length, 42420, parts.join("."));
-        }
-        lan.send(buf, 0, buf.length, 42420, "239.42.42.42", function(){
-          lan.close();
-        });
-      });
-    }
-
-    if(to.type == "ipv4") {
-      self.server4.send(buf, 0, buf.length, to.port, to.ip);        
-    }
-
-    if(to.type == "ipv6") {
-      self.server6.send(buf, 0, buf.length, to.port, to.ip);
-    }
-
-    if(to.type == "bridge" && self.io && self.io.sockets.sockets[to.id])
-    {
-      self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
-    }
-  }, args);
+  var self = thjs.hashname(keys);
   if(!self) return false;
 
   // when given an ip, force not in NAT mode
@@ -96,9 +60,17 @@ exports.hashname = function(key, args)
     io.on("connection", function(socket){
       socket.on("packet", function(packet) {
         if(!packet.data) return;
-        self.receive((new Buffer(packet.data, "base64")).toString("binary"), {type:"bridge", id:socket.id});
+        self.receive((new Buffer(packet.data, "base64")).toString("binary"), {type:"local", id:socket.id});
       });
     });
+    self.deliver("local",function(to,msg){
+      var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
+      if(self.io.sockets.sockets[to.id])
+      {
+        self.io.sockets.sockets[to.id].emit("packet", {data: buf.toString("base64")});
+      }
+    });
+    
   }
   
   // do our udp server bindings
@@ -110,7 +82,16 @@ exports.hashname = function(key, args)
   }
   self.server4 = dgram.createSocket("udp4", msgs4);
   self.server6 = dgram.createSocket("udp6", msgs6);
-    
+
+  self.deliver("ipv4",function(to,msg){
+    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
+    self.server4.send(buf, 0, buf.length, to.port, to.ip);    
+  });
+  self.deliver("ipv6",function(to,msg){
+    var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
+    self.server6.send(buf, 0, buf.length, to.port, to.ip);
+  });
+
   self.server4.on("error", function(err){
     console.log("error from the UDP socket",err);
     process.exit(1);
@@ -149,6 +130,25 @@ exports.hashname = function(key, args)
         interfaces();
 
         if(args.nolan) return self._online(callback);        
+
+        self.deliver("lan",function(to,msg){
+          var buf = Buffer.isBuffer(msg) ? msg : new Buffer(msg.data||msg, "binary");
+          // blast the packet out on the lan with a temp socket
+          var lan = dgram.createSocket("udp4");
+          lan.bind(self.server4.address().port, "0.0.0.0", function(err){
+            lan.setBroadcast(true);
+            // brute force to common subnets and all
+            var parts = self.networkIP.split(".");
+            for(var i = 3; i >= 0; i--)
+            {
+              parts[i] = "255";
+              lan.send(buf, 0, buf.length, 42420, parts.join("."));
+            }
+            lan.send(buf, 0, buf.length, 42420, "239.42.42.42", function(){
+              lan.close();
+            });
+          });    
+        });    
       
         // start the lan * listener, only ipv4 for now, can't find docs on node+ipv6 multicast
         var lan = dgram.createSocket("udp4", msgs4);

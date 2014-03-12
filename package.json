@@ -19,8 +19,8 @@
  		"optimist": "*"
  	},
   "scripts": {
-    "start":"node ./seed/seed.js",
-    "seed":"node ./seed/seed.js"
+    "start":"node ./seed.js",
+    "seed":"node ./seed.js"
   },
   "keywords": [
     "telehash",

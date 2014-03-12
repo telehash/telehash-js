@@ -2,61 +2,47 @@
 
 [![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
 	
-This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md). It is still in development and not stable yet, but issues and pull requests are welcome.
+This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md) for both node and browserify.
+
+The browser crypto that powers this is only possible thanks to the incredible work done by the team behind [Forge](https://github.com/digitalbazaar/forge), [Tom Wu](http://www-cs-students.stanford.edu/~tjw/), and the [Sanford Javascript Crypto Library](https://github.com/bitwiseshiftleft/sjcl).
 
 # Seeds
 
-Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/telehash/thjs/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed/seed.js`.
-
-Take the output JSON, put it in an array and in your own seeds.json file, then load it with `.addSeeds("./seeds.json")`.
-
-# "Field Test" Utility
-
-There is a field test command line utility included to explore the DHT and connect to other hashnames, just run `node fieldtest/tft.js`.
+Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/telehash/thjs/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed.js`.  The JSON object from the seed can be passed in to the init function (shown below) as "seeds":{...} in the args or stored in a seeds.json file with that passed in.
 
 # Library Interface
 
-In all of these examples, the `th` object is created via `var th = require("telehash");`.
-
 ## Identity / Keypair Generation
 
+To create a new hashname:
+
 ```js
-th.genkey(function(err, key){
-  if(err) return console.log("key generation failed",err);
-  // key contains a .public and .private of the PEM-encoded RSA-2048 public and private values
+var th = require("telehash");
+th.init({}, function(err, self){
+  if(err) return console.log("hashname generation/startup failed",err);
+  // self.id contains a the public/private keys and parts
 });
 ```
 
 ## Hashname Initialization / Startup
 
-Needs a key object containing a .public and .private (generated above) to create our own hashname:
+Needs an id object from a previously created self.id to load the existing hashname from:
 
 ```js
-var app = th.hashname(key);
-console.log("hashname created",app.hashname);
-app.addSeeds("./seeds.json"); // optional, uses bundled seeds otherwise
-app.online(function(err){
-  if(err) return console.log("hashname failed to come online");
+var th = require("telehash");
+th.init({id:id}, function(err, self){
+  if(err) return console.log("hashname failed to come online",err);
+  // use self.* now
 });
 ```
 
-The `.online` takes a callback that is fired when the hashname is able to connect to any seeds and become part of the DHT or fails to do so.
+## Args
 
-## Listening for incoming channels
+The first object passed in to the `load` function takes the following arguments:
 
-```js
-app.listen("chat", function(end, arg, chan, callback){
-  // end is `true` when the incoming channel is ended
-  // arg.js contains the incoming json, arg.body any binary body
-  // chan is the channel interface
-  // callback() must be called when done to continue
-});
-```
+* **id** - An object previously created, or a string pointing to a file to load the object from.
+* **seeds** - An object in the [seeds](https://github.com/telehash/telehash.org/blob/master/seeds.md) format, or a string pointing to a file to load from.
 
-## Starting a new channel
+## API
 
-```js
-app.whois("hashname").start("type", argOut, function(end, argIn, chan, callback){
-  // same as listening, except argOut contains an optional .js and .body to be sent in the initial channel request
-});
-```
+Once you have a hashname running you can use the [common API](https://github.com/telehash/thjs#API) with it.

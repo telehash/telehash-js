@@ -1,24 +1,26 @@
 {
    "name": "telehash",
-   "version": "0.1.18",
+   "version": "0.2.1",
+   "main":"index.js",
+   "browserify":"browser.js",
    "dependencies": {
-     "sjcl": "1.0.x",
-     "node-forge": "0.2.x",
-     "thjs":">=0.0.46"
-   },
-   "optionalDependencies": {
-     "ursa": "git+https://github.com/quartzjer/ursa.git",
-     "sodium": "1.0.x",
-     "ecc": "git+https://github.com/quartzjer/ecc.git"
+     "telehash-cs1a": "0.0.x",
+     "telehash-cs2a": "0.0.x",
+     "telehash-cs3a": "0.0.x",
+     "telehash-ipv4": "0.0.x",
+     "telehash-ipv6": "0.0.x",
+     "telehash-http": "0.0.x",
+     "telehash-webrtc": "0.0.x",
+     "telehash-telesocket": "0.0.x",
+     "telehash-stream": "0.0.x",
+     "telehash-js":"0.1.x"
    },
  	"devDependencies": {
- 		"optimist": "*",
-    "socket.io": "*"
+ 		"optimist": "*"
  	},
   "scripts": {
     "start":"node ./seed/seed.js",
-    "seed":"node ./seed/seed.js",
-    "tft":"node ./fieldtest/tft.js"
+    "seed":"node ./seed/seed.js"
   },
   "keywords": [
     "telehash",
@@ -28,16 +30,16 @@
     "json",
     "mesh"
   ],
-  "description": "A generic telehash switch library for node",
-  "homepage": "https://github.com/quartzjer/node-telehash",
+  "description": "A simplified telehash library for node and browserify",
+  "homepage": "https://github.com/telehash/node-telehash",
   "repository": {
     "type": "git",
-    "url": "https://github.com/quartzjer/node-telehash.git"
+    "url": "https://github.com/telehash/node-telehash.git"
   },
   "licenses": [
   {
     "type": "MIT",
-    "url": "https://github.com/quartzjer/node-telehash/raw/master/LICENSE"
+    "url": "https://github.com/telehash/node-telehash/raw/master/LICENSE"
   }
   ],
   "author": {

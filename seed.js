@@ -30,7 +30,8 @@ tele.init(argv, function(err, seed){
   var info = {paths:[], parts:seed.parts, keys:seed.keys};
   info.paths.push({type:"ipv4",ip:ip4.ip,port:ip4.port});
   info.paths.push({type:"ipv6",ip:ip6.ip,port:ip6.port});
-  info.paths.push({type:"http",http:seed.paths.http.http});
+  info.paths.push({type:"http",http:seed.paths.http.http.replace("0.0.0.0",ip4.ip)});
+  
   info.bridge = true;
   var seeds = {};
   seeds[seed.hashname] = info;

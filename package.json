@@ -13,6 +13,7 @@
      "telehash-webrtc": "0.0.x",
      "telehash-telesocket": "0.0.x",
      "telehash-stream": "0.0.x",
+     "telehash-seeds": "0.0.x",
      "telehash-js":"0.1.x"
    },
  	"devDependencies": {

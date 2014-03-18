@@ -11,18 +11,12 @@ exports.init = function(args, cbDone)
   if(args.cs2a) require("telehash-cs2a").install(self, args); // slow on most browsers
   require("telehash-http").install(self, args);
   require("telehash-webrtc").install(self, args);
-  require("telehash-seeds").install(self, args);
   require("telehash-stream").install(self, args);
   require("telehash-telesocket").install(self, args);
 
   function seed()
   {
-    if(typeof args.seeds == "object")
-    {
-      Object.keys(args.seeds).map(function(hn){return args.seeds[hn]}).forEach(self.addSeed, self);
-    }else{
-      require("telehash-seeds").install(self, args);
-    }
+    require("telehash-seeds").install(self, args);
     
     self.online(function(err){
       cbDone(err, self);      

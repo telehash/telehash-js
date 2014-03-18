@@ -20,7 +20,8 @@ if(argv.port == 42420)
 }
 
 // localize our id file
-argv.id = path.join(__dirname, argv.id);
+argv.id = path.resolve(argv.id);
+if(argv.seeds) argv.seeds = path.resolve(argv.seeds);
 
 tele.init(argv, function(err, seed){
   if(!seed) return console.log("something went wrong :(",err) || process.exit(1);

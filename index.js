@@ -29,13 +29,7 @@ exports.init = function(args, cbDone)
 
   function seed()
   {
-    if(args.seeds)
-    {
-      var seeds = require(args.seeds)
-      Object.keys(seeds).map(function(hn){return seeds[hn]}).forEach(self.addSeed, self);
-    }else{
-      require("telehash-seeds").install(self, args);
-    }
+    require("telehash-seeds").install(self, args);
     
     self.online(function(err){
       cbDone(err, self);      

@@ -11,8 +11,12 @@ exports.init = function(args, cbDone)
   if(args.cs2a) require("telehash-cs2a").install(self, args); // slow on most browsers
   require("telehash-http").install(self, args);
   require("telehash-webrtc").install(self, args);
+
+  // extensions
   require("telehash-stream").install(self, args);
   require("telehash-telesocket").install(self, args);
+  require("telehash-thtp").install(self, args);
+  require("telehash-token").install(self, args);
 
   function seed()
   {

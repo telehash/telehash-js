@@ -18,6 +18,8 @@ function install(self, args)
   // extensions
   require("telehash-stream").install(self, args);
   require("telehash-telesocket").install(self, args);
+  require("telehash-thtp").install(self, args);
+  require("telehash-token").install(self, args);
 }
 
 exports.init = function(args, cbDone)
@@ -54,5 +56,7 @@ exports.init = function(args, cbDone)
     self.load(id);
     return seed();      
   });
+  
+  return self;
 }
 

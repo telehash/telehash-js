@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.2.5",
+   "version": "0.2.6",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
@@ -12,6 +12,8 @@
      "telehash-http": "0.0.x",
      "telehash-webrtc": "0.0.x",
      "telehash-telesocket": "0.0.x",
+     "telehash-thtp": "0.0.x",
+     "telehash-token": "0.0.x",
      "telehash-stream": "0.0.x",
      "telehash-seeds": "0.0.x",
      "telehash-js":"0.1.x"

@@ -45,7 +45,8 @@ exports.init = function(args, cbDone)
     {
       var err;
       if((err = self.load(args.id))) return cbDone("error loading id, "+err+": "+JSON.stringify(args.id));
-      return seed();
+      seed();
+      return self;
     }
   }
 
@@ -54,7 +55,7 @@ exports.init = function(args, cbDone)
     if(typeof args.id == "string") fs.writeFileSync(args.id, JSON.stringify(id, null, 4));
     args.id = id;
     self.load(id);
-    return seed();      
+    seed();      
   });
   
   return self;

@@ -25,6 +25,7 @@ exports.init = function(args, cbDone)
     self.online(function(err){
       cbDone(err, self);      
     });
+    return self;
   }
 
   if(args.id)
@@ -45,4 +46,6 @@ exports.init = function(args, cbDone)
     self.load(id);
     return seed();      
   });
+  
+  return self;
 }

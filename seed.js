@@ -6,6 +6,7 @@ var path = require("path");
 var argv = require("optimist")
   .default("id", "./seed.json")
   .default("port", 42424)
+  .default("bridge", true)
   .boolean("v").describe("v", "verbose")
   .boolean("nolan").describe("nolan", "disable lan usage")
   .argv;
@@ -34,7 +35,6 @@ tele.init(argv, function(err, seed){
   if(seed.paths.http.http) info.paths.push({type:"http",http:seed.paths.http.http});
   else info.paths.push({type:"http",http:"http://"+ip4.ip+":"+seed.paths.http.port});
   
-  info.bridge = true;
   var seeds = {};
   seeds[seed.hashname] = info;
   console.log(JSON.stringify(seeds,null,2));

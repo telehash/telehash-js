@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.2.9",
+   "version": "0.2.10",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {

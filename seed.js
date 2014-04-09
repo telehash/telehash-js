@@ -26,14 +26,7 @@ if(argv.seeds) argv.seeds = path.resolve(argv.seeds);
 
 tele.init(argv, function(err, seed){
   if(!seed) return console.log("something went wrong :(",err) || process.exit(1);
-  console.log("PATHS",seed.paths);
-  var ip4 = seed.paths.pub4 || seed.paths.lan4;
-  var ip6 = seed.paths.pub6 || seed.paths.lan6;
-  var info = {paths:[], parts:seed.parts, keys:seed.keys};
-  info.paths.push({type:"ipv4",ip:ip4.ip,port:ip4.port});
-  if(ip6) info.paths.push({type:"ipv6",ip:ip6.ip,port:ip6.port});
-  if(seed.paths.http.http) info.paths.push({type:"http",http:seed.paths.http.http});
-  else info.paths.push({type:"http",http:"http://"+ip4.ip+":"+seed.paths.http.port});
+  var info = {paths:seed.paths, parts:seed.parts, keys:seed.keys};
   
   var seeds = {};
   seeds[seed.hashname] = info;

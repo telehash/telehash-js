@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.2.11",
+   "version": "0.2.12",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
@@ -18,12 +18,13 @@
      "telehash-seeds": "0.0.x",
      "telehash-js":"0.1.x"
    },
- 	"devDependencies": {
- 		"optimist": "*"
- 	},
-  "scripts": {
-    "start":"node ./seed.js",
-    "seed":"node ./seed.js"
+   "devDependencies": {
+     "path-extra":"*",
+     "optimist": "*"
+   },
+   "scripts": {
+     "start":"node ./seed.js",
+     "seed":"node ./seed.js"
   },
   "keywords": [
     "telehash",

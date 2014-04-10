@@ -2,9 +2,8 @@
 
 var tele = require("./index.js");
 var fs = require("fs");
-var path = require("path");
+var path = require("path-extra");
 var argv = require("optimist")
-  .default("id", "./seed.json")
   .default("port", 42424)
   .default("bridge", true)
   .boolean("v").describe("v", "verbose")
@@ -21,7 +20,7 @@ if(argv.port == 42420)
 }
 
 // localize our id file
-argv.id = path.resolve(argv.id);
+argv.id = (argv.id) ? path.resolve(argv.id) : path.join(path.homedir(),".seed.json");
 if(argv.seeds) argv.seeds = path.resolve(argv.seeds);
 
 tele.init(argv, function(err, seed){

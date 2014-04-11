@@ -26,6 +26,7 @@ exports.init = function(args, cbDone)
 {
   if(!args) args = {};
   var self = new thjs.switch();
+  if(args.bridge) self.isBridge(true);
 
   install(self, args);
 

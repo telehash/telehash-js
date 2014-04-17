@@ -8,7 +8,7 @@ The browser crypto that powers this is only possible thanks to the incredible wo
 
 # Seeds
 
-Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/telehash/thjs/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed.js`.  The JSON object from the seed can be passed in to the init function (shown below) as "seeds":{...} in the args or stored in a seeds.json file with that passed in.
+Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/quartzjer/telehash-seeds/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed.js`.  The JSON object from the seed can be passed in to the init function (shown below) as "seeds":{...} in the args or stored in a seeds.json file with that passed in.
 
 # Library Interface
 

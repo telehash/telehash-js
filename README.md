@@ -45,7 +45,9 @@ The first object passed in to the `load` function takes the following arguments:
 
 ## API
 
-Once you have a hashname running you can use the [common API](https://github.com/telehash/thjs#API) with it. Below is a trivial example, taking off from a properly initialized switch. For an "In the wild" example, see [ndn-telehashTransport](https://github.com/rynomad/ndn-telehashTransport), which allows one to use telehash for named data networking.
+Once you have a hashname running you can use the [common API](https://github.com/telehash/thjs#API) with it.
+
+Below is a trivial example, taking off from a properly initialized switch. For an "In the wild" example, see [ndn-telehashTransport](https://github.com/rynomad/ndn-telehashTransport), which allows one to use telehash for named data networking.
 
 ```js
 channelName = "AWESOME"

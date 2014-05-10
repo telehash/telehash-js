@@ -71,7 +71,7 @@ funcion packetHandler(err, packet, chan, callback){
         "bad horror movies"
       ]
     }
-    body: {{some Uint8Array.buffer or node.js Buffer}}
+    body: myPreconstrucedBuffer //some Uint8Array.buffer or node.js Buffer.buffer
   }
   chan.send(response)
 

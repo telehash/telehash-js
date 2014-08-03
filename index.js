@@ -1,5 +1,5 @@
 var fs = require("fs");
-var thjs = require("telehash-js");
+var thjs = require("./thjs.js");
 exports.debug = thjs.debug;
 exports.info = thjs.info;
 
@@ -15,25 +15,17 @@ function install(self, args)
   require("telehash-ipv6").install(self, args);
   require("telehash-http").install(self, args);
 
-  // extensions
-  require("telehash-stream").install(self, args);
-  require("telehash-telesocket").install(self, args);
-  require("telehash-thtp").install(self, args);
-  require("telehash-token").install(self, args);
 }
 
 exports.init = function(args, cbDone)
 {
   if(!args) args = {};
   var self = new thjs.switch();
-  if(args.bridge) self.isBridge(true);
 
   install(self, args);
 
   function seed()
   {
-    require("telehash-seeds").install(self, args);
-    
     self.online(function(err){
       cbDone(err, self);      
     });

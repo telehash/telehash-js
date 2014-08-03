@@ -9,22 +9,15 @@
      "telehash-cs3a": "0.0.x",
      "telehash-ipv4": "0.0.x",
      "telehash-ipv6": "0.0.x",
-     "telehash-http": "0.0.x",
-     "telehash-webrtc": "0.0.x",
-     "telehash-telesocket": "0.0.x",
-     "telehash-thtp": "0.0.x",
-     "telehash-token": "0.0.x",
-     "telehash-stream": "0.0.x",
-     "telehash-seeds": "0.0.x",
-     "telehash-js":"0.1.x"
+     "telehash-http": "0.0.x"
    },
    "devDependencies": {
      "path-extra":"*",
      "optimist": "*"
    },
    "scripts": {
-     "start":"node ./seed.js",
-     "seed":"node ./seed.js"
+     "start":"node ./router.js",
+     "router":"node ./router.js"
   },
   "keywords": [
     "telehash",

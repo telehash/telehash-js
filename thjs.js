@@ -144,7 +144,6 @@ function linkLoop(self)
 // every link that needs to be maintained, ping them
 function linkMaint(self)
 {
-  // process every bucket
   Object.keys(self.links).forEach(function(hashname){
     hn = self.whois(hashname);
     if(!hn.linked || !pathValid(hn.to)) return;
@@ -1087,7 +1086,7 @@ function inPeer(err, packet, chan)
 
   // start relay via connect, must bundle the senders peer request packet
   chan.timeout(defaults.nat_timeout);
-  chan.relay = peer.raw("connect",packet,function(err, packet, chan2){
+  chan.relay = peer.raw("connect",{js:{from:packet.from.parts},body:packet.body},function(err, packet, chan2){
     if(err) return;
     relay(self, chan2, chan, packet);
   });

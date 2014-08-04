@@ -1086,7 +1086,7 @@ function inPeer(err, packet, chan)
 
   // start relay via connect, must bundle the senders peer request packet
   chan.timeout(defaults.nat_timeout);
-  chan.relay = peer.raw("connect",{js:{from:packet.from.parts},body:packet.body},function(err, packet, chan2){
+  chan.relay = peer.raw("connect",{js:{from:packet.from.parts,paths:packet.js.paths},body:packet.body},function(err, packet, chan2){
     if(err) return;
     relay(self, chan2, chan, packet);
   });

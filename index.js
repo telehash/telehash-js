@@ -1,5 +1,5 @@
 var fs = require("fs");
-var thjs = require("telehash-js");
+var thjs = require("./thjs.js");
 exports.debug = thjs.debug;
 exports.info = thjs.info;
 

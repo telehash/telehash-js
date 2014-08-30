@@ -1,30 +1,24 @@
 var fs = require("fs");
-var thjs = require("./thjs.js");
-exports.debug = thjs.debug;
-exports.info = thjs.info;
+var e3x = require("e3x");
 
 function install(self, args)
 {
-  // crypto
-  require("telehash-cs1a").install(self, args);
-  require("telehash-cs2a").install(self, args);
-  require("telehash-cs3a").install(self, args);
-
   // networking
-  require("telehash-ipv4").install(self, args);
-  require("telehash-ipv6").install(self, args);
-  require("telehash-http").install(self, args);
+//  require("telehash-ipv4").install(self, args);
+//  require("telehash-ipv6").install(self, args);
+//  require("telehash-http").install(self, args);
 
   // extensions
-  require("telehash-stream").install(self, args);
-  require("telehash-telesocket").install(self, args);
-  require("telehash-thtp").install(self, args);
-  require("telehash-token").install(self, args);
+//  require("telehash-stream").install(self, args);
+//  require("telehash-telesocket").install(self, args);
+//  require("telehash-thtp").install(self, args);
+//  require("telehash-token").install(self, args);
 }
 
 exports.init = function(args, cbDone)
 {
   if(!args) args = {};
+  /*
   var self = new thjs.switch();
   if(args.bridge) self.isBridge(true);
 
@@ -60,5 +54,6 @@ exports.init = function(args, cbDone)
   });
   
   return self;
+  */
 }
 

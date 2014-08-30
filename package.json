@@ -4,36 +4,28 @@
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
-     "telehash-cs1a": "0.0.x",
-     "telehash-cs2a": "0.0.x",
-     "telehash-cs3a": "0.0.x",
-     "telehash-ipv4": "0.0.x",
-     "telehash-ipv6": "0.0.x",
-     "telehash-http": "0.0.x",
-     "telehash-webrtc": "0.0.x",
-     "telehash-telesocket": "0.0.x",
-     "telehash-thtp": "0.0.x",
-     "telehash-token": "0.0.x",
-     "telehash-stream": "0.0.x",
-     "telehash-seeds": "0.0.x"
+     "e3x": "0.0.x",
+     "lob-enc": "git+https://github.com/quartzjer/lob-enc.git",
+     "hashname": "git+https://github.com/quartzjer/hashname.git"
    },
    "devDependencies": {
+     "chai": "*",
+     "mocha": "*",
      "path-extra":"*",
      "optimist": "*"
    },
    "scripts": {
-     "start":"node ./seed.js",
-     "seed":"node ./seed.js"
+     "start":"node ./router.js",
+     "router":"node ./router.js"
   },
   "keywords": [
     "telehash",
     "crypto",
     "p2p",
-    "dht",
     "json",
     "mesh"
   ],
-  "description": "A simplified telehash library for node and browserify",
+  "description": "A telehash library for node and browserify",
   "homepage": "https://github.com/telehash/node-telehash",
   "repository": {
     "type": "git",

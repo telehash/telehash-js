@@ -6,7 +6,7 @@ This module presents a simple high-level API for using [telehash](https://github
 
 The browser crypto that powers this is only possible thanks to the incredible work done by the team behind [Forge](https://github.com/digitalbazaar/forge), [Tom Wu](http://www-cs-students.stanford.edu/~tjw/), and the [Sanford Javascript Crypto Library](https://github.com/bitwiseshiftleft/sjcl).
 
-# Seeds
+# Router
 
 Telehash apps always need one or more seeds to bootstrap from, the default development testing ones are in [seeds.json](https://github.com/quartzjer/telehash-seeds/blob/master/seeds.json).  You can run your own seed via `npm start` or manually via `node seed.js`.  The JSON object from the seed can be passed in to the init function (shown below) as "seeds":{...} in the args or stored in a seeds.json file with that passed in.
 
@@ -95,7 +95,31 @@ targetHashname = "fj04f4mc5405085mq043q04c48u5mc045mc09mwq098m4c03m084c50493"
 self.start(targetHashname, channelName, firstPacket, packetHandler)
 
 
+## Transports
 
+All transports are implemented as their own modules that expose the functionality of:
 
+* turnin a path into a pipe, pipe has a path (if any)
+* incoming packets with a pipe
+* outgoing packets to a pipe
+* pipe event of keepalive, closed, and changed
+* return available source paths
+* enable discovery mode
+
+Using an interface like:
+
+````
+var tp = require('telehash-x');
+tp.path(path, function(pipe){
+  pipe.path; // current json object (if addressable)
+  pipe.on('keepalive', function(){}) // adds callback, return false to unregister
+  pipe.on('changed', function(){})
+  pipe.on('closed', function(){})
+  pipe.send(packet)
+});
+var paths = tp.paths(); // return array of current addressible paths, if any
+tp.discovery(packet, cb); // enables/disables discovery mode, will create new pipes for incoming, cb when done
+tp.deliver(function(packet, pipe) { ... }, cb); // where to send packets, cb when done
+````
 
 

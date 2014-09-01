@@ -15,6 +15,9 @@
      "chai": "*",
      "mocha": "*",
    },
+   "bin" : {
+     "router" : "./bin/router.js"
+   },
    "scripts": {
      "start":"node ./bin/router.js",
      "router":"node ./bin/router.js",

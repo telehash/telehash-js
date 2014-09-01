@@ -123,3 +123,24 @@ tp.deliver(function(packet, pipe) { ... }, cb); // where to send packets, cb whe
 ````
 
 
+## Extensions
+
+Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [lib](lib/) folder, but additional ones can be added by the app.
+
+Extensions typically involve:
+
+* handling one or more channel types
+* adding one or more methods to a created mesh instance
+* adding one or more methods to every link instance within a mesh
+
+Using an interface like:
+
+````
+var ext = require('ext');
+mesh.extend(ext);
+// calls:
+ext.mesh(mesh, cb);
+ext.link(link, cb);
+````
+
+

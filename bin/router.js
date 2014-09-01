@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-var tele = require("./index.js");
+exports = {}; // testing
+
+var th = require("../node.js");
 var fs = require("fs");
 var path = require("path-extra");
 var argv = require("optimist")
@@ -10,8 +12,8 @@ var argv = require("optimist")
   .boolean("nolan").describe("nolan", "disable lan usage")
   .argv;
 
-if(argv.v) tele.debug(console.log);
-tele.info(function(){console.log.apply(console,arguments)});
+if(argv.v) th.debug(console.log);
+//tele.info(function(){console.log.apply(console,arguments)});
 
 if(argv.port == 42420)
 {
@@ -19,6 +21,7 @@ if(argv.port == 42420)
   process.exit(1);
 }
 
+/*
 // localize our id file
 argv.id = (argv.id) ? path.resolve(argv.id) : path.join(path.homedir(),".seed.json");
 if(argv.seeds) argv.seeds = path.resolve(argv.seeds);
@@ -32,3 +35,4 @@ tele.init(argv, function(err, seed){
   console.log(JSON.stringify(seeds,null,2));
   console.log("connected to "+Object.keys(seed.lines).length+" mesh seed peers");
 });
+*/

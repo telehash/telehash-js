@@ -1,5 +1,7 @@
-var fs = require("fs");
-var e3x = require("e3x");
+var fs = require('fs');
+
+// we just wrap the shared code
+exports = require('./telehash');
 
 function install(self, args)
 {

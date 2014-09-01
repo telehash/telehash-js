@@ -1,7 +1,7 @@
 var expect = require('chai').expect;
-var telehash = require('../telehash.js');
+var telehash = require('../node.js');
 
-describe('telehash', function(){
+describe('node-telehash', function(){
 
   it('should export an object', function(){
     expect(telehash).to.be.a('object');

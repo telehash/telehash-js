@@ -1,22 +1,24 @@
 {
    "name": "telehash",
    "version": "0.3.1",
-   "main":"index.js",
+   "main":"node.js",
    "browserify":"browser.js",
    "dependencies": {
-     "e3x": "0.0.x",
+     "e3x": "~0.0.1",
      "lob-enc": "git+https://github.com/quartzjer/lob-enc.git",
-     "hashname": "git+https://github.com/quartzjer/hashname.git"
+     "hashname": "git+https://github.com/quartzjer/hashname.git",
+     "telehash-udp4": "~0.0.1",
+     "path-extra":"*",
+     "optimist": "*"
    },
    "devDependencies": {
      "chai": "*",
      "mocha": "*",
-     "path-extra":"*",
-     "optimist": "*"
    },
    "scripts": {
-     "start":"node ./router.js",
-     "router":"node ./router.js"
+     "start":"node ./bin/router.js",
+     "router":"node ./bin/router.js",
+     "test": "make test"
   },
   "keywords": [
     "telehash",

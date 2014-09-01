@@ -95,9 +95,33 @@ targetHashname = "fj04f4mc5405085mq043q04c48u5mc045mc09mwq098m4c03m084c50493"
 self.start(targetHashname, channelName, firstPacket, packetHandler)
 
 
+## Extensions
+
+Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [lib](lib/) folder, but additional ones can be added by the app.
+
+Extensions typically involve:
+
+* handling one or more channel types
+* adding one or more methods to a created mesh instance
+* adding one or more methods to every link instance within a mesh
+* providing a transport
+
+Using an interface like:
+
+````
+var ext = require('ext');
+ext.name; // unique string name for debugging
+telehash.extensions[ext.name] = ext; // for default/all meshes created
+mesh.extend(ext,cb); // or per mesh
+// calls:
+if(ext.mesh) ext.mesh(mesh, cb(err));
+if(ext.link) ext.link(link, cb(err));
+````
+
+
 ## Transports
 
-All transports are implemented as their own modules that expose the functionality of:
+All transports are implemented as an extension that exposes the functionality of:
 
 * turnin a path into a pipe, pipe has a path (if any)
 * incoming packets with a pipe
@@ -109,38 +133,21 @@ All transports are implemented as their own modules that expose the functionalit
 Using an interface like:
 
 ````
-var tp = require('telehash-x');
-tp.path(path, function(pipe){
-  pipe.path; // current json object (if addressable)
-  pipe.on('keepalive', function(){}) // adds callback, return false to unregister
-  pipe.on('changed', function(){})
-  pipe.on('closed', function(){})
-  pipe.send(packet)
+var tpx = require('telehash-x');
+// mesh.receive = function(packet,pipe){ };
+// mesh.transports = [];
+tpx.extend(mesh,function(err){
+  // mesh.transports.push(tp);
+  tp.path(path, function(pipe){
+    pipe.path; // current json object (if addressable)
+    pipe.on('keepalive', function(){}) // adds callback, return false to unregister
+    pipe.on('changed', function(){})
+    pipe.on('closed', function(){})
+    pipe.send(packet)
+  });
+  var paths = tp.paths(); // return array of current addressible paths, if any
+  tp.discovery(packet, cb); // enables/disables discovery mode, will create new pipes for incoming, cb when done
 });
-var paths = tp.paths(); // return array of current addressible paths, if any
-tp.discovery(packet, cb); // enables/disables discovery mode, will create new pipes for incoming, cb when done
-tp.deliver(function(packet, pipe) { ... }, cb); // where to send packets, cb when done
-````
-
-
-## Extensions
-
-Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [lib](lib/) folder, but additional ones can be added by the app.
-
-Extensions typically involve:
-
-* handling one or more channel types
-* adding one or more methods to a created mesh instance
-* adding one or more methods to every link instance within a mesh
-
-Using an interface like:
-
-````
-var ext = require('ext');
-mesh.extend(ext);
-// calls:
-ext.mesh(mesh, cb);
-ext.link(link, cb);
 ````
 
 

@@ -1,12 +1,35 @@
-var crypto = require("crypto");
+var crypto = require('crypto');
+var e3x = require('e3x');
 
-var warn = function(){console.log.apply(console,arguments); return undefined; };
-var debug = function(){};
-//var debug = function(){console.log.apply(console,arguments)};
-exports.debug = function(cb){ debug = cb; };
-var info = function(){};
-//var debug = function(){console.log.apply(console,arguments)};
-exports.info = function(cb){ info = cb; };
+// activity/debugging logging utilities
+var log = {
+  warn:function(){console.log.apply(console,arguments);},
+  debug:function(){},
+  info:function(){}
+}
+// override/set any logging level
+exports.log = function(args)
+{
+  Object.keys(args).forEach(function(type){
+    log[type] = args[type];
+  })
+}
+
+// keep track of all default extensions
+exports.extensions = [];
+exports.add = function(ext)
+{
+  if(!ext || typeof ext.name != 'string') return false;
+  exports.extensions[ext.name] = ext;
+  return true;
+}
+
+// generate new local secrets
+exports.generate = function(cb)
+{
+  log.debug('generating secrets');
+  cb(undefined,{});
+}
 
 var defaults = exports.defaults = {};
 defaults.chan_timeout = 10000; // how long before for ending durable channels w/ no acks

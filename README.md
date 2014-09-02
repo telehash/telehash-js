@@ -111,8 +111,8 @@ Using an interface like:
 ````
 var ext = require('ext');
 ext.name; // unique string name for debugging
-telehash.extensions[ext.name] = ext; // for default/all meshes created
-mesh.extend(ext,cb); // or per mesh
+telehash.add(ext); // just does telehash.extensions[ext.name] = ext; 
+mesh.extend(ext,cb); // or per mesh, auto-run for all .extensions
 // calls:
 if(ext.mesh) ext.mesh(mesh, cb(err));
 if(ext.link) ext.link(link, cb(err));

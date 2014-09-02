@@ -1,5 +1,7 @@
 var crypto = require('crypto');
 var e3x = require('e3x');
+var hashname = require('hashname');
+var base32 = hashname.base32;
 
 // activity/debugging logging utilities
 var log = {
@@ -24,11 +26,32 @@ exports.add = function(ext)
   return true;
 }
 
-// generate new local secrets
+// generate new local id
 exports.generate = function(cb)
 {
   log.debug('generating secrets');
-  cb(undefined,{});
+  e3x.generate(function(err,pairs){
+    if(err)
+    {
+      log.debug('e3x gen failed',err);
+      return cb(err);
+    }
+    var id = {keys:{},secrets:{}};
+    Object.keys(pairs).forEach(function(csid){
+      id.keys[csid] = base32.encode(pairs[csid].key);
+      id.secrets[csid] = base32.encode(pairs[csid].secret);
+    });
+    id.hashname = hashname.fromKeys(id.keys);
+    log.info('generated new id',id.hashname);
+    cb(undefined,id);
+  });
+}
+
+exports.mesh = function(args, cb)
+{
+  if(typeof args != 'object' || typeof args.id != 'object') return cb('invalid args, requires id');
+  var mesh = {id:args.id,args:args};
+  cb(undefined, mesh);
 }
 
 var defaults = exports.defaults = {};

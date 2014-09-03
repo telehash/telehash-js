@@ -30,7 +30,7 @@ describe('telehash', function(){
       expect(id).to.be.an('object');
       expect(id.hashname).to.be.a('string');
       expect(id.hashname.length).to.be.equal(52);
-      console.log(JSON.stringify(id));
+//      console.log('idA',JSON.stringify(id));
       done();
     });
   });
@@ -39,9 +39,9 @@ describe('telehash', function(){
     telehash.mesh({id:idA},function(err, mesh){
       expect(err).to.not.exist;
       expect(mesh).to.be.an('object');
+      expect(mesh.hashname).to.be.equal('hdaybn855322qnwyrrgpzvckqffuf8xqz6tqy338t560qgk2v45g');
       done();
     });
   });
-
 
 });

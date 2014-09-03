@@ -47,11 +47,69 @@ exports.generate = function(cb)
   });
 }
 
-exports.mesh = function(args, cb)
+exports.mesh = function(args, cbMesh)
 {
-  if(typeof args != 'object' || typeof args.id != 'object') return cb('invalid args, requires id');
-  var mesh = {id:args.id,args:args};
-  cb(undefined, mesh);
+  if(typeof args != 'object' || typeof args.id != 'object') return cbMesh('invalid args, requires id');
+  // convert all id keys/secrets to pairs for e3x
+  var opts = {pairs:{}};
+  Object.keys(args.id.keys).forEach(function(csid){
+    var pair = opts.pairs[csid] = {};
+    // flexible buffer or base32 input
+    pair.key = Buffer.isBuffer(args.id.keys[csid]) ? args.id.keys[csid] : base32.decode(args.id.keys[csid]);
+    pair.secret = Buffer.isBuffer(args.id.secrets[csid]) ? args.id.secrets[csid] : base32.decode(args.id.secrets[csid]);
+  });
+  e3x.self(opts, function(err, self){
+    if(err) return cbMesh(err);
+    var mesh = {};
+
+    // keep args handy but dereference id/secret
+    mesh.args = args;
+    mesh.keys = args.id.keys;
+    delete args.id;
+
+    // convenience things
+    mesh.hashname = hashname.fromKeys(mesh.keys);
+    mesh.id = hashname.buffer(mesh.hashname);
+    mesh.self = self;
+
+    // paranoid failsafe
+    if(!mesh.hashname || !mesh.id) return cbMesh('invalid hashname?');
+
+    // who we can communicate with at all
+    mesh.firewall = {}; // points to exchange if created yet, otherwise true
+    mesh.exchanges = {}; // by token
+
+    log.debug('created new mesh',mesh.hashname);
+
+    // on-demand extender
+    mesh.extend = function(ext, cbExtend){
+      if(mesh.extensions.indexOf(ext) >= 0) return cbExtend();
+      log.debug('extending mesh with',ext.name);
+      mesh.extensions.push(ext);
+      if(typeof ext.mesh != 'function') return cbExtend();
+      // give it a chance to fill in and set up
+      ext.mesh(mesh, cbExtend);
+    };
+    
+    // handle incoming packets from any transports
+    mesh.receive = function(packet, pipe)
+    {
+      log.debug('incoming packet',packet.length,pipe.id);
+      // check firewall
+    }
+
+    // last, load any/all extensions and return
+    mesh.extensions = [];
+    var error;
+    Object.keys(exports.extensions).forEach(function(name){
+      mesh.extend(exports.extensions[name], function(err){
+        error = error||err;
+        if(Object.keys(exports.extensions).length == mesh.extensions.length) return cbMesh(error, mesh);
+      });
+    })
+    
+    
+  });
 }
 
 var defaults = exports.defaults = {};

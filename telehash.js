@@ -50,6 +50,9 @@ exports.generate = function(cb)
 exports.mesh = function(args, cbMesh)
 {
   if(typeof args != 'object' || typeof args.id != 'object') return cbMesh('invalid args, requires id');
+  var hn = hashname.fromKeys(args.id.keys);
+  if(!hn) return cbMesh('invalid keys');
+
   // convert all id keys/secrets to pairs for e3x
   var opts = {pairs:{}};
   Object.keys(args.id.keys).forEach(function(csid){
@@ -60,20 +63,13 @@ exports.mesh = function(args, cbMesh)
   });
   e3x.self(opts, function(err, self){
     if(err) return cbMesh(err);
-    var mesh = {};
+    var mesh = {self:self};
 
     // keep args handy but dereference id/secret
     mesh.args = args;
     mesh.keys = args.id.keys;
     delete args.id;
-
-    // convenience things
-    mesh.hashname = hashname.fromKeys(mesh.keys);
-    mesh.id = hashname.buffer(mesh.hashname);
-    mesh.self = self;
-
-    // paranoid failsafe
-    if(!mesh.hashname || !mesh.id) return cbMesh('invalid hashname?');
+    mesh.hashname = hn;
 
     // who we can communicate with at all
     mesh.firewall = {}; // points to exchange if created yet, otherwise true
@@ -91,6 +87,9 @@ exports.mesh = function(args, cbMesh)
       ext.mesh(mesh, cbExtend);
     };
     
+    // keep list of all transports for path resolutions
+    mesh.transports = [];
+    
     // handle incoming packets from any transports
     mesh.receive = function(packet, pipe)
     {
@@ -98,6 +97,52 @@ exports.mesh = function(args, cbMesh)
       // check firewall
     }
 
+    // add a router
+    mesh.routers = [];
+    mesh.router = function(direct)
+    {
+      // validate direct
+      // create echange and add to firewall and exchanges
+      // add to .routers
+      // send handshake
+    }
+    
+    // create/get link
+    mesh.links = {};
+    mesh.link = function(args, packet)
+    {
+      // take just hashname argument
+      if(hashname.isHashname(args))
+      {
+        args = {hashname:args};
+      }
+      if(args.keys) args.hashname = hashname.fromKeys(args.keys);
+      if(!hashname.isHashname(args.hashname)) return false;
+
+      var link = mesh.links[args.hashname];
+      if(!link)
+      {
+        // TODO create, add
+        link = {};
+        link.ups = [];
+        link.setUp = function(isUp){
+          if(link.isUp === isUp) return;
+          link.isUp = isUp;
+          link.ups.forEach(function(up){ up(isUp); });
+          if(typeof link.up == 'function') link.up(isUp);
+        };
+        // TODO add extensions
+      }
+      
+      // set status down
+      link.setUp(false);
+
+      // TODO request to all routers for this link
+      // TODO if keys, add exchange
+      // TODO if paths, add to exchange
+      return link;
+    }
+    
     // last, load any/all extensions and return
     mesh.extensions = [];
     var error;

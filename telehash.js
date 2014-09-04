@@ -109,7 +109,7 @@ exports.mesh = function(args, cbMesh)
     
     // create/get link
     mesh.links = {};
-    mesh.link = function(args, packet)
+    mesh.link = function(args, cbLink)
     {
       // take just hashname argument
       if(hashname.isHashname(args))

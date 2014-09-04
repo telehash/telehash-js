@@ -97,14 +97,28 @@ exports.mesh = function(args, cbMesh)
       // check firewall
     }
 
-    // add a router
-    mesh.routers = [];
+    // add a default router
+    mesh.routers = {};
     mesh.router = function(direct)
     {
-      // validate direct
+      // validate direct||link
       // create echange and add to firewall and exchanges
       // add to .routers
       // send handshake
+      // start connect for all down links
+    }
+    mesh.route = function(isRouting)
+    {
+      log.debug('setting mesh routing',isRouting);
+      mesh.isRouting = isRouting;
+      // accept all connect channels to any link
+    }
+    
+    // enabled discovery mode
+    mesh.discover = function(cbDiscover)
+    {
+      mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
+      // TODO enable each transport
     }
     
     // create/get link
@@ -122,8 +136,12 @@ exports.mesh = function(args, cbMesh)
       var link = mesh.links[args.hashname];
       if(!link)
       {
-        // TODO create, add
-        link = {};
+        link = {hashname:args.hashname, keys:args.keys};
+        mesh.links[link.hashname] = link;
+        
+        // link-packet validation handler, defaults to allow all if not given
+        link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
+
         link.ups = [];
         link.setUp = function(isUp){
           if(link.isUp === isUp) return;
@@ -131,7 +149,25 @@ exports.mesh = function(args, cbMesh)
           link.ups.forEach(function(up){ up(isUp); });
           if(typeof link.up == 'function') link.up(isUp);
         };
-        // TODO add extensions
+
+        // accept and forward any connect to this link
+        link.route = function(isRouting)
+        {
+          log.debug('setting routing for',isRouting,link.hashname);
+          link.isRouting = isRouting;
+        }
+        link.router = function(direct)
+        {
+          // start connect channel to direct for link
+        }
+
+        // run extensions per link
+        mesh.extensions.forEach(function(ext){
+          if(typeof ext.link != 'function') return;
+          log.debug('extending link with',ext.name);
+          ext.link(mesh,link);
+        });
+        
       }
       
       // set status down

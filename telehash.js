@@ -61,135 +61,154 @@ exports.mesh = function(args, cbMesh)
     pair.key = Buffer.isBuffer(args.id.keys[csid]) ? args.id.keys[csid] : base32.decode(args.id.keys[csid]);
     pair.secret = Buffer.isBuffer(args.id.secrets[csid]) ? args.id.secrets[csid] : base32.decode(args.id.secrets[csid]);
   });
-  e3x.self(opts, function(err, self){
-    if(err) return cbMesh(err);
-    var mesh = {self:self};
+  var self = e3x.self(opts);
+  if(!self) return cbMesh(e3x.err);
+  var mesh = {self:self};
 
-    // keep args handy but dereference id/secret
-    mesh.args = args;
-    mesh.keys = args.id.keys;
-    delete args.id;
-    mesh.hashname = hn;
+  // keep args handy but dereference id/secret
+  mesh.args = args;
+  mesh.keys = args.id.keys;
+  delete args.id;
+  mesh.hashname = hn;
 
-    // who we can communicate with at all
-    mesh.firewall = {}; // points to exchange if created yet, otherwise true
-    mesh.exchanges = {}; // by token
+  // who we can communicate with at all
+  mesh.firewall = {}; // points to exchange if created yet, otherwise true
+  mesh.exchanges = {}; // by token
 
-    log.debug('created new mesh',mesh.hashname);
+  log.debug('created new mesh',mesh.hashname);
 
-    // on-demand extender
-    mesh.extend = function(ext, cbExtend){
-      if(mesh.extensions.indexOf(ext) >= 0) return cbExtend();
-      log.debug('extending mesh with',ext.name);
-      mesh.extensions.push(ext);
-      if(typeof ext.mesh != 'function') return cbExtend();
-      // give it a chance to fill in and set up
-      ext.mesh(mesh, cbExtend);
-    };
-    
-    // keep list of all transports for path resolutions
-    mesh.transports = [];
-    
-    // handle incoming packets from any transports
-    mesh.receive = function(packet, pipe)
+  // on-demand extender
+  mesh.extend = function(ext, cbExtend){
+    if(mesh.extensions.indexOf(ext) >= 0) return cbExtend();
+    log.debug('extending mesh with',ext.name);
+    mesh.extensions.push(ext);
+    if(typeof ext.mesh != 'function') return cbExtend();
+    // give it a chance to fill in and set up
+    ext.mesh(mesh, cbExtend);
+  };
+  
+  // keep list of all transports for path resolutions
+  mesh.transports = [];
+  
+  // handle incoming packets from any transports
+  mesh.receive = function(packet, pipe)
+  {
+    log.debug('incoming packet',packet.length,pipe.id);
+    // check firewall
+  }
+
+  // add a default router
+  mesh.routers = {};
+  mesh.router = function(direct)
+  {
+    // validate direct||link
+    // create echange and add to firewall and exchanges
+    // add to .routers
+    // send handshake
+    // start connect for all down links
+  }
+  mesh.route = function(isRouting)
+  {
+    log.debug('setting mesh routing',isRouting);
+    mesh.isRouting = isRouting;
+    // accept all connect channels to any link
+  }
+  
+  // enabled discovery mode
+  mesh.discover = function(cbDiscover)
+  {
+    mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
+    // TODO enable each transport
+  }
+  
+  // create/get link
+  mesh.links = {};
+  mesh.link = function(args, cbLink)
+  {
+    // take just hashname argument
+    if(hashname.isHashname(args))
     {
-      log.debug('incoming packet',packet.length,pipe.id);
-      // check firewall
+      args = {hashname:args};
     }
-
-    // add a default router
-    mesh.routers = {};
-    mesh.router = function(direct)
+    if(args.keys)
     {
-      // validate direct||link
-      // create echange and add to firewall and exchanges
-      // add to .routers
-      // send handshake
-      // start connect for all down links
-    }
-    mesh.route = function(isRouting)
-    {
-      log.debug('setting mesh routing',isRouting);
-      mesh.isRouting = isRouting;
-      // accept all connect channels to any link
-    }
-    
-    // enabled discovery mode
-    mesh.discover = function(cbDiscover)
-    {
-      mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
-      // TODO enable each transport
-    }
-    
-    // create/get link
-    mesh.links = {};
-    mesh.link = function(args, cbLink)
-    {
-      // take just hashname argument
-      if(hashname.isHashname(args))
-      {
-        args = {hashname:args};
-      }
-      if(args.keys) args.hashname = hashname.fromKeys(args.keys);
+      args.csid = hashname.match(args.keys,mesh.keys);
+      if(!args.csid) return false;
+      args.hashname = hashname.fromKeys(args.keys);
       if(!hashname.isHashname(args.hashname)) return false;
+    }
 
-      var link = mesh.links[args.hashname];
-      if(!link)
-      {
-        link = {hashname:args.hashname, keys:args.keys};
-        mesh.links[link.hashname] = link;
-        
-        // link-packet validation handler, defaults to allow all if not given
-        link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
+    // allow incoming handshakes
+    mesh.firewall[args.hashname] = true;
 
-        link.ups = [];
-        link.setUp = function(isUp){
-          if(link.isUp === isUp) return;
-          link.isUp = isUp;
-          link.ups.forEach(function(up){ up(isUp); });
-          if(typeof link.up == 'function') link.up(isUp);
-        };
-
-        // accept and forward any connect to this link
-        link.route = function(isRouting)
-        {
-          log.debug('setting routing for',isRouting,link.hashname);
-          link.isRouting = isRouting;
-        }
-        link.router = function(direct)
-        {
-          // start connect channel to direct for link
-        }
-
-        // run extensions per link
-        mesh.extensions.forEach(function(ext){
-          if(typeof ext.link != 'function') return;
-          log.debug('extending link with',ext.name);
-          ext.link(mesh,link);
-        });
-        
-      }
+    // create new link if needed
+    var link = mesh.links[args.hashname];
+    if(!link)
+    {
+      link = {hashname:args.hashname, keys:args.keys};
+      mesh.links[link.hashname] = link;
       
-      // set status down
-      link.setUp(false);
+      // link-packet validation handler, defaults to allow all if not given
+      link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
 
-      // TODO request to all routers for this link
-      // TODO if keys, add exchange
-      // TODO if paths, add to exchange
-      return link;
+      link.ups = [];
+      link.setUp = function(isUp){
+        if(link.isUp === isUp) return;
+        link.isUp = isUp;
+        link.ups.forEach(function(up){ up(isUp); });
+        if(typeof link.up == 'function') link.up(isUp);
+      };
+
+      // accept and forward any connect to this link
+      link.route = function(isRouting)
+      {
+        log.debug('setting routing for',isRouting,link.hashname);
+        link.isRouting = isRouting;
+      }
+      link.router = function(direct)
+      {
+        // start connect channel to direct for link
+      }
+
+      // always immediately start the link channel
+      link.addX = function(key)
+      {
+        var x = false;//mesh.self.exchange({csid:args.csid, key:bufKey(args.keys[args.csid])});
+        link.err = mesh.self.err;
+        if(!x) return;
+        mesh.firewall[link.hashname] = x; // routes incoming handshakes
+        link.x = x;
+        // TODO link channel loop
+      }
+
+      // run extensions per link
+      mesh.extensions.forEach(function(ext){
+        if(typeof ext.link != 'function') return;
+        log.debug('extending link with',ext.name);
+        ext.link(mesh,link);
+      });
+      
     }
     
-    // last, load any/all extensions and return
-    mesh.extensions = [];
-    var error;
-    Object.keys(exports.extensions).forEach(function(name){
-      mesh.extend(exports.extensions[name], function(err){
-        error = error||err;
-        if(Object.keys(exports.extensions).length == mesh.extensions.length) return cbMesh(error, mesh);
-      });
-    })
-    
-    
+    // set status down
+    link.setUp(false);
+
+    // create the exchange if we can
+    if(args.keys) link.addX(args.keys);
+
+    // TODO request to all routers for this link
+    // TODO if paths, add to exchange
+    return link;
+  }
+  
+  // last, load any/all extensions and return
+  mesh.extensions = [];
+  var error;
+  Object.keys(exports.extensions).forEach(function(name){
+    mesh.extend(exports.extensions[name], function(err){
+      error = error||err;
+      if(Object.keys(exports.extensions).length == mesh.extensions.length) return cbMesh(error, mesh);
+    });
   });
 }
 

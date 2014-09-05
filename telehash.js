@@ -63,6 +63,7 @@ exports.mesh = function(args, cbMesh)
   });
   var self = e3x.self(opts);
   if(!self) return cbMesh(e3x.err);
+  log.debug('created new mesh',hn);
   var mesh = {self:self};
 
   // keep args handy but dereference id/secret
@@ -70,12 +71,43 @@ exports.mesh = function(args, cbMesh)
   mesh.keys = args.id.keys;
   delete args.id;
   mesh.hashname = hn;
+  mesh.exchanges = {}; // track by token
 
-  // who we can communicate with at all
-  mesh.firewall = {}; // points to exchange if created yet, otherwise true
-  mesh.exchanges = {}; // by token
+  // who we can communicate with at all, by hashname
+  mesh.json = {};
+  
+  // internal util to manage .json store
+  mesh.jsonize = function(args)
+  {
+    // take just hashname argument
+    if(hashname.isHashname(args))
+    {
+      args = {hashname:args};
+    }
 
-  log.debug('created new mesh',mesh.hashname);
+    // load from keys
+    if(args.keys && (args.csid = hashname.match(args.keys,mesh.keys)))
+    {
+      args.hashname = hashname.fromKeys(args.keys);
+      args.key = args.keys[args.csid];
+    }
+    
+    // make sure we have a valid hashname
+    if(!hashname.isHashname(args.hashname)) return false;
+
+    // add/get json store
+    var json = mesh.json[args.hashname];
+    if(!json) json = mesh.json[args.hashname] = {hashname:args.hashname};
+
+    // json happy csid/key
+    if(args.csid)
+    {
+      json.csid = args.csid;
+      json.key = Buffer.isBuffer(args.key) ? base32.encode(args.key) : args.key;
+    }
+    
+    return json;
+  }
 
   // on-demand extender
   mesh.extend = function(ext, cbExtend){
@@ -94,13 +126,14 @@ exports.mesh = function(args, cbMesh)
   mesh.receive = function(packet, pipe)
   {
     log.debug('incoming packet',packet.length,pipe.id);
-    // check firewall
+    // check mesh.json
   }
 
   // add a default router
   mesh.routers = {};
   mesh.router = function(direct)
   {
+    // update/set in json
     // validate direct||link
     // create echange and add to firewall and exchanges
     // add to .routers
@@ -125,27 +158,23 @@ exports.mesh = function(args, cbMesh)
   mesh.links = {};
   mesh.link = function(args, cbLink)
   {
-    // take just hashname argument
-    if(hashname.isHashname(args))
+    var json = mesh.jsonize(args);
+
+    // minimally required
+    if(!json)
     {
-      args = {hashname:args};
-    }
-    if(args.keys)
-    {
-      args.csid = hashname.match(args.keys,mesh.keys);
-      if(!args.csid) return false;
-      args.hashname = hashname.fromKeys(args.keys);
-      if(!hashname.isHashname(args.hashname)) return false;
+      mesh.err = 'invalid args: '+JSON.stringify(args);
+      return false;
     }
 
-    // allow incoming handshakes
-    mesh.firewall[args.hashname] = true;
-
+    // update json to be a link
+    json.link = true;
+    
     // create new link if needed
-    var link = mesh.links[args.hashname];
+    var link = mesh.links[json.hashname];
     if(!link)
     {
-      link = {hashname:args.hashname, keys:args.keys};
+      link = {hashname:json.hashname, json:json};
       mesh.links[link.hashname] = link;
       
       // link-packet validation handler, defaults to allow all if not given
@@ -163,7 +192,7 @@ exports.mesh = function(args, cbMesh)
       link.route = function(isRouting)
       {
         log.debug('setting routing for',isRouting,link.hashname);
-        link.isRouting = isRouting;
+        link.json.route = isRouting;
       }
       link.router = function(direct)
       {
@@ -171,7 +200,7 @@ exports.mesh = function(args, cbMesh)
       }
 
       // always immediately start the link channel
-      link.addX = function(key)
+      link.exchange = function()
       {
         var x = false;//mesh.self.exchange({csid:args.csid, key:bufKey(args.keys[args.csid])});
         link.err = mesh.self.err;
@@ -180,7 +209,8 @@ exports.mesh = function(args, cbMesh)
         link.x = x;
         // TODO link channel loop
       }
-
+      if(link.json.csid) link.exchange();
+      
       // run extensions per link
       mesh.extensions.forEach(function(ext){
         if(typeof ext.link != 'function') return;
@@ -192,9 +222,6 @@ exports.mesh = function(args, cbMesh)
     
     // set status down
     link.setUp(false);
-
-    // create the exchange if we can
-    if(args.keys) link.addX(args.keys);
 
     // TODO request to all routers for this link
     // TODO if paths, add to exchange

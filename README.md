@@ -136,7 +136,7 @@ var tpx = require('telehash-x');
 // mesh.transports = [];
 tpx.extend(mesh,function(err){
   // mesh.transports.push(tp);
-  tp.path(path, function(pipe){
+  tp.pipe(path, function(pipe){
     pipe.path; // current json object (if addressable)
     pipe.on('keepalive', function(){}) // adds callback, return false to unregister
     pipe.on('changed', function(){})

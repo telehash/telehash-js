@@ -73,7 +73,6 @@ exports.mesh = function(args, cbMesh)
   mesh.keys = args.id.keys;
   delete args.id;
   mesh.hashname = hn;
-  mesh.exchanges = {}; // track by token
 
   // who we can communicate with at all, by hashname
   mesh.json = {};
@@ -112,13 +111,25 @@ exports.mesh = function(args, cbMesh)
   }
 
   // on-demand extender
+  mesh.extensions = []; // so we only run one once
+  mesh.extended = []; // which ones are active
   mesh.extend = function(ext, cbExtend){
+    // callback is optional
+    if(!cbExtend) cbExtend = function(err){log.debug('extend stub err',err);};
+    // only do once per mesh
     if(mesh.extensions.indexOf(ext) >= 0) return cbExtend();
     log.debug('extending mesh with',ext.name);
     mesh.extensions.push(ext);
     if(typeof ext.mesh != 'function') return cbExtend();
     // give it a chance to fill in and set up
-    ext.mesh(mesh, cbExtend);
+    ext.mesh(mesh, function(err, extended){
+      if(extended)
+      {
+        extended.name = ext.name; // enforce
+        mesh.extended.push(extended);
+      }
+      cbExtend(err, extended);
+    });
   };
   
   // keep list of all transports for path resolutions
@@ -132,13 +143,13 @@ exports.mesh = function(args, cbMesh)
   }
 
   // add a default router
-  mesh.routers = {};
-  mesh.router = function(direct)
+  mesh.routers = [];
+  mesh.router = function(direct, isDefault)
   {
     // update/set in json
     // validate direct||link
     // create echange and add to firewall and exchanges
-    // add to .routers
+    // add to .routers if isDefault
     // send handshake
     // start connect for all down links
   }
@@ -154,6 +165,44 @@ exports.mesh = function(args, cbMesh)
   {
     mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
     // TODO enable each transport
+  }
+  
+  // create one or more pipes for any path via transports
+  mesh.pipes = {}; // array for each hashname
+  mesh.pipe = function(hn, path, cbPipe)
+  {
+    log.debug('path2pipe',hn,path);
+    var pipes = mesh.pipes[hn];
+    if(!pipes) pipes = mesh.pipes[hn] = [];
+    var x = mesh.x(hn);
+    mesh.extended.forEach(function(ext){
+      if(typeof ext.pipe != 'function') return;
+      log.debug('ext.pipe',ext.name);
+      ext.pipe(hn, path, function(pipe){
+        if(pipes.indexOf(pipe) >= 0) return;
+        pipes.push(pipe);
+        cbPipe(pipe);
+        if(!x) return;
+        // TODO x stuff, keepalive listener and resync
+      });
+    });
+  }
+  
+  mesh.exchanges = {}; // track by token and hashname
+  mesh.x = function(hn)
+  {
+    if(mesh.exchanges[hn]) return mesh.exchanges[hn];
+    var json = mesh.json[hn];
+    if(!json || !json.csid)
+    {
+      mesh.err = 'missing key info to create exchange for '+hn;
+      return false;
+    }
+    // TODO, create x from json
+    // mesh.exchanges[hn] = mesh.exchanges[x.token] = x;
+    // set up channels
+    // point pipes to link.pipes 
+    return {};
   }
   
   // create/get link
@@ -176,7 +225,7 @@ exports.mesh = function(args, cbMesh)
     var link = mesh.links[json.hashname];
     if(!link)
     {
-      link = {hashname:json.hashname, json:json};
+      link = {hashname:json.hashname, json:json, isLink:true};
       mesh.links[link.hashname] = link;
       
       // link-packet validation handler, defaults to allow all if not given
@@ -196,9 +245,18 @@ exports.mesh = function(args, cbMesh)
         log.debug('setting routing for',isRouting,link.hashname);
         link.json.route = isRouting;
       }
+      
+      // use this info as a router to reach this link
       link.router = function(direct)
       {
-        // start connect channel to direct for link
+        var hn = (direct && direct.isLink) ? direct.hashname : mesh.router(direct, false);
+        if(!hn)
+        {
+          link.err = 'invalid router args';
+          return false;
+        }
+        link.addPath({type:'peer',hn:hn});
+        return true;
       }
 
       // always immediately start the link channel
@@ -213,8 +271,15 @@ exports.mesh = function(args, cbMesh)
       }
       if(link.json.csid) link.exchange();
       
+      link.addPath = function(path)
+      {
+        // add if not in json
+        // remove from json if to a default router
+        mesh.pipe(link.hashname, path);
+      }
+
       // run extensions per link
-      mesh.extensions.forEach(function(ext){
+      mesh.extended.forEach(function(ext){
         if(typeof ext.link != 'function') return;
         log.debug('extending link with',ext.name);
         ext.link(mesh,link);
@@ -225,13 +290,34 @@ exports.mesh = function(args, cbMesh)
     // set status down
     link.setUp(false);
 
-    // TODO request to all routers for this link
-    // TODO if paths, add to exchange
+    // set any paths given
+    if(Array.isArray(args.paths)) args.paths.forEach(link.addPath);
+    
+    // add paths to default routers
+    mesh.routers.forEach(function(router){
+      link.addPath({type:'peer',hn:router});
+    });
+
     return link;
   }
-  
-  // last, load any/all extensions and return
-  mesh.extensions = [];
+
+  // add our own peer pipe handler for routers/connects
+  mesh.extended.push({
+    pipes:[],
+    pipe:function(hn, path, cbPipe){
+      var pipes = this.pipes;
+      var x = mesh.x(hn);
+      if(!x)
+      {
+        log.debug('no router for path',path);
+        return;
+      }
+      // TODO create connect channel and pipe for it
+      cbPipe(new exports.Pipe);
+    }
+  });
+
+  // last, iterate load any/all extensions and return when done
   var error;
   Object.keys(exports.extensions).forEach(function(name){
     mesh.extend(exports.extensions[name], function(err){

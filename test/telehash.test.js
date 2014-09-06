@@ -60,4 +60,24 @@ describe('telehash', function(){
     });
   });
 
+  it('should return an exchange', function(done){
+    telehash.mesh({id:idA},function(err, mesh){
+      var link = mesh.link({keys:idB.keys});
+      var x = mesh.x(link.hashname);
+      expect(x).to.be.an('object');
+      done();
+    });
+  });
+
+  it('should create a peer pipe', function(done){
+    telehash.mesh({id:idA},function(err, mesh){
+      var link = mesh.link({keys:idB.keys});
+      mesh.pipe(link.hashname,{type:'peer',hn:link.hashname},function(pipe){
+        expect(pipe).to.be.an('object');
+        expect(pipe.isPipe).to.be.true;
+        done();
+      });
+    });
+  });
+
 });

@@ -3,6 +3,7 @@ exports.Pipe = function(type, keepalive)
 {
   var pipe = this;
   pipe.type = type;
+  pipe.isPipe = true;
 
   pipe.keepalive = function(timeout)
   {

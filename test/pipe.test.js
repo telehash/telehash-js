@@ -32,4 +32,24 @@ describe('pipe', function(){
     pipe.do('test',true);
   });
 
+  it('should keep/remove/dedup handlers', function(){
+    var pipe = new Pipe('test');
+    pipe.on('test',function(){ return false; });
+    var truer = function(){ return true; };
+    pipe.on('test',truer);
+    pipe.on('test',truer);
+    expect(pipe.ons['test'].length).to.be.equal(2);
+    pipe.do('test');
+    expect(pipe.ons['test'].length).to.be.equal(1);
+  });
+
+  it('should fire a keepalive', function(done){
+    var pipe = new Pipe('test',10);
+    pipe.on('keepalive',function(on){
+      expect(this).to.be.equal(pipe);
+      done();
+      return false;
+    });
+  });
+
 });

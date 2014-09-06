@@ -3,6 +3,8 @@ var e3x = require('e3x');
 var hashname = require('hashname');
 var base32 = hashname.base32;
 
+exports.Pipe = require('./pipe').Pipe;
+
 // activity/debugging logging utilities
 var log = {
   warn:function(){console.log.apply(console,arguments);},
@@ -238,6 +240,7 @@ exports.mesh = function(args, cbMesh)
     });
   });
 }
+
 
 var defaults = exports.defaults = {};
 defaults.chan_timeout = 10000; // how long before for ending durable channels w/ no acks

@@ -261,7 +261,7 @@ exports.mesh = function(args, cbMesh)
       ext.pipe(hn, path, function(pipe){
         mesh.piper(hn,pipe);
         pipe.do('keepalive');
-        cbPipe(pipe);
+        if(cbPipe) cbPipe(pipe);
       });
     });
   }

@@ -113,4 +113,24 @@ describe('telehash', function(){
     });
   });
 
+  it('should generate a keepalive', function(done){
+    var ext = {name:'test',mesh:function(mesh,cbExt){
+      cbExt(undefined,{pipe:function(hn,path,cbPipe){
+        var pipe = new telehash.Pipe('test');
+        pipe.onSend = function(packet){
+          expect(Buffer.isBuffer(packet)).to.be.true;
+          expect(packet.length).to.be.equal(66);
+          done();
+        };
+        cbPipe(pipe);
+      }});
+    }};
+    telehash.mesh({id:idA},function(err, mesh){
+      mesh.extend(ext,function(){
+        var link = mesh.link({keys:idB.keys});
+        mesh.pipe(link.hashname,{type:'test'});
+      });
+    });
+  });
+
 });

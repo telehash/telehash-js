@@ -138,8 +138,64 @@ exports.mesh = function(args, cbMesh)
   // handle incoming packets from any transports
   mesh.receive = function(packet, pipe)
   {
-    log.debug('incoming packet',packet.length,pipe.id);
-    // check mesh.json
+    log.debug('incoming packet',packet.length,pipe.type);
+    
+    // all channel packets
+    if(packet.head.length == 0)
+    {
+      var token = packet.head.slice(0,16).toString('hex');
+      var x = mesh.exchanges[token];
+      if(!x)
+      {
+        log.debug('dropping unknown channel packet to',token);
+        return;
+      }
+      var inner = x.receive(packet);
+      if(!inner)
+      {
+        log.debug('error receiving channel packet',x.err);
+        return;
+      }
+
+      // if channel exists, handle it
+      if(x.channel[inner.json.c]) return x.channel[inner.json.c].receive(inner);
+
+      // new channel, do we handle this type
+      log.debug('TODO new channel open',inner.json);
+      return;
+    }
+    
+    // all message (handshake) packets
+    if(packet.head.length == 1)
+    {
+      var inner = mesh.self.decrypt(packet);
+      if(!inner)
+      {
+        log.debug('message decryption failed',mesh.self.err);
+        return;
+      }
+      // get sender hashname
+      var hn = hashname.fromPacket(inner);
+      if(!hn)
+      {
+        log.debug('invalid handshake, no hashname',inner);
+        return;
+      }
+      log.debug('TODO, discovery mode handling');
+      if(!mesh.json[hn])
+      {
+        log.debug('untrusted hashname',hn);
+        return;
+      }
+      // TODO ADD INNER TO JSON
+      var x = mesh.x(hn);
+      if(!x)
+      {
+        log.debug('failed to create exchange',mesh.err);
+        return;
+      }
+      log.debug('TODO do handshake');
+    }
   }
 
   // add a default router
@@ -313,6 +369,7 @@ exports.mesh = function(args, cbMesh)
         return;
       }
       // TODO create connect channel and pipe for it
+      log.debug('TODO make connect to router for',hn);
       cbPipe(new exports.Pipe);
     }
   });

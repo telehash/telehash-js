@@ -65,6 +65,7 @@ describe('telehash', function(){
       var link = mesh.link({keys:idB.keys});
       var x = mesh.x(link.hashname);
       expect(x).to.be.an('object');
+      expect(Array.isArray(x.pipes)).to.be.true;
       done();
     });
   });
@@ -75,6 +76,8 @@ describe('telehash', function(){
       mesh.pipe(link.hashname,{type:'peer',hn:link.hashname},function(pipe){
         expect(pipe).to.be.an('object');
         expect(pipe.isPipe).to.be.true;
+        expect(Array.isArray(mesh.pipes[link.hashname])).to.be.true;
+        expect(mesh.pipes[link.hashname].length).to.be.equal(1);
         done();
       });
     });

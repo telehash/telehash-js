@@ -240,7 +240,7 @@ exports.mesh = function(args, cbMesh)
 
     // do exchange stuff if we have one
     pipe.on('keepalive', function(){
-      // any event, sync all w/ a new handshake
+      // any event, sync all pipes w/ a new handshake
       var imjs = hashname.intermediate(mesh.keys);
       imjs[x.csid] = true;
       var handshake = x.handshake(imjs);
@@ -249,7 +249,6 @@ exports.mesh = function(args, cbMesh)
         pipe2.send(handshake);
       });
     });
-    pipe.do('keepalive');
   }
 
   // create one or more pipes for any path via transports
@@ -261,6 +260,7 @@ exports.mesh = function(args, cbMesh)
       log.debug('ext.pipe',ext.name);
       ext.pipe(hn, path, function(pipe){
         mesh.piper(hn,pipe);
+        pipe.do('keepalive');
         cbPipe(pipe);
       });
     });
@@ -276,11 +276,27 @@ exports.mesh = function(args, cbMesh)
       mesh.err = 'missing key info to create exchange for '+hn;
       return false;
     }
-    // TODO, create x from json
-    // mesh.exchanges[hn] = mesh.exchanges[x.token] = x;
-    // set up channels
-    // point pipes to link.pipes, mesh.pipes[x.hashname] = [] and .piper() any
-    return {handshake:function(){return false}};
+    var args = {csid:json.csid};
+    args.key = base32.decode(json.key);
+    var x = mesh.self.exchange(args);
+    if(!x)
+    {
+      mesh.err = self.err;
+      return false;
+    }
+    mesh.exchanges[hn] = mesh.exchanges[x.id] = x;
+
+    x.listen = {};
+    log.debug('TODO add path, peer, link, and connect listeners');
+    
+    // re-add all the pipes so they link now
+    var pipes = mesh.pipes[hn];
+    x.pipes = mesh.pipes[hn] = [];
+    if(pipes) pipes.forEach(function(pipe){
+      mesh.piper(hn,pipe);
+    });
+
+    return x;
   }
   
   // create/get link

@@ -322,6 +322,9 @@ exports.mesh = function(args, cbMesh)
       link = {hashname:json.hashname, json:json, isLink:true};
       mesh.links[link.hashname] = link;
       
+      // try to create exchange
+      if(json.csid) mesh.x(link.hashname);
+      
       // link-packet validation handler, defaults to allow all if not given
       link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
 
@@ -353,23 +356,17 @@ exports.mesh = function(args, cbMesh)
         return true;
       }
 
-      // always immediately start the link channel
-      link.exchange = function()
-      {
-        var x = false;//mesh.self.exchange({csid:args.csid, key:bufKey(args.keys[args.csid])});
-        link.err = mesh.self.err;
-        if(!x) return;
-        mesh.firewall[link.hashname] = x; // routes incoming handshakes
-        link.x = x;
-        // TODO link channel loop
-      }
-      if(link.json.csid) link.exchange();
-      
       link.addPath = function(path)
       {
         // add if not in json
         // remove from json if to a default router
         mesh.pipe(link.hashname, path);
+      }
+      
+      // handle incoming link channel open request
+      link.inLink = function(open)
+      {
+        log.debug('TODO validate link open and setUp(true/false)');
       }
 
       // run extensions per link
@@ -391,7 +388,7 @@ exports.mesh = function(args, cbMesh)
     mesh.routers.forEach(function(router){
       link.addPath({type:'peer',hn:router});
     });
-
+    
     return link;
   }
 

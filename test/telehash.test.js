@@ -83,4 +83,34 @@ describe('telehash', function(){
     });
   });
 
+  it('should create a transport', function(done){
+    var ext = {name:'test',mesh:function(mesh){
+      expect(mesh).to.be.an('object');
+      done();
+    }};
+    telehash.mesh({id:idA},function(err, mesh){
+      mesh.extend(ext);
+    });
+  });
+
+  it('should create a pipe to a transport', function(done){
+    var ptest = {type:'test',test:true};
+    var ext = {name:'test',mesh:function(mesh,cbExt){
+      cbExt(undefined,{pipe:function(hn,path,cbPipe){
+        expect(hn).to.be.equal('uvgehzf7yh1t8e656b4c4x17xzh5ngmvz8ww49zk9cabufzn3g7g');
+        expect(path).to.be.equal(ptest);
+        cbPipe(new telehash.Pipe('test'));
+      }});
+    }};
+    telehash.mesh({id:idA},function(err, mesh){
+      mesh.extend(ext,function(err){
+        expect(err).to.not.exist;
+        mesh.pipe(idB.hashname,ptest,function(pipe){
+          expect(pipe.type).to.be.equal('test');
+          done();
+        });
+      });
+    });
+  });
+
 });

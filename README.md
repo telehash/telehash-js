@@ -138,9 +138,7 @@ tpx.extend(mesh,function(err){
   // mesh.transports.push(tp);
   tp.pipe(path, function(pipe){
     pipe.path; // current json object (if addressable)
-    pipe.on('keepalive', function(){}) // adds callback, return false to unregister
-    pipe.on('changed', function(){})
-    pipe.on('closed', function(){})
+    pipe.on('keepalive', function(){}) // adds callback, return false to unregister, called on all events
     pipe.send(packet)
   });
   var paths = tp.paths(); // return array of current addressible paths, if any

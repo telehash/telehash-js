@@ -156,6 +156,9 @@ exports.mesh = function(args, cbMesh)
         log.debug('error receiving channel packet',x.err);
         return;
       }
+      
+      // make sure we track this pipe
+      mesh.xpipe(x,pipe);
 
       // if channel exists, handle it
       if(x.channel[inner.json.c]) return x.channel[inner.json.c].receive(inner);
@@ -223,27 +226,46 @@ exports.mesh = function(args, cbMesh)
     // TODO enable each transport
   }
   
-  // create one or more pipes for any path via transports
+  // have exchange start using this pipe, sync all w/ new handshake
   mesh.pipes = {}; // array for each hashname
+  mesh.piper = function(hn,pipe)
+  {
+    // track this pipe for the hashname overall
+    var pipes = mesh.pipes[hn];
+    if(!pipes) pipes = mesh.pipes[hn] = [];
+    if(pipes.indexOf(pipe) >= 0) return;
+    pipes.push(pipe);
+    var x = mesh.x(hn);
+    if(!x) return;
+
+    // do exchange stuff if we have one
+    pipe.on('keepalive', function(){
+      // any event, sync all w/ a new handshake
+      var imjs = hashname.intermediate(mesh.keys);
+      imjs[x.csid] = true;
+      var handshake = x.handshake(imjs);
+      pipes.forEach(function(pipe2){
+        // TODO, skip old ones
+        pipe2.send(handshake);
+      });
+    });
+    pipe.do('keepalive');
+  }
+
+  // create one or more pipes for any path via transports
   mesh.pipe = function(hn, path, cbPipe)
   {
     log.debug('path2pipe',hn,path);
-    var pipes = mesh.pipes[hn];
-    if(!pipes) pipes = mesh.pipes[hn] = [];
-    var x = mesh.x(hn);
     mesh.extended.forEach(function(ext){
       if(typeof ext.pipe != 'function') return;
       log.debug('ext.pipe',ext.name);
       ext.pipe(hn, path, function(pipe){
-        if(pipes.indexOf(pipe) >= 0) return;
-        pipes.push(pipe);
+        mesh.piper(hn,pipe);
         cbPipe(pipe);
-        if(!x) return;
-        // TODO x stuff, keepalive listener and resync
       });
     });
   }
-  
+    
   mesh.exchanges = {}; // track by token and hashname
   mesh.x = function(hn)
   {
@@ -257,8 +279,8 @@ exports.mesh = function(args, cbMesh)
     // TODO, create x from json
     // mesh.exchanges[hn] = mesh.exchanges[x.token] = x;
     // set up channels
-    // point pipes to link.pipes 
-    return {};
+    // point pipes to link.pipes, mesh.pipes[x.hashname] = [] and .piper() any
+    return {handshake:function(){return false}};
   }
   
   // create/get link

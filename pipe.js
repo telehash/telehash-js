@@ -13,7 +13,7 @@ exports.Pipe = function(type, keepalive)
     if(!pipe.timeout) return;
     pipe.timer = setTimeout(function(){
       // only run again if someone is listening
-      if(pipe.do('keepalive')) pipe.keepalive();
+      if(pipe.emit('keepalive')) pipe.keepalive();
     }, pipe.timeout);
   }
   if(keepalive) pipe.keepalive(keepalive);
@@ -31,7 +31,7 @@ exports.Pipe = function(type, keepalive)
     if(pipe.ons[on].indexOf(cb) == -1) this.ons[on].push(cb);
   }
 
-  pipe.do = function(on)
+  pipe.emit = function(on)
   {
     if(!pipe.ons[on]) return;
     var args = arguments;

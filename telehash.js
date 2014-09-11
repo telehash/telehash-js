@@ -257,7 +257,7 @@ exports.mesh = function(args, cbMesh)
       log.debug('ext.pipe',ext.name);
       ext.pipe(hn, path, function(pipe){
         mesh.piper(hn,pipe);
-        pipe.do('keepalive');
+        pipe.emit('keepalive');
         if(cbPipe) cbPipe(pipe);
       });
     });
@@ -419,12 +419,15 @@ exports.mesh = function(args, cbMesh)
     }
   });
 
-  // last, iterate load any/all extensions and return when done
+  // last, iterate load any/all extensions
   var error;
-  Object.keys(exports.extensions).forEach(function(name){
-    mesh.extend(exports.extensions[name], function(err){
+  var extboot = mesh.args.extensions || exports.extensions;
+  if(!Object.keys(extboot).length) return cbMesh(undefined, mesh);
+  // we have some to do, return when done
+  Object.keys(extboot).forEach(function(name){
+    mesh.extend(extboot[name], function(err){
       error = error||err;
-      if(Object.keys(exports.extensions).length == mesh.extensions.length) return cbMesh(error, mesh);
+      if(Object.keys(extboot).length == mesh.extensions.length) return cbMesh(error, mesh);
     });
   });
 }

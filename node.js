@@ -1,7 +1,7 @@
 var fs = require('fs');
 
 // we just wrap the shared code
-exports = require('./telehash');
+module.exports = require('./telehash');
 
 function install(self, args)
 {
@@ -17,7 +17,7 @@ function install(self, args)
 //  require("telehash-token").install(self, args);
 }
 
-exports.init = function(args, cbDone)
+module.exports.init = function(args, cbDone)
 {
   if(!args) args = {};
   /*

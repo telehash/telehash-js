@@ -3,8 +3,8 @@ var telehash = require('../telehash.js');
 
 describe('telehash', function(){
 
-  var idA = {"keys":{"1a":"0ecv95ajma11pg3uwauzhh9t8mnx5wzxhw"},"secrets":{"1a":"vkuu5mm3njjg4v7j4f3mx5hkd9dzbevu"},"hashname":"hdaybn855322qnwyrrgpzvckqffuf8xqz6tqy338t560qgk2v45g"};
-  var idB = {"keys":{"1a":"0b5076hpzgud3mgca1y04nfayt2p3np8tg"},"secrets":{"1a":"k03b22mb4vj4cf57w31e646ygj35cbmp"},"hashname":"uvgehzf7yh1t8e656b4c4x17xzh5ngmvz8ww49zk9cabufzn3g7g"};
+  var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};
+  var idB = {"keys":{"1a":"apkoh54rkobkeela6d62hblhqd7grqd5dm"},"secrets":{"1a":"ljfm3ov42x2fl6gsg6bxiqgtstnxls7r"},"hashname":"fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq"};
 
   it('should export an object', function(){
     expect(telehash).to.be.a('object');
@@ -40,7 +40,7 @@ describe('telehash', function(){
     telehash.mesh({id:idA},function(err, mesh){
       expect(err).to.not.exist;
       expect(mesh).to.be.an('object');
-      expect(mesh.hashname).to.be.equal('hdaybn855322qnwyrrgpzvckqffuf8xqz6tqy338t560qgk2v45g');
+      expect(mesh.hashname).to.be.equal(idA.hashname);
       expect(mesh.router).to.be.a('function');
       expect(mesh.route).to.be.a('function');
       expect(mesh.link).to.be.a('function');
@@ -53,7 +53,7 @@ describe('telehash', function(){
     telehash.mesh({id:idA},function(err, mesh){
       var link = mesh.link({keys:idB.keys});
       expect(link).to.be.an('object');
-      expect(link.hashname).to.be.equal('uvgehzf7yh1t8e656b4c4x17xzh5ngmvz8ww49zk9cabufzn3g7g');
+      expect(link.hashname).to.be.equal(idB.hashname);
       expect(link.router).to.be.a('function');
       expect(link.route).to.be.a('function');
       done();
@@ -97,7 +97,7 @@ describe('telehash', function(){
     var ptest = {type:'test',test:true};
     var ext = {name:'test',mesh:function(mesh,cbExt){
       cbExt(undefined,{pipe:function(hn,path,cbPipe){
-        expect(hn).to.be.equal('uvgehzf7yh1t8e656b4c4x17xzh5ngmvz8ww49zk9cabufzn3g7g');
+        expect(hn).to.be.equal(idB.hashname);
         expect(path).to.be.equal(ptest);
         cbPipe(new telehash.Pipe('test'));
       }});
@@ -119,7 +119,7 @@ describe('telehash', function(){
         var pipe = new telehash.Pipe('test');
         pipe.onSend = function(packet){
           expect(Buffer.isBuffer(packet)).to.be.true;
-          expect(packet.length).to.be.equal(66);
+          expect(packet.length).to.be.equal(72);
           done();
         };
         cbPipe(pipe);

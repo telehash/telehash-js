@@ -3,6 +3,8 @@ var fs = require('fs');
 // we just wrap the shared code
 module.exports = require('./telehash');
 
+module.exports.add(require('telehash-udp4'));
+
 function install(self, args)
 {
   // networking

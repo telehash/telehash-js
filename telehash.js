@@ -23,6 +23,7 @@ exports.log = function(args)
 exports.extensions = [];
 exports.add = function(ext)
 {
+  log.debug('adding extension',ext&&ext.name);
   if(!ext || typeof ext.name != 'string') return false;
   exports.extensions[ext.name] = ext;
   return true;
@@ -132,9 +133,6 @@ exports.mesh = function(args, cbMesh)
     });
   };
   
-  // keep list of all transports for path resolutions
-  mesh.transports = [];
-  
   // handle incoming packets from any transports
   mesh.receive = function(packet, pipe)
   {
@@ -241,9 +239,7 @@ exports.mesh = function(args, cbMesh)
     // do exchange stuff if we have one
     pipe.on('keepalive', function(){
       // any event, sync all pipes w/ a new handshake
-      var imjs = hashname.intermediate(mesh.keys);
-      imjs[x.csid] = true;
-      var handshake = x.handshake(imjs);
+      var handshake = x.handshake();
       pipes.forEach(function(pipe2){
         // TODO, skip old ones
         pipe2.send(handshake);
@@ -264,6 +260,19 @@ exports.mesh = function(args, cbMesh)
         if(cbPipe) cbPipe(pipe);
       });
     });
+  }
+
+  // collect all the current known paths
+  mesh.paths = function()
+  {
+    var ret = [];
+    mesh.extended.forEach(function(ext){
+      if(typeof ext.paths != 'function') return;
+      ext.paths().forEach(function(path){
+        ret.push(JSON.parse(JSON.stringify(path)));
+      });
+    });
+    return ret;
   }
     
   mesh.exchanges = {}; // track by token and hashname

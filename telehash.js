@@ -7,9 +7,10 @@ exports.Pipe = require('./pipe').Pipe;
 
 // activity/debugging logging utilities
 var log = {
-  warn:function(){console.log.apply(console,arguments);},
+  error:function(){console.error.apply(console,arguments);},
+  warn:function(){console.warn.apply(console,arguments);},
   debug:function(){},
-  info:function(){}
+  info:function(){console.log.apply(console,arguments);}
 }
 // override/set any logging level
 exports.log = function(args)

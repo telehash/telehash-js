@@ -68,7 +68,8 @@ exports.mesh = function(args, cbMesh)
   var self = e3x.self(opts);
   if(!self) return cbMesh(e3x.err);
   log.debug('created new mesh',hn);
-  var mesh = {self:self};
+  // bundle stuff inside for extensions to use
+  var mesh = {self:self, lib:exports};
 
   // keep args handy but dereference id/secret
   mesh.args = args;

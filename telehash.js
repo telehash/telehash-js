@@ -177,8 +177,9 @@ exports.mesh = function(args, cbMesh)
         log.debug('message decryption failed',mesh.self.err);
         return;
       }
+      log.debug('inner',inner.json,inner.body)
       // get sender hashname
-      var hn = hashname.fromPacket(inner);
+      var hn = hashname.fromPacket(inner,packet.head);
       if(!hn)
       {
         log.debug('invalid handshake, no hashname',inner);
@@ -197,7 +198,17 @@ exports.mesh = function(args, cbMesh)
         log.debug('failed to create exchange',mesh.err);
         return;
       }
-      log.debug('TODO do handshake');
+      var at = x.sync(packet, inner);
+      log.debug('handshake sync',at);
+      if(at === 0)
+      {
+        var link = mesh.links[hn];
+        if(link) link.setUp(true);
+      }else{
+        // add a pipe if valid
+        if(at > 0) mesh.piper(hn,pipe);
+        x.sending(x.handshake(at));
+      }
     }
   }
 
@@ -306,6 +317,13 @@ exports.mesh = function(args, cbMesh)
     if(pipes) pipes.forEach(function(pipe){
       mesh.piper(hn,pipe);
     });
+
+    x.sending = function(packet)
+    {
+      if(!packet) return log.debug('sending no packet',packet);
+      if(x.pipes.length == 0) return log.debug('no pipes for',hn);
+      x.pipes[0].send(packet);
+    }
 
     return x;
   }

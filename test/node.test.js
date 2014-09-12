@@ -19,7 +19,7 @@ describe('node-telehash', function(){
       expect(err).to.not.exist;
       expect(mesh).to.be.an('object');
       expect(mesh.extended.length).to.be.equal(2);
-      expect(mesh.paths().length).to.be.equal(1);
+      expect(mesh.paths().length).to.be.above(0);
       done();
     });
   });

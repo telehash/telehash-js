@@ -18,10 +18,10 @@ exports.Pipe = function(type, keepalive)
   }
   if(keepalive) pipe.keepalive(keepalive);
 
-  pipe.send = function(packet)
+  pipe.send = function(packet, cb)
   {
     pipe.keepalive();
-    if(typeof this.onSend == 'function') this.onSend(packet);
+    if(typeof this.onSend == 'function') this.onSend(packet, cb);
   }
 
   pipe.ons = {};

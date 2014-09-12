@@ -14,12 +14,12 @@ describe('pipe', function(){
 
   it('should call send', function(done){
     var pipe = new Pipe('test');
-    pipe.onSend = function(p)
+    pipe.onSend = function(p, cb)
     {
       expect(p).to.be.an('object');
-      done();
+      cb();
     }
-    pipe.send({});
+    pipe.send({}, done);
   });
 
   it('should emit an event', function(done){

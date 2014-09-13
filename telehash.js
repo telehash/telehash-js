@@ -199,16 +199,9 @@ exports.mesh = function(args, cbMesh)
       }
       var at = x.sync(packet, inner);
       log.debug('handshake sync',at);
-      // add a pipe if valid
-      if(at >= 0) mesh.piper(hn,pipe,true);
-      if(at === 0)
-      {
-        var link = mesh.links[hn];
-        if(link) link.setUp(true);
-      }else{
-        // always send handshake back otherwise
-        pipe.send(x.handshake(at));
-      }
+      if(at >= 0) mesh.piper(hn,pipe,true); // add a pipe if valid
+      if(at !== 0) pipe.send(x.handshake(at)); // always send handshake back if not in sync
+      if(at >= 0) x.flush(); // flush after for valid handshakes
     }
   }
 
@@ -349,7 +342,7 @@ exports.mesh = function(args, cbMesh)
         pipe.send(handshake);
       });
     }
-
+    
     return x;
   }
   
@@ -376,14 +369,53 @@ exports.mesh = function(args, cbMesh)
       link = {hashname:json.hashname, json:json, isLink:true};
       mesh.links[link.hashname] = link;
       
-      // try to create exchange
-      if(json.csid) mesh.x(link.hashname);
-      
       // link-packet validation handler, defaults to allow all if not given
       link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
+      
+      // try to create/sync a link channel
+      link.sync = function(x)
+      {
+        // make sure we can
+        if(!x.session) return log.debug('no session no sync');
+
+        // always fetch a new packet to send
+        link.onLink(undefined,function(err,packet){
+          if(err) return log.debug('onLink err',hn,err);
+          if(!packet) packet = {json:{}};
+
+          // need to create a new channel
+          if(!link.channel || x.channels[link.channel.id] != link.channel)
+          {
+            packet.json.type = 'link';
+            packet.json.c = x.cid();
+            link.channel = x.channel(packet);
+            link.channel.receiving = function(err, packet, cbChan){
+              if(err) return link.setUp(err);
+              link.onLink(packet, function(err, packet){
+                if(err) link.setUp(err);
+                if(packet) link.channel.send(packet);
+                cbChan(err);
+              });
+            }
+          }
+
+          log.debug('sending link',hn,packet.json);
+          link.channel.send(packet);
+        });
+
+        
+      }
 
       link.ups = [];
-      link.setUp = function(isUp){
+      link.setUp = function(err){
+        if(err)
+        {
+          log.debug('link error',isUp,err);
+          link.err = err;
+          var isUp = false;
+        }else{
+          var isUp = true;
+        }
         if(link.isUp === isUp) return;
         link.isUp = isUp;
         link.ups.forEach(function(up){ up(isUp); });
@@ -430,10 +462,12 @@ exports.mesh = function(args, cbMesh)
         ext.link(mesh,link);
       });
       
+      // try to create exchange as the last thing
+      if(json.csid) mesh.x(link.hashname);
     }
     
     // set status down
-    link.setUp(false);
+    link.setUp('initializing');
 
     // set any paths given
     if(Array.isArray(args.paths)) args.paths.forEach(link.addPath);

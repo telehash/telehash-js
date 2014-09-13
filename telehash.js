@@ -185,10 +185,10 @@ exports.mesh = function(args, cbMesh)
         log.debug('invalid handshake, no hashname',inner);
         return;
       }
-      log.debug('TODO, discovery mode handling');
       if(!mesh.json[hn])
       {
         log.debug('untrusted hashname',hn);
+        if(mesh.onDiscover) mesh.onDiscover(hn,pipe.path);
         return;
       }
       var x = mesh.x(hn);
@@ -231,10 +231,20 @@ exports.mesh = function(args, cbMesh)
   }
   
   // enabled discovery mode
-  mesh.discover = function(cbDiscover)
+  mesh.discover = function(opts, cbDiscover)
   {
+    if(arguments.length == 1)
+    {
+      cbDiscover = opts;
+      opts = {};
+    }
+    log.debug('discovery is',cbDiscover?'on':'off');
     mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
-    // TODO enable each transport
+    // notify all extensions
+    mesh.extended.forEach(function(ext){
+      if(typeof ext.discover != 'function') return;
+      ext.discover(opts, mesh.onDiscover);
+    });
   }
   
   // have exchange start using this pipe, sync all w/ new handshake

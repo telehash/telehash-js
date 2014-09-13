@@ -92,6 +92,20 @@ describe('telehash', function(){
     });
   });
 
+  it('should enable discovery', function(done){
+    var ext = {name:'test',mesh:function(mesh,cb){
+      cb(undefined,{discover:function(opts){
+        expect(opts).to.be.an('object');
+        done();
+      }});
+    }};
+    telehash.mesh({id:idA,extensions:{}},function(err, mesh){
+      mesh.extend(ext, function(){
+        mesh.discover({},function(){});
+      });
+    });
+  });
+
   it('should create a pipe to a transport', function(done){
     var ptest = {type:'test',test:true};
     var ext = {name:'test',mesh:function(mesh,cbExt){

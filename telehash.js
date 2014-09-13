@@ -191,7 +191,6 @@ exports.mesh = function(args, cbMesh)
         log.debug('untrusted hashname',hn);
         return;
       }
-      // TODO ADD INNER TO JSON
       var x = mesh.x(hn);
       if(!x)
       {
@@ -200,14 +199,15 @@ exports.mesh = function(args, cbMesh)
       }
       var at = x.sync(packet, inner);
       log.debug('handshake sync',at);
+      // add a pipe if valid
+      if(at >= 0) mesh.piper(hn,pipe,true);
       if(at === 0)
       {
         var link = mesh.links[hn];
         if(link) link.setUp(true);
       }else{
-        // add a pipe if valid
-        if(at > 0) mesh.piper(hn,pipe);
-        x.sending(x.handshake(at));
+        // always send handshake back otherwise
+        pipe.send(x.handshake(at));
       }
     }
   }
@@ -239,25 +239,27 @@ exports.mesh = function(args, cbMesh)
   
   // have exchange start using this pipe, sync all w/ new handshake
   mesh.pipes = {}; // array for each hashname
-  mesh.piper = function(hn,pipe)
+  mesh.piper = function(hn,pipe,valid)
   {
     // track this pipe for the hashname overall
-    var pipes = mesh.pipes[hn];
-    if(!pipes) pipes = mesh.pipes[hn] = [];
-    if(pipes.indexOf(pipe) >= 0) return;
-    pipes.push(pipe);
-    var x = mesh.x(hn);
-    if(!x) return;
+    var pipes = mesh.pipes[hn] || [];
+    if(!pipe) return pipes;
+    if(pipes.indexOf(pipe) < 0) pipes.push(pipe);
 
-    // do exchange stuff if we have one
-    pipe.on('keepalive', function(){
-      // any event, sync all pipes w/ a new handshake
-      var handshake = x.handshake();
-      pipes.forEach(function(pipe2){
-        // TODO, skip old ones
-        pipe2.send(handshake);
-      });
+    // track last time it was valid for sorting
+    if(valid) pipe.validAt = Date.now();
+
+    // always keep them in sorted order by valid
+    mesh.pipes[hn] = pipes.sort(function(a,b){
+      return (b.validAt||0) - (a.validAt||0);
     });
+
+    // wire event to the exchange if we have one
+    var x = mesh.x(hn);
+    if(!x) return pipes;
+    pipe.on('keepalive', x.keepalive);
+    
+    return pipes;
   }
 
   // create one or more pipes for any path via transports
@@ -312,17 +314,27 @@ exports.mesh = function(args, cbMesh)
     log.debug('TODO add path, peer, link, and connect listeners');
     
     // re-add all the pipes so they link now
-    var pipes = mesh.pipes[hn];
-    x.pipes = mesh.pipes[hn] = [];
-    if(pipes) pipes.forEach(function(pipe){
+    var pipes = mesh.piper(hn);
+    mesh.pipes[hn] = [];
+    pipes.forEach(function(pipe){
       mesh.piper(hn,pipe);
     });
 
     x.sending = function(packet)
     {
       if(!packet) return log.debug('sending no packet',packet);
-      if(x.pipes.length == 0) return log.debug('no pipes for',hn);
-      x.pipes[0].send(packet);
+      var pipes = mesh.piper(hn);
+      if(pipes.length == 0) return log.debug('no pipes for',hn);
+      pipes[0].send(packet);
+    }
+    
+    // any event, sync all pipes w/ a new handshake
+    x.keepalive = function(){
+      var handshake = x.handshake();
+      mesh.piper(hn).forEach(function(pipe){
+        // TODO, skip old ones
+        pipe.send(handshake);
+      });
     }
 
     return x;

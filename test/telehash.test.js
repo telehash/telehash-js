@@ -64,7 +64,7 @@ describe('telehash', function(){
       var link = mesh.link({keys:idB.keys});
       var x = mesh.x(link.hashname);
       expect(x).to.be.an('object');
-      expect(Array.isArray(x.pipes)).to.be.true;
+      expect(x.sending).to.be.a('function');
       done();
     });
   });

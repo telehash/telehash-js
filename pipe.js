@@ -21,6 +21,7 @@ exports.Pipe = function(type, keepalive)
   pipe.send = function(packet, cb)
   {
     pipe.keepalive();
+    pipe.sentAt = Date.now();
     if(typeof this.onSend == 'function') this.onSend(packet, cb);
   }
 

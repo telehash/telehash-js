@@ -201,7 +201,12 @@ exports.mesh = function(args, cbMesh)
       log.debug('handshake sync',at);
       if(at >= 0) mesh.piper(hn,pipe,true); // add a pipe if valid
       if(at !== 0) pipe.send(x.handshake(at)); // always send handshake back if not in sync
-      if(at >= 0) x.flush(); // flush after for valid handshakes
+      // any valid handshakes, start sending stuff after
+      if(at >= 0)
+      {
+        x.flush(); // any existing channels
+        if(mesh.links[hn]) mesh.links[hn].sync(x); // sync link status if any
+      }
     }
   }
 
@@ -318,6 +323,11 @@ exports.mesh = function(args, cbMesh)
 
     x.listen = {};
     log.debug('TODO add path, peer, link, and connect listeners');
+    x.listen['link'] = function(open, cbOpen){
+      var link = mesh.links[hn];
+      if(!link) return cbOpen('no link');
+      link.inLink(open, cbOpen);
+    }
     
     // re-add all the pipes so they link now
     var pipes = mesh.piper(hn);
@@ -371,39 +381,59 @@ exports.mesh = function(args, cbMesh)
       
       // link-packet validation handler, defaults to allow all if not given
       link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
-      
-      // try to create/sync a link channel
+
+      // generic handler for any active channel
+      link.receiving = function(err, packet, cbChan){
+        if(err) return link.setUp(err);
+        link.onLink(packet, function(err, packet){
+          link.setUp(err);
+          if(packet) link.channel.send(packet);
+          cbChan(err);
+        });
+      }
+
+      // try to create/sync a link channel w/ active exchange
       link.sync = function(x)
       {
         // make sure we can
         if(!x.session) return log.debug('no session no sync');
 
+        // if existing channel and mismatch, deref it
+        if(link.channel && x.channels[link.channel.id] != link.channel) link.channel = false;
+
         // always fetch a new packet to send
-        link.onLink(undefined,function(err,packet){
+        link.onLink(undefined, function(err,packet){
           if(err) return log.debug('onLink err',hn,err);
           if(!packet) packet = {json:{}};
 
-          // need to create a new channel
-          if(!link.channel || x.channels[link.channel.id] != link.channel)
+          // may need to create a new outoing channel
+          if(!link.channel)
           {
             packet.json.type = 'link';
-            packet.json.c = x.cid();
             link.channel = x.channel(packet);
-            link.channel.receiving = function(err, packet, cbChan){
-              if(err) return link.setUp(err);
-              link.onLink(packet, function(err, packet){
-                if(err) link.setUp(err);
-                if(packet) link.channel.send(packet);
-                cbChan(err);
-              });
-            }
+            link.channel.receiving = link.receiving;
           }
 
           log.debug('sending link',hn,packet.json);
           link.channel.send(packet);
         });
-
-        
+      }
+      
+      // handle new incoming link requests
+      link.inLink = function(open, cbOpen)
+      {
+        // if older open, silent drop it
+        if(link.channel && link.channel.id > open.json.c)
+        {
+          log.debug('ignoring older link open',open.json);
+          return cbOpen();
+        }
+        // create channel and process open
+        log.debug('new incoming link',open.json);
+        link.channel = x.channel(open);
+        link.channel.receiving = link.receiving;
+        link.channel.receive(open);
+        cbOpen();
       }
 
       link.ups = [];
@@ -449,12 +479,6 @@ exports.mesh = function(args, cbMesh)
         mesh.pipe(link.hashname, path);
       }
       
-      // handle incoming link channel open request
-      link.inLink = function(open)
-      {
-        log.debug('TODO validate link open and setUp(true/false)');
-      }
-
       // run extensions per link
       mesh.extended.forEach(function(ext){
         if(typeof ext.link != 'function') return;

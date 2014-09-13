@@ -238,7 +238,7 @@ exports.mesh = function(args, cbMesh)
     log.debug('discovery is',opts?'on':'off');
     mesh.discoverable = opts;
     // notify all extensions
-    var extensions = mesh.extended;
+    var extensions = mesh.extended.slice(0);
     function iter(err)
     {
       if(err) return cbDiscover(err);

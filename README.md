@@ -90,7 +90,7 @@ mesh.route(true); // to route for everyone on the mesh
 Links can only be established by default when the other endpoint's identity is known ahead of time unless discovery mode is enabled. This mode enables a server model where one endpoint can accept new links from unknown ones.  Discovery mode also enables any supported transport to announce and discover other endpoints also in discovery mode that are available on a local network (for pairing).
 
 ````js
-mesh.discover(callback); // callback(hashname) is called for any discovered hashname, use .link to accept or ignore to deny
+mesh.discover({discover:callback},cb); // callback(hashname,path) is called for any discovered hashname, use .link to accept or ignore to deny
 ````
 
 ## Extensions
@@ -133,16 +133,14 @@ Using an interface like:
 ````
 var tpx = require('telehash-x');
 // mesh.receive = function(packet,pipe){ };
-// mesh.transports = [];
-tpx.extend(mesh,function(err){
-  // mesh.transports.push(tp);
+tpx.mesh(mesh,function(err, tp){
   tp.pipe(path, function(pipe){
     pipe.path; // current json object (if addressable)
     pipe.on('keepalive', function(){}) // adds callback, return false to unregister, called on all events
     pipe.send(packet)
   });
   var paths = tp.paths(); // return array of current addressible paths, if any
-  tp.discovery(packet, cb); // enables/disables discovery mode, will create new pipes for incoming, cb when done
+  tp.discover({packet:packet}, cb); // enables/disables discovery mode, will create new pipes for incoming, cb when done
 });
 ````
 

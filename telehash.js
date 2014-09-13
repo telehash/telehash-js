@@ -233,18 +233,21 @@ exports.mesh = function(args, cbMesh)
   // enabled discovery mode
   mesh.discover = function(opts, cbDiscover)
   {
-    if(arguments.length == 1)
-    {
-      cbDiscover = opts;
-      opts = {};
-    }
-    log.debug('discovery is',cbDiscover?'on':'off');
-    mesh.onDiscover = (typeof cbDiscover != 'function') ? cbDiscover : false;
+    if(!cbDiscover) cbDiscover = function(err){if(err) log.error(err)};
+    if(opts && typeof opts.discover != 'function') return cbDiscover('requires discover callback to be enabled');
+    log.debug('discovery is',opts?'on':'off');
+    mesh.discoverable = opts;
     // notify all extensions
-    mesh.extended.forEach(function(ext){
-      if(typeof ext.discover != 'function') return;
-      ext.discover(opts, mesh.onDiscover);
-    });
+    var extensions = mesh.extended;
+    function iter(err)
+    {
+      if(err) return cbDiscover(err);
+      var ext = extensions.shift();
+      if(!ext) return cbDiscover();
+      if(typeof ext.discover != 'function') return iter();
+      ext.discover(opts,iter);
+    }
+    iter();
   }
   
   // have exchange start using this pipe, sync all w/ new handshake

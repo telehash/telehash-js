@@ -101,7 +101,7 @@ describe('telehash', function(){
     }};
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       mesh.extend(ext, function(){
-        mesh.discover({},function(){});
+        mesh.discover({discover:function(){}});
       });
     });
   });

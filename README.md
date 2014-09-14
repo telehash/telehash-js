@@ -1,6 +1,7 @@
 # Overview
 
 [![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
+[![Build Status](https://travis-ci.org/telehash/node-telehash.svg?branch=v3)](https://travis-ci.org/telehash/node-telehash)
 
 This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md) for both node and browserify.
 

@@ -2,6 +2,7 @@ var crypto = require('crypto');
 var e3x = require('e3x');
 var hashname = require('hashname');
 var base32 = hashname.base32;
+var lob = require('lob-enc');
 
 exports.Pipe = require('./pipe').Pipe;
 
@@ -341,6 +342,35 @@ exports.mesh = function(args, cbMesh)
       if(!link) return cbOpen('no link');
       args.x = x;
       link.inLink(args, open, cbOpen);
+    }
+    x.listen['path'] = function(args, open, cbOpen){
+      // go through all the pipes we have and send a response
+      // add any of the included paths, and send to them too
+    }
+    x.listen['peer'] = function(args, open, cbOpen){
+      // drop if we don't know the recipient
+      // drop if not routing to them
+      // create tunnel
+    }
+    x.listen['connect'] = function(args, open, cbOpen){
+      var attached = lob.decode(open.body);
+      if(!attached) return log.debug('dropping connect, invalid attached');
+
+      var route = new exports.Pipe('peer');
+      route.path = {type:'peer',hn:hn};
+      log.debug('TODO create real peer pipe');
+      if(attached.head.length <= 1) return mesh.receive(attached,route);
+
+      // see if we trust this hashname
+      var hn = hashname.fromPacket(attached);
+      if(!hn) return log.debug('dropping connect, no hashname',attached.json);
+      if(!mesh.json[hn])
+      {
+        log.debug('untrusted hashname',hn);
+        if(mesh.onDiscover) mesh.onDiscover(hn,route.path);
+        return;
+      }
+      log.debug('TODO add new peer path, sync');
     }
     
     // re-add all the pipes so they link now

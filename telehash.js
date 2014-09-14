@@ -163,7 +163,10 @@ exports.mesh = function(args, cbMesh)
       // if channel exists, handle it
       if(x.channel[inner.json.c]) return x.channel[inner.json.c].receive(inner);
 
-      // new channel, do we handle this type
+      // new channel open, valid?
+      if(inner.json.err || !inner.json.type) return log.debug('invalid channel open',inner.json);
+
+      // do we handle this type
       log.debug('new channel open',inner.json);
       function bouncer(err)
       {

@@ -1,9 +1,10 @@
 # Overview
 
-[![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
 [![Build Status](https://travis-ci.org/telehash/node-telehash.svg?branch=v3)](https://travis-ci.org/telehash/node-telehash)
 
-This module presents a simple high-level API for using [telehash](https://github.com/telehash/telehash.org/blob/master/protocol.md) for both node and browserify.
+[![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
+
+This module presents a simple high-level API for using [telehash v3](https://github.com/telehash/telehash.org/tree/v3/v3) for both node and browserify.
 
 The browser crypto that powers this is only possible thanks to the incredible work done by the team behind [Forge](https://github.com/digitalbazaar/forge), [Tom Wu](http://www-cs-students.stanford.edu/~tjw/), and the [Sanford Javascript Crypto Library](https://github.com/bitwiseshiftleft/sjcl).
 

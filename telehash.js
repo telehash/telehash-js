@@ -143,7 +143,7 @@ exports.mesh = function(args, cbMesh)
     // all channel packets
     if(packet.head.length == 0)
     {
-      var token = packet.head.slice(0,16).toString('hex');
+      var token = packet.body.slice(0,16).toString('hex');
       var x = mesh.exchanges[token];
       if(!x)
       {
@@ -158,14 +158,23 @@ exports.mesh = function(args, cbMesh)
       }
       
       // make sure we track this pipe
-      mesh.xpipe(x,pipe);
+      mesh.piper(hn,pipe,true);
 
       // if channel exists, handle it
       if(x.channel[inner.json.c]) return x.channel[inner.json.c].receive(inner);
 
       // new channel, do we handle this type
-      log.debug('TODO new channel open',inner.json);
-      return;
+      log.debug('new channel open',inner.json);
+      function bouncer(err)
+      {
+        if(!err) return;
+        var json = {err:err};
+        json.c = inner.json.c;
+        log.debug('bouncing open',json);
+        x.send({json:json});
+      }
+      if(x.listen[inner.json.type]) return x.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
+      return bouncer('unknown type');
     }
     
     // all message (handshake) packets
@@ -319,14 +328,16 @@ exports.mesh = function(args, cbMesh)
       mesh.err = self.err;
       return false;
     }
+    log.debug('adding exchange',hn,x.id);
     mesh.exchanges[hn] = mesh.exchanges[x.id] = x;
 
     x.listen = {};
-    log.debug('TODO add path, peer, link, and connect listeners');
-    x.listen['link'] = function(open, cbOpen){
+    log.debug('TODO add path, peer, and connect listeners');
+    x.listen['link'] = function(args, open, cbOpen){
       var link = mesh.links[hn];
       if(!link) return cbOpen('no link');
-      link.inLink(open, cbOpen);
+      args.x = x;
+      link.inLink(args, open, cbOpen);
     }
     
     // re-add all the pipes so they link now
@@ -341,6 +352,7 @@ exports.mesh = function(args, cbMesh)
       if(!packet) return log.debug('sending no packet',packet);
       var pipes = mesh.piper(hn);
       if(pipes.length == 0) return log.debug('no pipes for',hn);
+      log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',hn.substr(0,8),pipes[0].path);
       pipes[0].send(packet);
     }
     
@@ -415,12 +427,12 @@ exports.mesh = function(args, cbMesh)
           }
 
           log.debug('sending link',hn,packet.json);
-          link.channel.send(packet);
+          if(!link.channel.send(packet)) log.debug('channel send failed',x.err);
         });
       }
       
       // handle new incoming link requests
-      link.inLink = function(open, cbOpen)
+      link.inLink = function(args, open, cbOpen)
       {
         // if older open, silent drop it
         if(link.channel && link.channel.id > open.json.c)
@@ -430,7 +442,7 @@ exports.mesh = function(args, cbMesh)
         }
         // create channel and process open
         log.debug('new incoming link',open.json);
-        link.channel = x.channel(open);
+        link.channel = args.x.channel(open);
         link.channel.receiving = link.receiving;
         link.channel.receive(open);
         cbOpen();

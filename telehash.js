@@ -237,7 +237,7 @@ exports.mesh = function(args, cbMesh)
   mesh.route = function(isRouting)
   {
     log.debug('setting mesh routing',isRouting);
-    mesh.isRouting = isRouting;
+    mesh.route = isRouting;
     // accept all connect channels to any link
   }
   
@@ -348,9 +348,9 @@ exports.mesh = function(args, cbMesh)
       // add any of the included paths, and send to them too
     }
     x.listen['peer'] = function(args, open, cbOpen){
-      // drop if we don't know the recipient
-      // drop if not routing to them
-      // create tunnel
+      if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);
+      if(!(mesh.route || mesh.links[open.json.peer].json.route)) return log.debug('routing not enabled',open.json.peer);
+      log.debug('TODO create peer/connect tunnel pipe include open')
     }
     x.listen['connect'] = function(args, open, cbOpen){
       var attached = lob.decode(open.body);

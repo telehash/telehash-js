@@ -362,12 +362,12 @@ exports.mesh = function(args, cbMesh)
       if(attached.head.length <= 1) return mesh.receive(attached,route);
 
       // see if we trust this hashname
-      var hn = hashname.fromPacket(attached);
-      if(!hn) return log.debug('dropping connect, no hashname',attached.json);
-      if(!mesh.json[hn])
+      var from = hashname.fromPacket(attached);
+      if(!from) return log.debug('dropping connect, no hashname',attached.json);
+      if(!mesh.json[from])
       {
-        log.debug('untrusted hashname',hn);
-        if(mesh.onDiscover) mesh.onDiscover(hn,route.path);
+        log.debug('untrusted hashname',from);
+        if(mesh.onDiscover) mesh.onDiscover(from,route.path);
         return;
       }
       log.debug('TODO add new peer path, sync');
@@ -380,13 +380,17 @@ exports.mesh = function(args, cbMesh)
       mesh.piper(hn,pipe);
     });
 
-    x.sending = function(packet)
+    x.sending = function(packet, pipe)
     {
       if(!packet) return log.debug('sending no packet',packet);
-      var pipes = mesh.piper(hn);
-      if(pipes.length == 0) return log.debug('no pipes for',hn);
-      log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',hn.substr(0,8),pipes[0].path);
-      pipes[0].send(packet);
+      if(!pipe)
+      {
+        var pipes = mesh.piper(hn);
+        if(pipes.length == 0) return log.debug('no pipes for',hn);
+        pipe = pipes[0];
+      }
+      log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',hn.substr(0,8),pipe.path);
+      pipe.send(packet);
     }
     
     // any event, sync all pipes w/ a new handshake

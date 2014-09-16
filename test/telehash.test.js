@@ -146,4 +146,31 @@ describe('telehash', function(){
     });
   });
 
+  it('should handle incoming path', function(done){
+    telehash.log({debug:console.log});
+    telehash.mesh({id:idA,extensions:[]},function(err, meshA){
+      expect(err).to.not.exist;
+      telehash.mesh({id:idB,extensions:[]},function(err, meshB){
+        expect(err).to.not.exist;
+
+        // create virtual pipes
+        var pipeAB = new telehash.Pipe('test');
+        var pipeBA = new telehash.Pipe('test');
+        meshA.pipes[idB.hashname] = [pipeAB];
+        meshB.pipes[idA.hashname] = [pipeBA];
+        pipeAB.send = function(packet){meshB.receive(packet,pipeBA)};
+        pipeBA.send = function(packet){meshA.receive(packet,pipeAB)};
+
+        var linkAB = meshA.link({keys:idB.keys});
+        expect(linkAB).to.exist;
+        linkAB.up = function(online){
+          expect(online).to.be.true;
+          done();
+        }
+        var linkBA = meshB.link({keys:idA.keys});
+        expect(linkBA).to.exist;
+      });
+    });
+  });
+
 });

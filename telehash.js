@@ -336,7 +336,6 @@ exports.mesh = function(args, cbMesh)
     mesh.exchanges[hn] = mesh.exchanges[x.id] = x;
 
     x.listen = {};
-    log.debug('TODO add path, peer, and connect listeners');
     x.listen['link'] = function(args, open, cbOpen){
       var link = mesh.links[hn];
       if(!link) return cbOpen('no link');
@@ -386,13 +385,6 @@ exports.mesh = function(args, cbMesh)
       log.debug('TODO add new peer path, sync');
     }
     
-    // re-add all the pipes so they link now
-    var pipes = mesh.piper(hn);
-    mesh.pipes[hn] = [];
-    pipes.forEach(function(pipe){
-      mesh.piper(hn,pipe);
-    });
-
     x.sending = function(packet, pipe)
     {
       if(!packet) return log.debug('sending no packet',packet);
@@ -414,6 +406,16 @@ exports.mesh = function(args, cbMesh)
         pipe.send(handshake);
       });
     }
+
+    // re-add any existing pipes so they link to this x now, triggers keepalives/handshakes
+    var pipes = mesh.piper(hn);
+    mesh.pipes[hn] = [];
+    pipes.forEach(function(pipe){
+      mesh.piper(hn,pipe);
+    });
+    
+    // run a keepalive to finish booting this exchange
+    x.keepalive();
     
     return x;
   }
@@ -502,7 +504,7 @@ exports.mesh = function(args, cbMesh)
       link.setUp = function(err){
         if(err)
         {
-          log.debug('link error',isUp,err);
+          if(isUp) log.debug('link error',err);
           link.err = err;
           var isUp = false;
         }else{

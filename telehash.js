@@ -344,8 +344,21 @@ exports.mesh = function(args, cbMesh)
       link.inLink(args, open, cbOpen);
     }
     x.listen['path'] = function(args, open, cbOpen){
-      // go through all the pipes we have and send a response
+      var did = [];
+      function pong(pipe)
+      {
+        if(did.indexOf(pipe) >= 0) return;
+        did.push(pipe);
+        var json = {c:open.json.c};
+        if(pipe.path) packet.path = pipe.path;
+        x.send({json:json},pipe);
+      }
+      // go through all the pipes we have already and send a response
+      mesh.pipes[hn].forEach(pong);
       // add any of the included paths, and send to them too
+      if(Array.isArray(open.paths)) open.paths.forEach(function(path){
+        mesh.pipe(hn,path,pong);
+      });
     }
     x.listen['peer'] = function(args, open, cbOpen){
       if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);

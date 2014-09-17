@@ -349,7 +349,7 @@ exports.mesh = function(args, cbMesh)
         if(did.indexOf(pipe) >= 0) return;
         did.push(pipe);
         var json = {c:open.json.c};
-        if(pipe.path) packet.path = pipe.path;
+        if(pipe.path) json.path = pipe.path;
         x.send({json:json},pipe);
       }
       // go through all the pipes we have already and send a response
@@ -440,7 +440,7 @@ exports.mesh = function(args, cbMesh)
     var link = mesh.links[json.hashname];
     if(!link)
     {
-      link = {hashname:json.hashname, json:json, isLink:true};
+      link = {hashname:json.hashname, json:json, isLink:true, isUp:false};
       mesh.links[link.hashname] = link;
       
       // link-packet validation handler, defaults to allow all if not given
@@ -507,10 +507,35 @@ exports.mesh = function(args, cbMesh)
           var isUp = true;
         }
         if(link.isUp === isUp) return;
+        log.debug('link is',isUp?'up':'down');
         link.isUp = isUp;
         link.ups.forEach(function(up){ up(isUp); });
         if(typeof link.up == 'function') link.up(isUp);
-      };
+      }
+      
+      // util to force a path sync
+      link.ping = function(done)
+      {
+        if(typeof done != 'function') done = function(){};
+        if(!link.isUp) return done('offline');
+        var json = {type:'path'};
+        json.paths = mesh.paths();
+        var channel = mesh.x(link.hashname).channel({json:json});
+        channel.receiving = function(err, packet, cbChan)
+        {
+          // process any responses
+          if(packet)
+          {
+            log.debug('path response, TODO get public udp paths',packet.json);
+          }
+          // only callback once w/ status
+          if(done) done(err);
+          done = false;
+          cbChan();
+        }
+        channel.send({json:json});
+      }
+      link.ups.push(link.ping); // auto-ping on first up
 
       // accept and forward any connect to this link
       link.route = function(isRouting)

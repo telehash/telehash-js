@@ -146,7 +146,7 @@ describe('telehash', function(){
     });
   });
 
-  it('should handle incoming path', function(done){
+  it('should create a full link', function(done){
     telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{}},function(err, meshA){
       expect(err).to.not.exist;

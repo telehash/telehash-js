@@ -148,9 +148,9 @@ describe('telehash', function(){
 
   it('should handle incoming path', function(done){
     telehash.log({debug:console.log});
-    telehash.mesh({id:idA,extensions:[]},function(err, meshA){
+    telehash.mesh({id:idA,extensions:{}},function(err, meshA){
       expect(err).to.not.exist;
-      telehash.mesh({id:idB,extensions:[]},function(err, meshB){
+      telehash.mesh({id:idB,extensions:{}},function(err, meshB){
         expect(err).to.not.exist;
 
         // create virtual pipes

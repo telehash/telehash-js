@@ -162,7 +162,7 @@ exports.mesh = function(args, cbMesh)
       mesh.piper(hn,pipe,true);
 
       // if channel exists, handle it
-      if(x.channel[inner.json.c]) return x.channel[inner.json.c].receive(inner);
+      if(x.channels[inner.json.c]) return x.channels[inner.json.c].receive(inner);
 
       // new channel open, valid?
       if(inner.json.err || !inner.json.type) return log.debug('invalid channel open',inner.json);
@@ -486,17 +486,13 @@ exports.mesh = function(args, cbMesh)
       // handle new incoming link requests
       link.inLink = function(args, open, cbOpen)
       {
-        // if older open, silent drop it
-        if(link.channel && link.channel.id > open.json.c)
-        {
-          log.debug('ignoring older link open',open.json);
-          return cbOpen();
-        }
         // create channel and process open
         log.debug('new incoming link',open.json);
-        link.channel = args.x.channel(open);
-        link.channel.receiving = link.receiving;
-        link.channel.receive(open);
+        var channel = args.x.channel(open);
+        channel.receiving = link.receiving;
+        channel.receive(open);
+        // if newer link channel, use it as the default
+        if(link.channel && link.channel.id < channel.id) link.channel = channel;
         cbOpen();
       }
 

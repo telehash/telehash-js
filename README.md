@@ -79,22 +79,26 @@ var link = mesh.link(hashname, function(incoming, cb){
 
 ## Routing
 
+By default every mesh will allow routing between any of its active links to assist in p2p connectivity.
+
 One or more routers can be used by default to help establish all links, and/or they can be added individually to each link.
 
 ````js
 mesh.router({keys:{},paths:{}}); // for all links
 link.router({keys:{},paths:{}}); // for just this link
 mesh.router(link); // an existing link can be passed in instead
-link.route(true); // enable being a router to this link for anyone in the mesh
-mesh.route(true); // to route for everyone on the mesh
 ````
+
+Whenever a default router is added, it will also be advertised to other links as another connectivity path back to this endpoint.
 
 ## Discovery Mode
 
-Links can only be established by default when the other endpoint's identity is known ahead of time unless discovery mode is enabled. This mode enables a server model where one endpoint can accept new links from unknown ones.  Discovery mode also enables any supported transport to announce and discover other endpoints also in discovery mode that are available on a local network (for pairing).
+By default links can only be established with a known hashname, which requires apps to have an independent way to exchange hashnames beforehand. Discovery mode enables a server model where an endpoint can accept links from new hashnames it doesn't know yet.  This means that the endpoint will reveal itself to unknown and not-yet-trusted hashnames, it can be discovered by anyone with access to a local network or it's network information so the mode should be used sparingly or only in public server models.
+
+Discovery mode also enables any supported network transport to announce and discover other endpoints that are simultaneously discoverable locally. This can be used for initial pairing of two hashnames.
 
 ````js
-mesh.discover({discover:callback},cb); // callback({hashname:'',keys:{},paths:{}}) is called for any discovered hashname, use .link to accept or ignore to deny
+mesh.discover({discover:callback},cb); // callback({hashname:'',keys:{},paths:{}}) is called for any discovered hashname, use .link to accept or just ignore to deny
 ````
 
 ## Extensions

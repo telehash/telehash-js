@@ -393,6 +393,7 @@ exports.mesh = function(args, cbMesh)
         if(mesh.onDiscover) mesh.onDiscover(from);
         return;
       }
+      
       log.debug('TODO add new peer path, sync');
     }
     

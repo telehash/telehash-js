@@ -451,7 +451,7 @@ exports.mesh = function(args, cbMesh)
     var link = mesh.links[json.hashname];
     if(!link)
     {
-      link = {hashname:json.hashname, json:json, isLink:true, isUp:false};
+      link = {hashname:json.hashname, json:json, isLink:true};
       mesh.links[link.hashname] = link;
       
       // link-packet validation handler, defaults to allow all if not given
@@ -459,9 +459,9 @@ exports.mesh = function(args, cbMesh)
 
       // generic handler for any active channel
       link.receiving = function(err, packet, cbChan){
-        if(err) return link.setUp(err);
+        if(err) return link.setStatus(err);
         link.onLink(packet, function(err, packet){
-          link.setUp(err);
+          link.setStatus(err);
           if(packet) link.channel.send(packet);
           cbChan(err);
         });
@@ -507,28 +507,33 @@ exports.mesh = function(args, cbMesh)
         cbOpen();
       }
 
-      link.ups = [];
-      link.setUp = function(err){
-        if(err)
-        {
-          if(isUp) log.debug('link error',err);
-          link.err = err;
-          var isUp = false;
-        }else{
-          var isUp = true;
-        }
-        if(link.isUp === isUp) return;
-        log.debug('link is',isUp?'up':'down');
-        link.isUp = isUp;
-        link.ups.forEach(function(up){ up(isUp); });
-        if(typeof link.up == 'function') link.up(isUp);
+      // manage link status
+      link.onStatus = [];
+      link.err = 'init';
+      link.setStatus = function(err){
+        if(link.err === err) return;
+        link.err = err;
+        log.debug('link is',link.err||'up');
+        link.onStatus.forEach(function(cbStatus){
+          cbStatus(link.err, link);
+        });
+      }
+      
+      // app can add/set link status event callback 
+      link.status = function(cbStatus){
+        if(typeof cbStatus != 'function') return link.err;
+        if(link.onStatus.indexOf(cbStatus) == -1) link.onStatus.push(cbStatus);
+        // if we already have a status, call immediately
+        if(link.err != 'init') process.nextTick(function(){
+          cbStatus(link.err, link);
+        });
       }
       
       // util to force a path sync
       link.ping = function(done)
       {
         if(typeof done != 'function') done = function(){};
-        if(!link.isUp) return done('offline');
+        if(link.err) return done(link.err);
         var json = {type:'path'};
         json.paths = mesh.paths();
         var channel = mesh.x(link.hashname).channel({json:json});
@@ -546,7 +551,7 @@ exports.mesh = function(args, cbMesh)
         }
         channel.send({json:json});
       }
-      link.ups.push(link.ping); // auto-ping on first up
+      link.onStatus.push(link.ping); // auto-ping on first status
 
       // accept and forward any connect to this link
       link.route = function(isRouting)
@@ -586,9 +591,6 @@ exports.mesh = function(args, cbMesh)
       if(json.csid) mesh.x(link.hashname);
     }
     
-    // set status down
-    link.setUp('initializing');
-
     // set any paths given
     if(Array.isArray(args.paths)) args.paths.forEach(link.addPath);
     

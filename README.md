@@ -49,13 +49,15 @@ With just a hashname (requires a router to assist):
 
 ````js
 var link = mesh.link(hashname);
-// always offline by default, signals when up
-link.up = function(online){
-  if(online) {
-    console.log('connected');
-    // can do any other link.* methods
+// will be called when link status changes, err is undefined when link is up
+link.status(function(err){
+  if(err) {
+    console.log('disconnected',err);
+    return;
   }
-};
+  console.log('connected');
+  // can do any other link.* methods
+});
 ````
 
 Can establish a link directly:

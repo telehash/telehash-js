@@ -181,10 +181,10 @@ describe('telehash', function(){
 
         var linkAB = meshA.link({keys:idB.keys});
         expect(linkAB).to.exist;
-        linkAB.up = function(online){
-          expect(online).to.be.true;
+        linkAB.status(function(err){
+          expect(err).to.not.exist;
           done();
-        }
+        });
         var linkBA = meshB.link({keys:idA.keys});
         expect(linkBA).to.exist;
       });

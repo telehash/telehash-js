@@ -36,10 +36,10 @@ describe('node-telehash', function(){
         expect(err).to.not.exist;
         var linkBA = meshB.link({keys:idA.keys,paths:meshA.paths()});
         expect(linkAB).to.exist;
-        linkBA.up = function(online){
-          expect(online).to.be.true;
+        linkBA.status(function(err){
+          expect(err).to.not.exist;
           done();
-        }
+        });
       });
     });
   });

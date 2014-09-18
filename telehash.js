@@ -200,8 +200,13 @@ exports.mesh = function(args, cbMesh)
       }
       if(!mesh.json[hn])
       {
-        log.debug('untrusted hashname',hn);
-        if(mesh.onDiscover) mesh.onDiscover(hn,pipe.path);
+        // build a from json container
+        var from = {hashname:hn,paths:[]};
+        from.csid = packet.head.toString('hex');
+        from.key = inner.body;
+        if(pipe.path) from.paths.push(pipe.path);
+        log.debug('untrusted hashname',from);
+        if(mesh.discoverable) mesh.discoverable.discover(from);
         return;
       }
       var x = mesh.x(hn);
@@ -362,24 +367,30 @@ exports.mesh = function(args, cbMesh)
     x.listen['peer'] = function(args, open, cbOpen){
       if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);
       if(!(mesh.route || mesh.links[open.json.peer].json.route)) return log.debug('routing not enabled',open.json.peer);
-      log.debug('TODO create peer/connect tunnel pipe include open')
+      log.debug('TODO peer/connect relay');
+      // if encrypted, just forward directly
+      // if not, send via connect
     }
     x.listen['connect'] = function(args, open, cbOpen){
       var attached = lob.decode(open.body);
       if(!attached) return log.debug('dropping connect, invalid attached');
 
-      var route = new exports.Pipe('peer');
-      route.path = {type:'peer',hn:hn};
-      log.debug('TODO create real peer pipe');
-      if(attached.head.length <= 1) return mesh.receive(attached,route);
+      if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
+
+      // who is this from?
+      var from = {};
+      from.hashname = hashname.fromPacket(attached);
+      if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
+      from.csid = hashname.match(mesh.keys,attached.json);
+      if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
+      from.paths = [{type:'peer',hn:hn}];
+      from.key = attached.body;
 
       // see if we trust this hashname
-      var from = hashname.fromPacket(attached);
-      if(!from) return log.debug('dropping connect, no hashname',attached.json);
-      if(!mesh.json[from])
+      if(!mesh.json[hn])
       {
         log.debug('untrusted hashname',from);
-        if(mesh.onDiscover) mesh.onDiscover(from,route.path);
+        if(mesh.onDiscover) mesh.onDiscover(from);
         return;
       }
       log.debug('TODO add new peer path, sync');

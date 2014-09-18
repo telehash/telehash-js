@@ -92,7 +92,7 @@ mesh.route(true); // to route for everyone on the mesh
 Links can only be established by default when the other endpoint's identity is known ahead of time unless discovery mode is enabled. This mode enables a server model where one endpoint can accept new links from unknown ones.  Discovery mode also enables any supported transport to announce and discover other endpoints also in discovery mode that are available on a local network (for pairing).
 
 ````js
-mesh.discover({discover:callback},cb); // callback(hashname,path) is called for any discovered hashname, use .link to accept or ignore to deny
+mesh.discover({discover:callback},cb); // callback({hashname:'',keys:{},paths:{}}) is called for any discovered hashname, use .link to accept or ignore to deny
 ````
 
 ## Extensions

@@ -1,5 +1,6 @@
 var expect = require('chai').expect;
 var telehash = require('../telehash.js');
+var lob = require('lob-enc');
 
 describe('telehash', function(){
   var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};
@@ -17,7 +18,7 @@ describe('telehash', function(){
     telehash.log({debug:function(msg){
       expect(msg).to.exist;
       // disable
-      telehash.log({debug:function(){}});
+      telehash.log({debug:console.log});
       done();
     }});
     // just run something that logs
@@ -106,6 +107,22 @@ describe('telehash', function(){
     });
   });
 
+  it('should discover', function(done){
+    telehash.mesh({id:idB,extensions:{}},function(err, mesh){
+      mesh.discover({discover:function(from){
+        expect(from).to.be.an('object');
+        expect(from.csid).to.be.equal('1a');
+        expect(from.hashname).to.be.equal(idA.hashname);
+        expect(from.paths[0].type).to.be.equal('test');
+        expect(mesh.link(from)).to.exist;
+        done();
+      }},function(err){
+        expect(err).to.not.exist;
+        mesh.receive(lob.decode(new Buffer('00011a03fd0a483be4e3842de84ad33d384410a2c66d2ae2848ea2aeafd3ee02e8814ef448de24750084dd179a06a44e463446f23db53a41cab3ce18d139451d9a05073570d6521f','hex')),{path:{'type':'test'}});
+      });
+    });
+  });
+
   it('should create a pipe to a transport', function(done){
     var ptest = {type:'test',test:true};
     var ext = {name:'test',mesh:function(mesh,cbExt){
@@ -133,6 +150,7 @@ describe('telehash', function(){
         pipe.onSend = function(packet){
           expect(Buffer.isBuffer(packet)).to.be.true;
           expect(packet.length).to.be.equal(72);
+          console.log('handshakeAB',packet.toString('hex'));
           done();
         };
         cbPipe(pipe);

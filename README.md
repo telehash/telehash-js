@@ -84,12 +84,14 @@ By default every mesh will allow routing between any of its active links to assi
 One or more routers can be used by default to help establish all links, and/or they can be added individually to each link.
 
 ````js
-mesh.router({keys:{},paths:{}}); // for all links
-link.router({keys:{},paths:{}}); // for just this link
-mesh.router(link); // an existing link can be passed in instead
+mesh.router(link); // any link can be used as a default router
+mesh.link({...,router:true}); // another way to set a link as a default router from the start
+
+link.router(link); // just one link can be used as a router for another
+mesh.link({...,paths:[{type:'peer',hn:'linked'}]}); // including a peer path to an already-linked hn will automatically use it as a router
 ````
 
-Whenever a default router is added, it will also be advertised to other links as another connectivity path back to this endpoint.
+Whenever a default router is added, it will also be advertised to other links as a peer path for this endpoint.
 
 ## Discovery Mode
 

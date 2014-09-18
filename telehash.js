@@ -351,23 +351,24 @@ exports.mesh = function(args, cbMesh)
 
       // manage link status
       link.onStatus = [];
-      link.err = 'init';
+      link.down = 'init';
       link.setStatus = function(err){
-        if(link.err === err) return;
-        link.err = err;
-        log.debug('link is',link.err||'up');
+        if(link.down === err) return;
+        link.down = err;
+        link.up = !link.down; // convenience
+        log.debug('link is',link.down||'up');
         link.onStatus.forEach(function(cbStatus){
-          cbStatus(link.err, link);
+          cbStatus(link.down, link);
         });
       }
       
       // app can add/set link status event callback 
       link.status = function(cbStatus){
-        if(typeof cbStatus != 'function') return link.err;
+        if(typeof cbStatus != 'function') return link.down;
         if(link.onStatus.indexOf(cbStatus) == -1) link.onStatus.push(cbStatus);
         // if we already have a status, call immediately
-        if(link.err != 'init') process.nextTick(function(){
-          cbStatus(link.err, link);
+        if(link.down != 'init') process.nextTick(function(){
+          cbStatus(link.down, link);
         });
       }
       
@@ -375,7 +376,7 @@ exports.mesh = function(args, cbMesh)
       link.ping = function(done)
       {
         if(typeof done != 'function') done = function(){};
-        if(link.err) return done(link.err);
+        if(link.down) return done(link.down);
         var json = {type:'path'};
         json.paths = mesh.paths();
         var channel = mesh.x(link.hashname).channel({json:json});
@@ -403,15 +404,14 @@ exports.mesh = function(args, cbMesh)
       }
       
       // use this info as a router to reach this link
-      link.router = function(direct)
+      link.router = function(router)
       {
-        var hn = (direct && direct.isLink) ? direct.hashname : mesh.router(direct, false);
-        if(!hn)
+        if(!router || !router.isLink)
         {
-          link.err = 'invalid router args';
+          log.warn('invalid link.router args, not a link',direct);
           return false;
         }
-        link.addPath({type:'peer',hn:hn});
+        link.addPath({type:'peer',hn:router.hashname});
         return true;
       }
 

@@ -209,7 +209,9 @@ exports.mesh = function(args, cbMesh)
         if(mesh.discoverable) mesh.discoverable.discover(from);
         return;
       }
-      var x = mesh.x(hn);
+      // TODO here
+      var link = mesh.links[hn];
+      var x = link.x;
       if(!x)
       {
         log.debug('failed to create exchange',mesh.err);
@@ -223,7 +225,7 @@ exports.mesh = function(args, cbMesh)
       if(at >= 0)
       {
         x.flush(); // any existing channels
-        if(mesh.links[hn]) mesh.links[hn].sync(x); // sync link status if any
+        if(mesh.links[hn]) mesh.links[hn].link(x); // sync link status if any
       }
     }
   }
@@ -293,7 +295,7 @@ exports.mesh = function(args, cbMesh)
     var link = mesh.links[json.hashname];
     if(!link)
     {
-      link = {hashname:json.hashname, json:json, isLink:true};
+      link = {hashname:json.hashname, json:json, isLink:true, pipes:[]};
       mesh.links[link.hashname] = link;
       
       // link-packet validation handler, defaults to allow all if not given
@@ -309,14 +311,14 @@ exports.mesh = function(args, cbMesh)
         });
       }
 
-      // try to create/sync a link channel w/ active exchange
-      link.sync = function(x)
+      // try to create/sync a link channel
+      link.link = function()
       {
         // make sure we can
-        if(!x.session) return log.debug('no session no sync');
+        if(!link.x || !link.x.session) return log.debug('no link exchange session');
 
         // if existing channel and mismatch, deref it
-        if(link.channel && x.channels[link.channel.id] != link.channel) link.channel = false;
+        if(link.channel && link.x.channels[link.channel.id] != link.channel) link.channel = false;
 
         // always fetch a new packet to send
         link.onLink(undefined, function(err,packet){
@@ -327,12 +329,12 @@ exports.mesh = function(args, cbMesh)
           if(!link.channel)
           {
             packet.json.type = 'link';
-            link.channel = x.channel(packet);
+            link.channel = link.x.channel(packet);
             link.channel.receiving = link.receiving;
           }
 
           log.debug('sending link',hn,packet.json);
-          if(!link.channel.send(packet)) log.debug('channel send failed',x.err);
+          if(!link.channel.send(packet)) log.debug('channel send failed',link.x.err);
         });
       }
       
@@ -414,60 +416,56 @@ exports.mesh = function(args, cbMesh)
         link.addPath({type:'peer',hn:router.hashname});
         return true;
       }
-
-      link.addPath = function(path)
+      
+      link.sync = function()
       {
-        // add if not in json
-        // remove from json if to a default router
-        mesh.pipe(link.hashname, path);
+        log.debug('link keepalive',link.hashname,typeof link.x);
+        if(!link.x) return true;
+
+        // any keepalive event, sync all pipes w/ a new handshake
+        var handshake = link.x.handshake();
+        link.pipes.forEach(function(pipe){
+          // TODO, skip old ones
+          pipe.send(handshake);
+        });
+        
+        return true;
       }
 
-      // have exchange start using this pipe, sync all w/ new handshake
-      mesh.piper = function(hn,pipe,valid)
+      link.addPipe = function(pipe, valid)
       {
-        // track this pipe for the hashname overall
-        var pipes = mesh.pipes[hn] || [];
-        if(!pipe) return pipes;
-        if(pipes.indexOf(pipe) < 0) pipes.push(pipe);
+        // add if it doesn't exist
+        if(link.pipes.indexOf(pipe) < 0) link.pipes.push(pipe);
+
+        // all keepalives trigger link sync
+        pipe.on('keepalive', link.sync);
 
         // track last time it was valid for sorting
         if(valid) pipe.validAt = Date.now();
 
         // always keep them in sorted order by valid
-        mesh.pipes[hn] = pipes.sort(function(a,b){
+        link.pipes = link.pipes.sort(function(a,b){
           return (b.validAt||0) - (a.validAt||0);
         });
-
-        // wire event to the exchange if we have one
-        var x = mesh.x(hn);
-        if(!x) return pipes;
-        pipe.on('keepalive', x.keepalive);
-    
-        return pipes;
       }
 
-      // create one or more pipes for any path via transports
-      mesh.pipe = function(hn, path, cbPipe)
+      link.addPath = function(path)
       {
-        log.debug('path2pipe',hn,path);
+        // add if not in json
+        // remove from json if to a default router
+        
+        log.debug('addPath pipes',path);
         mesh.extended.forEach(function(ext){
           if(typeof ext.pipe != 'function') return;
           log.debug('ext.pipe',ext.name);
-          ext.pipe(hn, path, function(pipe){
-            mesh.piper(hn,pipe);
+          ext.pipe(link.hashname, path, function(pipe){
+            link.addPipe(pipe);
             pipe.emit('keepalive');
             if(cbPipe) cbPipe(pipe);
           });
         });
       }
-      
-      // run extensions per link
-      mesh.extended.forEach(function(ext){
-        if(typeof ext.link != 'function') return;
-        log.debug('extending link with',ext.name);
-        ext.link(mesh,link);
-      });
-      
+
       // try to create/init exchange if we have key info
       link.exchange = function(csid, key)
       {
@@ -551,28 +549,17 @@ exports.mesh = function(args, cbMesh)
           pipe.send(packet);
         }
     
-        // any event, sync all pipes w/ a new handshake
-        x.keepalive = function(){
-          var handshake = x.handshake();
-          mesh.piper(hn).forEach(function(pipe){
-            // TODO, skip old ones
-            pipe.send(handshake);
-          });
-        }
-
-        // re-add any existing pipes so they link to this x now, triggers keepalives/handshakes
-        var pipes = mesh.piper(hn);
-        mesh.pipes[hn] = [];
-        pipes.forEach(function(pipe){
-          mesh.piper(hn,pipe);
-        });
-    
-        // run a keepalive to finish booting this exchange
-        x.keepalive();
-    
-        return x;
+        // run a fresh sync to finish booting this exchange
+        link.sync();
       }
     }
+    
+    // run extensions per link
+    mesh.extended.forEach(function(ext){
+      if(typeof ext.link != 'function') return;
+      log.debug('extending link with',ext.name);
+      ext.link(mesh,link);
+    });
     
     // set any paths given
     if(Array.isArray(args.paths)) args.paths.forEach(link.addPath);

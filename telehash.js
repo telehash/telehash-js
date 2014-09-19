@@ -191,41 +191,44 @@ exports.mesh = function(args, cbMesh)
         return;
       }
       log.debug('inner',inner.json,inner.body)
-      // get sender hashname
-      var hn = hashname.fromPacket(inner,packet.head);
-      if(!hn)
+
+      // build a from json container
+      var from = {hashname:hn,paths:[]};
+      from.hashname = hashname.fromPacket(inner,packet.head);
+      if(!from.hashname)
       {
         log.debug('invalid handshake, no hashname',inner);
         return;
       }
-      if(!mesh.json[hn])
+      from.csid = packet.head.toString('hex');
+      from.key = inner.body;
+      if(pipe.path) from.paths.push(pipe.path);
+
+      // make sure we have a link
+      if(!mesh.links[from.hashname])
       {
-        // build a from json container
-        var from = {hashname:hn,paths:[]};
-        from.csid = packet.head.toString('hex');
-        from.key = inner.body;
-        if(pipe.path) from.paths.push(pipe.path);
         log.debug('untrusted hashname',from);
         if(mesh.discoverable) mesh.discoverable.discover(from);
         return;
       }
-      // TODO here
-      var link = mesh.links[hn];
-      var x = link.x;
-      if(!x)
+      
+      // merge the json info
+      var link = mesh.link(from);
+      if(!link.x)
       {
-        log.debug('failed to create exchange',mesh.err);
+        log.debug('failed to create exchange',from);
         return;
       }
-      var at = x.sync(packet, inner);
+
+      var at = link.x.sync(packet, inner);
       log.debug('handshake sync',at);
       if(at >= 0) mesh.piper(hn,pipe,true); // add a pipe if valid
-      if(at !== 0) pipe.send(x.handshake(at)); // always send handshake back if not in sync
+      if(at !== 0) pipe.send(link.x.handshake(at)); // always send handshake back if not in sync
       // any valid handshakes, start sending stuff after
       if(at >= 0)
       {
-        x.flush(); // any existing channels
-        if(mesh.links[hn]) mesh.links[hn].link(x); // sync link status if any
+        link.x.flush(); // any existing channels
+        link.link(); // establish link channel
       }
     }
   }

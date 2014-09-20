@@ -42,7 +42,6 @@ describe('telehash', function(){
       expect(mesh).to.be.an('object');
       expect(mesh.hashname).to.be.equal(idA.hashname);
       expect(mesh.router).to.be.a('function');
-      expect(mesh.route).to.be.a('function');
       expect(mesh.link).to.be.a('function');
       expect(mesh.discover).to.be.a('function');
       done();
@@ -55,7 +54,6 @@ describe('telehash', function(){
       expect(link).to.be.an('object');
       expect(link.hashname).to.be.equal(idB.hashname);
       expect(link.router).to.be.a('function');
-      expect(link.route).to.be.a('function');
       done();
     });
   });
@@ -63,9 +61,8 @@ describe('telehash', function(){
   it('should return an exchange', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       var link = mesh.link({keys:idB.keys});
-      var x = mesh.x(link.hashname);
-      expect(x).to.be.an('object');
-      expect(x.sending).to.be.a('function');
+      expect(link.x).to.be.an('object');
+      expect(link.x.sending).to.be.a('function');
       done();
     });
   });
@@ -73,11 +70,10 @@ describe('telehash', function(){
   it('should create a peer pipe', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       var link = mesh.link({keys:idB.keys});
-      mesh.pipe(link.hashname,{type:'peer',hn:link.hashname},function(pipe){
+      link.addPath({type:'peer',hn:link.hashname},function(pipe){
         expect(pipe).to.be.an('object');
         expect(pipe.isPipe).to.be.true;
-        expect(Array.isArray(mesh.pipes[link.hashname])).to.be.true;
-        expect(mesh.pipes[link.hashname].length).to.be.equal(1);
+        expect(link.pipes.length).to.be.equal(1);
         done();
       });
     });
@@ -126,8 +122,8 @@ describe('telehash', function(){
   it('should create a pipe to a transport', function(done){
     var ptest = {type:'test',test:true};
     var ext = {name:'test',mesh:function(mesh,cbExt){
-      cbExt(undefined,{pipe:function(hn,path,cbPipe){
-        expect(hn).to.be.equal(idB.hashname);
+      cbExt(undefined,{pipe:function(link,path,cbPipe){
+        expect(link.hashname).to.be.equal(idB.hashname);
         expect(path).to.be.equal(ptest);
         cbPipe(new telehash.Pipe('test'));
       }});
@@ -135,7 +131,8 @@ describe('telehash', function(){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       mesh.extend(ext,function(err){
         expect(err).to.not.exist;
-        mesh.pipe(idB.hashname,ptest,function(pipe){
+        var link = mesh.link({keys:idB.keys});
+        link.addPath(ptest,function(pipe){
           expect(pipe.type).to.be.equal('test');
           done();
         });
@@ -159,7 +156,7 @@ describe('telehash', function(){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       mesh.extend(ext,function(){
         var link = mesh.link({keys:idB.keys});
-        mesh.pipe(link.hashname,{type:'test'});
+        link.addPath({type:'test'});
       });
     });
   });
@@ -174,18 +171,18 @@ describe('telehash', function(){
         // create virtual pipes
         var pipeAB = new telehash.Pipe('test');
         var pipeBA = new telehash.Pipe('test');
-        meshA.pipes[idB.hashname] = [pipeAB];
-        meshB.pipes[idA.hashname] = [pipeBA];
         pipeAB.send = function(packet){meshB.receive(packet,pipeBA)};
         pipeBA.send = function(packet){meshA.receive(packet,pipeAB)};
 
         var linkAB = meshA.link({keys:idB.keys});
+        linkAB.pipes.push(pipeAB);
         expect(linkAB).to.exist;
         linkAB.status(function(err){
           expect(err).to.not.exist;
           done();
         });
         var linkBA = meshB.link({keys:idA.keys});
+        linkBA.pipes.push(pipeBA);
         expect(linkBA).to.exist;
       });
     });

@@ -146,24 +146,24 @@ exports.mesh = function(args, cbMesh)
     if(packet.head.length == 0)
     {
       var token = packet.body.slice(0,16).toString('hex');
-      var x = mesh.exchanges[token];
-      if(!x)
+      var link = mesh.links[token];
+      if(!link)
       {
         log.debug('dropping unknown channel packet to',token);
         return;
       }
-      var inner = x.receive(packet);
+      var inner = link.x.receive(packet);
       if(!inner)
       {
-        log.debug('error receiving channel packet',x.err);
+        log.debug('error receiving channel packet',link.x.err);
         return;
       }
       
       // make sure we track this pipe
-      mesh.piper(hn,pipe,true);
+      link.addPipe(pipe,true);
 
       // if channel exists, handle it
-      if(x.channels[inner.json.c]) return x.channels[inner.json.c].receive(inner);
+      if(link.x.channels[inner.json.c]) return link.x.channels[inner.json.c].receive(inner);
 
       // new channel open, valid?
       if(inner.json.err || !inner.json.type) return log.debug('invalid channel open',inner.json);
@@ -176,9 +176,9 @@ exports.mesh = function(args, cbMesh)
         var json = {err:err};
         json.c = inner.json.c;
         log.debug('bouncing open',json);
-        x.send({json:json});
+        link.x.send({json:json});
       }
-      if(x.listen[inner.json.type]) return x.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
+      if(link.x.listen[inner.json.type]) return link.x.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
       return bouncer('unknown type');
     }
     
@@ -223,12 +223,12 @@ exports.mesh = function(args, cbMesh)
 
       var at = link.x.sync(packet, inner);
       log.debug('handshake sync',at);
-      if(at >= 0) mesh.piper(hn,pipe,true); // add a pipe if valid
       if(at !== 0) pipe.send(link.x.handshake(at)); // always send handshake back if not in sync
       // any valid handshakes, start sending stuff after
       if(at >= 0)
       {
-        link.x.flush(); // any existing channels
+        link.addPipe(pipe,true); // add a pipe if valid
+        link.x.flush(); // any existing channels can resend
         link.link(); // establish link channel
       }
     }
@@ -345,7 +345,7 @@ exports.mesh = function(args, cbMesh)
       {
         // create channel and process open
         log.debug('new incoming link',open.json);
-        var channel = args.x.channel(open);
+        var channel = link.x.channel(open);
         channel.receiving = link.receiving;
         channel.receive(open);
         // if newer link channel, use it as the default
@@ -439,7 +439,7 @@ exports.mesh = function(args, cbMesh)
       }
 
       // make sure a path is added to the json and pipe created
-      link.addPath = function(path)
+      link.addPath = function(path, cbPath)
       {
         // add to json if not exact duplicate
         if(link.json.paths.filter(function(pold){
@@ -450,7 +450,10 @@ exports.mesh = function(args, cbMesh)
         mesh.extended.forEach(function(ext){
           if(typeof ext.pipe != 'function') return;
           log.debug('ext.pipe',ext.name);
-          ext.pipe(link, path, link.addPipe);
+          ext.pipe(link, path, function(pipe){
+            link.addPipe(pipe);
+            if(cbPath) cbPath(pipe);
+          });
         });
       }
 
@@ -488,15 +491,14 @@ exports.mesh = function(args, cbMesh)
               x.send({json:json},pipe);
             }
             // go through all the pipes we have already and send a response
-            mesh.pipes[hn].forEach(pong);
+            link.pipes.forEach(pong);
             // add any of the included paths, and send to them too
             if(Array.isArray(open.paths)) open.paths.forEach(function(path){
-              mesh.pipe(hn,path,pong);
+              link.addPath(path,pong);
             });
           }
           x.listen['peer'] = function(args, open, cbOpen){
-            if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);
-            if(!(mesh.route || mesh.links[open.json.peer].json.route)) return log.debug('routing not enabled',open.json.peer);
+            if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to unknown',open.json.peer);
             log.debug('TODO peer/connect relay');
             // if encrypted, just forward directly
             // if not, send via connect
@@ -576,18 +578,25 @@ exports.mesh = function(args, cbMesh)
   // add our own peer pipe handler for routers/connects
   mesh.extended.push({
     pipes:[],
-    pipe:function(hn, path, cbPipe){
+    pipe:function(link, path, cbPipe){
       var pipes = this.pipes;
-      var x = mesh.x(hn);
-      if(!x)
-      {
-        log.debug('no router for path',path);
-        return;
-      }
+      if(path.type != 'peer') return;
+      if(!hashname.isHashname(path.hn)) return log.warn(link.hashname,'given invalid peer path',path);
+
       // TODO clean up link.json.paths remove any if to a default router
+
+      // create unique peering id to track created pipes
+      var id = [link.hashname,path.hn].join(':');
+      if(pipes[id]) return pipes[id];
+
+      // make a new pipe for this peering
+      var pipe = pipes[id] = new exports.Pipe('peer');
+      pipe.id = id;
+      pipe.path = path;
+
       // TODO create connect channel and pipe for it
-      log.debug('TODO make connect to router for',hn);
-      cbPipe(new exports.Pipe);
+      log.debug('TODO make connect to router for',id);
+      cbPipe(pipe);
     }
   });
 

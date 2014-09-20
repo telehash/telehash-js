@@ -3,6 +3,7 @@ var e3x = require('e3x');
 var hashname = require('hashname');
 var base32 = hashname.base32;
 var lob = require('lob-enc');
+var stringify = require('json-stable-stringify');
 
 exports.Pipe = require('./pipe').Pipe;
 
@@ -102,7 +103,7 @@ exports.mesh = function(args, cbMesh)
 
     // add/get json store
     var json = mesh.json[args.hashname];
-    if(!json) json = mesh.json[args.hashname] = {hashname:args.hashname};
+    if(!json) json = mesh.json[args.hashname] = {hashname:args.hashname,paths:[]};
 
     // json happy csid/key
     if(args.csid)
@@ -291,15 +292,13 @@ exports.mesh = function(args, cbMesh)
       return false;
     }
 
-    // update json to be a link
-    json.link = true;
-    
-    // create new link if needed
+    // do we already have a link
     var link = mesh.links[json.hashname];
+
+    // this is the big block where we create a new link
     if(!link)
     {
-      link = {hashname:json.hashname, json:json, isLink:true, pipes:[]};
-      mesh.links[link.hashname] = link;
+      link = mesh.links[json.hashname] = {hashname:json.hashname, json:json, isLink:true, pipes:[]};
       
       // link-packet validation handler, defaults to allow all if not given
       link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
@@ -341,7 +340,7 @@ exports.mesh = function(args, cbMesh)
         });
       }
       
-      // handle new incoming link requests
+      // handle new incoming link channel requests
       link.inLink = function(args, open, cbOpen)
       {
         // create channel and process open
@@ -354,7 +353,7 @@ exports.mesh = function(args, cbMesh)
         cbOpen();
       }
 
-      // manage link status
+      // manage link status notification (link.down is any error)
       link.onStatus = [];
       link.down = 'init';
       link.setStatus = function(err){
@@ -367,7 +366,7 @@ exports.mesh = function(args, cbMesh)
         });
       }
       
-      // app can add/set link status event callback 
+      // app can add/set link status change callback 
       link.status = function(cbStatus){
         if(typeof cbStatus != 'function') return link.down;
         if(link.onStatus.indexOf(cbStatus) == -1) link.onStatus.push(cbStatus);
@@ -384,7 +383,7 @@ exports.mesh = function(args, cbMesh)
         if(link.down) return done(link.down);
         var json = {type:'path'};
         json.paths = mesh.paths();
-        var channel = mesh.x(link.hashname).channel({json:json});
+        var channel = link.x.channel({json:json});
         channel.receiving = function(err, packet, cbChan)
         {
           // process any responses
@@ -401,13 +400,6 @@ exports.mesh = function(args, cbMesh)
       }
       link.onStatus.push(link.ping); // auto-ping on first status
 
-      // accept and forward any connect to this link
-      link.route = function(isRouting)
-      {
-        log.debug('setting routing for',isRouting,link.hashname);
-        link.json.route = isRouting;
-      }
-      
       // use this info as a router to reach this link
       link.router = function(router)
       {
@@ -420,31 +412,25 @@ exports.mesh = function(args, cbMesh)
         return true;
       }
       
-      link.sync = function()
-      {
-        log.debug('link keepalive',link.hashname,typeof link.x);
-        if(!link.x) return true;
-
-        // any keepalive event, sync all pipes w/ a new handshake
-        var handshake = link.x.handshake();
-        link.pipes.forEach(function(pipe){
-          // TODO, skip old ones
-          pipe.send(handshake);
-        });
-        
-        return true;
-      }
-
+      // existing pipes, add/update for this link
       link.addPipe = function(pipe, valid)
       {
-        // add if it doesn't exist
-        if(link.pipes.indexOf(pipe) < 0) link.pipes.push(pipe);
-
         // all keepalives trigger link sync
         pipe.on('keepalive', link.sync);
 
+        // add if it doesn't exist
+        if(link.pipes.indexOf(pipe) < 0)
+        {
+          link.pipes.push(pipe);
+          if(valid) link.sync(); // only force new sync on new incoming validated paths
+        }
+
         // track last time it was valid for sorting
-        if(valid) pipe.validAt = Date.now();
+        if(valid)
+        {
+          pipe.validAt = Date.now();
+          link.setStatus(); // good status with any valid pipes
+        }
 
         // always keep them in sorted order by valid
         link.pipes = link.pipes.sort(function(a,b){
@@ -452,108 +438,117 @@ exports.mesh = function(args, cbMesh)
         });
       }
 
+      // make sure a path is added to the json and pipe created
       link.addPath = function(path)
       {
-        // add if not in json
-        // remove from json if to a default router
-        
+        // add to json if not exact duplicate
+        if(link.json.paths.filter(function(pold){
+          return (stringify(pold) == stringify(path));
+        }).length == 0) link.json.paths.push(path);
+
         log.debug('addPath pipes',path);
         mesh.extended.forEach(function(ext){
           if(typeof ext.pipe != 'function') return;
           log.debug('ext.pipe',ext.name);
-          ext.pipe(link.hashname, path, function(pipe){
-            link.addPipe(pipe);
-            pipe.emit('keepalive');
-            if(cbPipe) cbPipe(pipe);
-          });
+          ext.pipe(link, path, link.addPipe);
         });
       }
 
-      // try to create/init exchange if we have key info
-      link.exchange = function(csid, key)
+      // sync all pipes, try to create/init exchange if we have key info
+      link.sync = function()
       {
-        if(link.x) return;
-        if(!mesh.keys[csid]) return log.warn('tried to create exchange for unsupported csid',csid);
-        if(!Buffer.isBuffer(key)) return log.warn('invalid key arg to exchange',typeof key);
-        
-        // add to json
-        link.json.csid = csid;
-        link.json.key = base32.encode(key);
-
-        var x = link.x = mesh.self.exchange({csid:csid, key:key});
-        if(!x) return log.warn('failed to create exchange',link.hashname,csid,key.toString('hex'),self.err);
-        log.debug('adding exchange',link.hashname,x.id);
-        mesh.links[x.id] = x;
-
-        x.listen = {};
-        x.listen['link'] = function(args, open, cbOpen){
-          link.inLink(args, open, cbOpen);
-        }
-        x.listen['path'] = function(args, open, cbOpen){
-          var did = [];
-          function pong(pipe)
-          {
-            if(did.indexOf(pipe) >= 0) return;
-            did.push(pipe);
-            var json = {c:open.json.c};
-            if(pipe.path) json.path = pipe.path;
-            x.send({json:json},pipe);
-          }
-          // go through all the pipes we have already and send a response
-          mesh.pipes[hn].forEach(pong);
-          // add any of the included paths, and send to them too
-          if(Array.isArray(open.paths)) open.paths.forEach(function(path){
-            mesh.pipe(hn,path,pong);
-          });
-        }
-        x.listen['peer'] = function(args, open, cbOpen){
-          if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);
-          if(!(mesh.route || mesh.links[open.json.peer].json.route)) return log.debug('routing not enabled',open.json.peer);
-          log.debug('TODO peer/connect relay');
-          // if encrypted, just forward directly
-          // if not, send via connect
-        }
-        x.listen['connect'] = function(args, open, cbOpen){
-          var attached = lob.decode(open.body);
-          if(!attached) return log.debug('dropping connect, invalid attached');
-
-          if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
-
-          // who is this from?
-          var from = {};
-          from.hashname = hashname.fromPacket(attached);
-          if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
-          from.csid = hashname.match(mesh.keys,attached.json);
-          if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
-          from.paths = [{type:'peer',hn:hn}];
-          from.key = attached.body;
-
-          // see if we trust this hashname
-          if(!mesh.json[hn])
-          {
-            log.debug('untrusted hashname',from);
-            if(mesh.onDiscover) mesh.onDiscover(from);
-            return;
-          }
-      
-          log.debug('TODO add new peer path, sync');
-        }
-    
-        x.sending = function(packet, pipe)
+        // no exchange yet, try to create one if we can
+        if(!link.x)
         {
-          if(!packet) return log.debug('sending no packet',packet);
-          if(!pipe)
-          {
-            var pipes = mesh.piper(hn);
-            if(pipes.length == 0) return log.debug('no pipes for',hn);
-            pipe = pipes[0];
+          if(!link.json.csid) return true; // no key info yet, ignore
+          if(!mesh.keys[link.json.csid]) return log.warn('tried to create exchange for unsupported csid',link.json.csid);
+          link.key = base32.decode(link.json.key);
+          if(!Buffer.isBuffer(link.key)) return log.warn('invalid key arg to exchange',link.key);
+
+          // actually create the new exchange object
+          var x = link.x = mesh.self.exchange({csid:link.json.csid, key:link.key});
+          if(!x) return log.warn('failed to create exchange',link.hashname,link.json.csid,link.key.toString('hex'),self.err);
+          log.debug('adding exchange',link.hashname,x.id);
+          
+          // add the exchange token id for routing back to this active link
+          mesh.links[x.id] = link;
+
+          x.listen = {};
+          x.listen['link'] = function(args, open, cbOpen){
+            link.inLink(args, open, cbOpen);
           }
-          log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',hn.substr(0,8),pipe.path);
-          pipe.send(packet);
-        }
+          x.listen['path'] = function(args, open, cbOpen){
+            var did = [];
+            function pong(pipe)
+            {
+              if(did.indexOf(pipe) >= 0) return;
+              did.push(pipe);
+              var json = {c:open.json.c};
+              if(pipe.path) json.path = pipe.path;
+              x.send({json:json},pipe);
+            }
+            // go through all the pipes we have already and send a response
+            mesh.pipes[hn].forEach(pong);
+            // add any of the included paths, and send to them too
+            if(Array.isArray(open.paths)) open.paths.forEach(function(path){
+              mesh.pipe(hn,path,pong);
+            });
+          }
+          x.listen['peer'] = function(args, open, cbOpen){
+            if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to non-link',open.json.peer);
+            if(!(mesh.route || mesh.links[open.json.peer].json.route)) return log.debug('routing not enabled',open.json.peer);
+            log.debug('TODO peer/connect relay');
+            // if encrypted, just forward directly
+            // if not, send via connect
+          }
+          x.listen['connect'] = function(args, open, cbOpen){
+            var attached = lob.decode(open.body);
+            if(!attached) return log.debug('dropping connect, invalid attached');
+
+            if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
+
+            // who is this from?
+            var from = {};
+            from.hashname = hashname.fromPacket(attached);
+            if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
+            from.csid = hashname.match(mesh.keys,attached.json);
+            if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
+            from.paths = [{type:'peer',hn:hn}];
+            from.key = attached.body;
+
+            // see if we trust this hashname
+            if(!mesh.json[hn])
+            {
+              log.debug('untrusted hashname',from);
+              if(mesh.onDiscover) mesh.onDiscover(from);
+              return;
+            }
+      
+            log.debug('TODO add new peer path, sync');
+          }
     
-        // run a fresh sync to finish booting this exchange
-        link.sync();
+          x.sending = function(packet, pipe)
+          {
+            if(!packet) return log.debug('sending no packet',packet);
+            if(!pipe)
+            {
+              if(link.pipes.length == 0) return log.debug('no pipes for',link.hashname);
+              pipe = link.pipes[0];
+            }
+            log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',link.hashname.substr(0,8),pipe.path);
+            pipe.send(packet);
+          }
+        }
+        
+        // any keepalive event, sync all pipes w/ a new handshake
+        log.debug('link sync keepalive',link.hashname);
+        var handshake = link.x.handshake();
+        link.pipes.forEach(function(pipe){
+          // TODO, skip old ones
+          pipe.send(handshake);
+        });
+        
+        return true;
       }
     }
     
@@ -572,6 +567,9 @@ exports.mesh = function(args, cbMesh)
       link.addPath({type:'peer',hn:router});
     });
     
+    // always run a sync, this will create exchange if possible
+    link.sync();
+    
     return link;
   }
 
@@ -586,6 +584,7 @@ exports.mesh = function(args, cbMesh)
         log.debug('no router for path',path);
         return;
       }
+      // TODO clean up link.json.paths remove any if to a default router
       // TODO create connect channel and pipe for it
       log.debug('TODO make connect to router for',hn);
       cbPipe(new exports.Pipe);

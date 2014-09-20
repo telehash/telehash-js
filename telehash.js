@@ -160,7 +160,7 @@ exports.mesh = function(args, cbMesh)
       }
       
       // make sure we track this pipe
-      link.addPipe(pipe,true);
+      link.addPipe(pipe,Date.now() - link.syncAt);
 
       // if channel exists, handle it
       if(link.x.channels[inner.json.c]) return link.x.channels[inner.json.c].receive(inner);
@@ -223,11 +223,20 @@ exports.mesh = function(args, cbMesh)
 
       var at = link.x.sync(packet, inner);
       log.debug('handshake sync',at);
-      if(at !== 0) pipe.send(link.x.handshake(at)); // always send handshake back if not in sync
-      // any valid handshakes, start sending stuff after
-      if(at >= 0)
+      
+      // always send handshake back if not in sync
+      if(at !== 0) pipe.send(link.x.handshake(at));
+
+      // pipes are only valid when they are in sync or we are acking theirs
+      if(at === 0 || at === inner.json.at)
       {
-        link.addPipe(pipe,true); // add a pipe if valid
+        // track the time for latency
+        if(link.at != at)
+        {
+          link.syncAt = Date.now();
+          link.at = at;
+        }
+        link.addPipe(pipe, Date.now() - link.syncAt);
         link.x.flush(); // any existing channels can resend
         link.link(); // establish link channel
       }
@@ -298,7 +307,7 @@ exports.mesh = function(args, cbMesh)
     // this is the big block where we create a new link
     if(!link)
     {
-      link = mesh.links[json.hashname] = {hashname:json.hashname, json:json, isLink:true, pipes:[]};
+      link = mesh.links[json.hashname] = {hashname:json.hashname, json:json, isLink:true, pipes:[], psort:{}};
       
       // link-packet validation handler, defaults to allow all if not given
       link.onLink = (typeof cbLink == 'function') ? cbLink : function(pkt,cb){ cb(); }
@@ -413,28 +422,34 @@ exports.mesh = function(args, cbMesh)
       }
       
       // existing pipes, add/update for this link
-      link.addPipe = function(pipe, valid)
+      link.addPipe = function(pipe, latency)
       {
-        // all keepalives trigger link sync
-        pipe.on('keepalive', link.sync);
-
         // add if it doesn't exist
         if(link.pipes.indexOf(pipe) < 0)
         {
+          // all keepalives trigger link sync
+          pipe.on('keepalive', link.sync);
+
+          // add any path to json if not exact duplicate (TODO share with addPath)
+          if(pipe.path && link.json.paths.filter(function(pold){
+            return (stringify(pold) == stringify(pipe.path));
+          }).length == 0) link.json.paths.push(pipe.path);
+          
+          // add to all known for this link
           link.pipes.push(pipe);
-          if(valid) link.sync(); // only force new sync on new incoming validated paths
+          
         }
 
-        // track last time it was valid for sorting
-        if(valid)
+        // track any latency for sorting
+        if(typeof latency == 'number')
         {
-          if(!pipe.validAt) log.debug('pipe is now valid',pipe.path);
-          pipe.validAt = Date.now();
+          link.psort[pipe.uid] = latency;
+          log.debug('pipe latency',pipe.path,pipe.latency);
         }
 
-        // always keep them in sorted order by valid
+        // always keep them in sorted order by latency
         link.pipes = link.pipes.sort(function(a,b){
-          return (b.validAt||0) - (a.validAt||0);
+          return a.latency - b.latency;
         });
       }
 
@@ -544,7 +559,10 @@ exports.mesh = function(args, cbMesh)
         
         // any keepalive event, sync all pipes w/ a new handshake
         log.debug('link sync keepalive',link.hashname);
-        var handshake = link.x.handshake();
+        var handshake = link.x.handshake(true); // forces new
+        // track these for per-pipe latency on responses
+        link.at = 0;
+        link.syncAt = Date.now();
         link.pipes.forEach(function(pipe){
           // TODO, skip old ones
           pipe.send(handshake);

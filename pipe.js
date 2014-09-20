@@ -1,9 +1,11 @@
 // simple multi-eventing pipe base pattern with optional timer
+var uids = 0;
 exports.Pipe = function(type, keepalive)
 {
   var pipe = this;
   pipe.type = type;
   pipe.isPipe = true;
+  pipe.uid = uid++;
 
   pipe.keepalive = function(timeout)
   {
@@ -22,7 +24,8 @@ exports.Pipe = function(type, keepalive)
   {
     pipe.keepalive();
     pipe.sentAt = Date.now();
-    if(typeof this.onSend == 'function') this.onSend(packet, cb);
+    if(typeof pipe.onSend != 'function') return console.log('internal error, no pipe.onSend',pipe);
+    pipe.onSend(packet, cb);
   }
 
   pipe.ons = {};

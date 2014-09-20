@@ -428,8 +428,8 @@ exports.mesh = function(args, cbMesh)
         // track last time it was valid for sorting
         if(valid)
         {
+          if(!pipe.validAt) log.debug('pipe is now valid',pipe.path);
           pipe.validAt = Date.now();
-          link.setStatus(); // good status with any valid pipes
         }
 
         // always keep them in sorted order by valid

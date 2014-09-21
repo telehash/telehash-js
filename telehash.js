@@ -509,7 +509,7 @@ exports.mesh = function(args, cbMesh)
           log.debug('ext.pipe',ext.name);
           ext.pipe(link, path, function(pipe){
             link.addPipe(pipe);
-            if(cbPath) cbPath(pipe);
+            if(typeof cbPath == 'function') cbPath(pipe);
           });
         });
       }

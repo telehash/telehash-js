@@ -197,6 +197,16 @@ exports.mesh = function(args, cbMesh)
       }
       log.debug('inner',inner.json,inner.body)
 
+      // validate the csid
+      var csid = packet.head.toString('hex');
+      var csids = hashname.ids(inner.json);
+      csids.push(csid);
+      if(csid != hashname.match(mesh.keys,csids))
+      {
+        log.debug('invalid handshake, mismatch csid',csid,inner.json);
+        return;
+      }
+
       // build a from json container
       var from = {paths:[]};
       from.hashname = hashname.fromPacket(inner,packet.head);
@@ -205,12 +215,7 @@ exports.mesh = function(args, cbMesh)
         log.debug('invalid handshake, no hashname',inner);
         return;
       }
-      from.csid = packet.head.toString('hex');
-      if(from.csid != hashname.match(inner.json,mesh.keys))
-      {
-        log.debug('invalid handshake, mismatch csid',inner.json);
-        return;
-      }
+      from.csid = csid;
       from.key = inner.body;
 
       // make sure we have a link

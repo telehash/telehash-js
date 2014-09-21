@@ -114,7 +114,10 @@ describe('telehash', function(){
         done();
       }},function(err){
         expect(err).to.not.exist;
-        mesh.receive(lob.decode(new Buffer('00011a03fd0a483be4e3842de84ad33d384410a2c66d2ae2848ea2aeafd3ee02e8814ef448de24750084dd179a06a44e463446f23db53a41cab3ce18d139451d9a05073570d6521f','hex')),{path:{'type':'test'}});
+        var pipe = new telehash.Pipe('test');
+        pipe.path = {type:'test'};
+        pipe.onSend = function(){};
+        mesh.receive(lob.decode(new Buffer('00011a02228b5eebab016d725049a4b5f71344e8b60a3037156420ebab916f128333b5d72abf804cc37b9978b12278c8aac65905301deee657c9d8b00f2a5e372b1c222213a94c82','hex')),pipe);
       });
     });
   });

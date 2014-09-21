@@ -5,7 +5,7 @@ exports.Pipe = function(type, keepalive)
   var pipe = this;
   pipe.type = type;
   pipe.isPipe = true;
-  pipe.uid = uid++;
+  pipe.uid = uids++;
 
   pipe.keepalive = function(timeout)
   {

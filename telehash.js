@@ -32,6 +32,9 @@ exports.add = function(ext)
   return true;
 }
 
+// add some default extensions
+exports.add(require('./lib/peer'));
+
 // generate new local id
 exports.generate = function(cb)
 {
@@ -71,7 +74,7 @@ exports.mesh = function(args, cbMesh)
   if(!self) return cbMesh(e3x.err);
   log.debug('created new mesh',hn);
   // bundle stuff inside for extensions to use
-  var mesh = {self:self, lib:exports};
+  var mesh = {self:self, lib:exports, log:log};
 
   // keep args handy but dereference id/secret
   mesh.args = args;
@@ -633,31 +636,6 @@ exports.mesh = function(args, cbMesh)
     
     return link;
   }
-
-  // add our own peer pipe handler for routers/connects
-  mesh.extended.push({
-    pipes:[],
-    pipe:function(link, path, cbPipe){
-      var pipes = this.pipes;
-      if(path.type != 'peer') return;
-      if(!hashname.isHashname(path.hn)) return log.warn(link.hashname,'given invalid peer path',path);
-
-      // TODO clean up link.json.paths remove any if to a default router
-
-      // create unique peering id to track created pipes
-      var id = [link.hashname,path.hn].join(':');
-      if(pipes[id]) return pipes[id];
-
-      // make a new pipe for this peering
-      var pipe = pipes[id] = new exports.Pipe('peer');
-      pipe.id = id;
-      pipe.path = path;
-
-      // TODO create connect channel and pipe for it
-      log.debug('TODO make connect to router for',id);
-      cbPipe(pipe);
-    }
-  });
 
   // last, iterate load any/all extensions
   var error;

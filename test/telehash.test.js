@@ -69,12 +69,15 @@ describe('telehash', function(){
 
   it('should create a peer pipe', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
-      var link = mesh.link({keys:idB.keys});
-      link.addPath({type:'peer',hn:link.hashname},function(pipe){
-        expect(pipe).to.be.an('object');
-        expect(pipe.isPipe).to.be.true;
-        expect(link.pipes.length).to.be.equal(1);
-        done();
+      mesh.extend(require(__dirname+'/../lib/peer'), function(err){
+        expect(err).to.not.exist;
+        var link = mesh.link({keys:idB.keys});
+        link.addPath({type:'peer',hn:link.hashname},function(pipe){
+          expect(pipe).to.be.an('object');
+          expect(pipe.isPipe).to.be.true;
+          expect(link.pipes.length).to.be.equal(1);
+          done();
+        });
       });
     });
   });

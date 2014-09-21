@@ -11,7 +11,7 @@ describe('node-telehash', function(){
   });
 
   it('should have extensions', function(){
-    expect(Object.keys(telehash.extensions).length).to.be.equal(1);
+    expect(Object.keys(telehash.extensions).length).to.be.equal(2);
   });
   
   it('should create a real mesh', function(done){

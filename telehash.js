@@ -187,7 +187,7 @@ exports.mesh = function(args, cbMesh)
         log.debug('bouncing open',json);
         link.x.send({json:json});
       }
-      if(link.x.listen[inner.json.type]) return link.x.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
+      if(link.listen[inner.json.type]) return link.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
       return bouncer('unknown type');
     }
     
@@ -330,6 +330,66 @@ exports.mesh = function(args, cbMesh)
     if(!link)
     {
       link = mesh.links[json.hashname] = {hashname:json.hashname, json:json, isLink:true};
+      
+      // incoming channel handlers
+      link.listen = {};
+
+      // new link channel requests
+      link.listen['link'] = function(args, open, cbOpen){
+        link.inLink(args, open, cbOpen);
+      }
+      
+      // path sync requests
+      link.listen['path'] = function(args, open, cbOpen){
+        var did = [];
+        function pong(pipe)
+        {
+          if(did.indexOf(pipe) >= 0) return;
+          did.push(pipe);
+          var json = {c:open.json.c};
+          if(pipe.path) json.path = pipe.path;
+          link.x.send({json:json},pipe);
+        }
+        // go through all the pipes we have already and send a response
+        link.pipes.forEach(pong);
+        // add any of the included paths, and send to them too
+        if(Array.isArray(open.paths)) open.paths.forEach(function(path){
+          link.addPath(path,pong);
+        });
+      }
+
+      // exchange handlers for new opens
+      link.listen['peer'] = function(args, open, cbOpen){
+        if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to unknown',open.json.peer);
+        log.debug('TODO peer/connect relay');
+        // if encrypted, just forward directly
+        // if not, send via connect
+      }
+      link.listen['connect'] = function(args, open, cbOpen){
+        var attached = lob.decode(open.body);
+        if(!attached) return log.debug('dropping connect, invalid attached');
+
+        if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
+
+        // who is this from?
+        var from = {};
+        from.hashname = hashname.fromPacket(attached);
+        if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
+        from.csid = hashname.match(mesh.keys,attached.json);
+        if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
+        from.paths = [{type:'peer',hn:link.hashname}];
+        from.key = attached.body;
+
+        // see if we trust this hashname
+        if(!mesh.links[from.hashname])
+        {
+          log.debug('untrusted hashname',from);
+          if(mesh.onDiscover) mesh.onDiscover(from);
+          return;
+        }
+
+        log.debug('TODO add new peer path, sync');
+      }
       
       // link-packet validation handler, defaults to allow all
       link.onLink = function(pkt,cb){
@@ -549,59 +609,6 @@ exports.mesh = function(args, cbMesh)
     
       // add the exchange token id for routing back to this active link
       mesh.links[link.x.id] = link;
-
-      link.x.listen = {};
-      link.x.listen['link'] = function(args, open, cbOpen){
-        link.inLink(args, open, cbOpen);
-      }
-      link.x.listen['path'] = function(args, open, cbOpen){
-        var did = [];
-        function pong(pipe)
-        {
-          if(did.indexOf(pipe) >= 0) return;
-          did.push(pipe);
-          var json = {c:open.json.c};
-          if(pipe.path) json.path = pipe.path;
-          link.x.send({json:json},pipe);
-        }
-        // go through all the pipes we have already and send a response
-        link.pipes.forEach(pong);
-        // add any of the included paths, and send to them too
-        if(Array.isArray(open.paths)) open.paths.forEach(function(path){
-          link.addPath(path,pong);
-        });
-      }
-      link.x.listen['peer'] = function(args, open, cbOpen){
-        if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to unknown',open.json.peer);
-        log.debug('TODO peer/connect relay');
-        // if encrypted, just forward directly
-        // if not, send via connect
-      }
-      link.x.listen['connect'] = function(args, open, cbOpen){
-        var attached = lob.decode(open.body);
-        if(!attached) return log.debug('dropping connect, invalid attached');
-
-        if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
-
-        // who is this from?
-        var from = {};
-        from.hashname = hashname.fromPacket(attached);
-        if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
-        from.csid = hashname.match(mesh.keys,attached.json);
-        if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
-        from.paths = [{type:'peer',hn:link.hashname}];
-        from.key = attached.body;
-
-        // see if we trust this hashname
-        if(!mesh.links[from.hashname])
-        {
-          log.debug('untrusted hashname',from);
-          if(mesh.onDiscover) mesh.onDiscover(from);
-          return;
-        }
-
-        log.debug('TODO add new peer path, sync');
-      }
 
       link.x.sending = function(packet, pipe)
       {

@@ -140,6 +140,8 @@ exports.mesh = function(args, cbMesh)
   // handle incoming packets from any transports
   mesh.receive = function(packet, pipe)
   {
+    if(!packet || !pipe) return log.debug('invalid mesh.receive args',typeof packet,typeof pipe);
+
     log.debug('incoming packet',packet.length,pipe.type);
     
     // all channel packets

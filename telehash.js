@@ -529,8 +529,12 @@ exports.mesh = function(args, cbMesh)
           if(!see) pipe.send(link.x && link.x.handshake());
         }
 
-        // whenever a pipe is seen after a sync, update it's timestamp and resort
         var seen = link.seen[pipe.uid];
+        
+        // added pipe that hasn't been seen since a sync, send most recent handshake again
+        if(!see && seen && seen < link.syncedAt) pipe.send(link.x.handshake());
+
+        // whenever a pipe is seen after a sync, update it's timestamp and resort
         if(see && (!seen || seen < link.syncedAt))
         {
           seen = Date.now();

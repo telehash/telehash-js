@@ -175,10 +175,15 @@ exports.mesh = function(args, cbMesh)
       if(link.x.channels[inner.json.c]) return link.x.channels[inner.json.c].receive(inner);
 
       // new channel open, valid?
-      if(inner.json.err || !inner.json.type) return log.debug('invalid channel open',inner.json);
+      if(inner.json.err || typeof inner.json.type != 'string') return log.debug('invalid channel open',inner.json);
 
       // do we handle this type
       log.debug('new channel open',inner.json);
+
+      // our one built-in channel
+      if(inner.json.type == 'link') return link.inLink(inner);
+
+      // error utility for any open handler problems
       function bouncer(err)
       {
         if(!err) return;
@@ -187,7 +192,20 @@ exports.mesh = function(args, cbMesh)
         log.debug('bouncing open',json);
         link.x.send({json:json});
       }
-      if(link.listen[inner.json.type]) return link.listen[inner.json.type]({pipe:pipe}, inner, bouncer);
+      
+      // check all the extensions for any handlers of this type
+      var args = {pipe:pipe};
+      for(var i=0;i<mesh.extended.length;i++)
+      {
+        if(typeof mesh.extended[i].open != 'object') continue;
+        var handler = mesh.extended[i].open[inner.json.type];
+        if(typeof handler != 'function') continue;
+        // set the link to be 'this' and be done
+        handler.call(link, args, inner, bouncer);
+        return;
+      }
+
+      // default bounce if not handled
       return bouncer('unknown type');
     }
     
@@ -331,66 +349,6 @@ exports.mesh = function(args, cbMesh)
     {
       link = mesh.links[json.hashname] = {hashname:json.hashname, json:json, isLink:true};
       
-      // incoming channel handlers
-      link.listen = {};
-
-      // new link channel requests
-      link.listen['link'] = function(args, open, cbOpen){
-        link.inLink(args, open, cbOpen);
-      }
-      
-      // path sync requests
-      link.listen['path'] = function(args, open, cbOpen){
-        var did = [];
-        function pong(pipe)
-        {
-          if(did.indexOf(pipe) >= 0) return;
-          did.push(pipe);
-          var json = {c:open.json.c};
-          if(pipe.path) json.path = pipe.path;
-          link.x.send({json:json},pipe);
-        }
-        // go through all the pipes we have already and send a response
-        link.pipes.forEach(pong);
-        // add any of the included paths, and send to them too
-        if(Array.isArray(open.paths)) open.paths.forEach(function(path){
-          link.addPath(path,pong);
-        });
-      }
-
-      // exchange handlers for new opens
-      link.listen['peer'] = function(args, open, cbOpen){
-        if(typeof open.json.peer != 'string' || !mesh.links[open.json.peer]) return log.debug('dropping peer to unknown',open.json.peer);
-        log.debug('TODO peer/connect relay');
-        // if encrypted, just forward directly
-        // if not, send via connect
-      }
-      link.listen['connect'] = function(args, open, cbOpen){
-        var attached = lob.decode(open.body);
-        if(!attached) return log.debug('dropping connect, invalid attached');
-
-        if(attached.head.length <= 1) log.debug('dropping connect, encrypted attached');
-
-        // who is this from?
-        var from = {};
-        from.hashname = hashname.fromPacket(attached);
-        if(!from.hashname) return log.debug('dropping connect, no hashname',attached.json);
-        from.csid = hashname.match(mesh.keys,attached.json);
-        if(!from.csid) return log.debug('dropping connect, unsupported csid',attached.json);
-        from.paths = [{type:'peer',hn:link.hashname}];
-        from.key = attached.body;
-
-        // see if we trust this hashname
-        if(!mesh.links[from.hashname])
-        {
-          log.debug('untrusted hashname',from);
-          if(mesh.onDiscover) mesh.onDiscover(from);
-          return;
-        }
-
-        log.debug('TODO add new peer path, sync');
-      }
-      
       // link-packet validation handler, defaults to allow all
       link.onLink = function(pkt,cb){
         cb();
@@ -434,7 +392,7 @@ exports.mesh = function(args, cbMesh)
       }
       
       // handle new incoming link channel requests
-      link.inLink = function(args, open, cbOpen)
+      link.inLink = function(open)
       {
         // create channel and process open
         log.debug('new incoming link',open.json);
@@ -443,7 +401,6 @@ exports.mesh = function(args, cbMesh)
         channel.receive(open);
         // if newer link channel, use it as the default
         if(link.channel && link.channel.id < channel.id) link.channel = channel;
-        cbOpen();
       }
 
       // manage link status notification (link.down is any error)

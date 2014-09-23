@@ -22,6 +22,7 @@ exports.Pipe = function(type, keepalive)
 
   pipe.send = function(packet, cb)
   {
+    if(typeof cb != 'function') cb = function(){};
     pipe.keepalive();
     pipe.sentAt = Date.now();
     if(typeof pipe.onSend != 'function') return console.log('internal error, no pipe.onSend',pipe);

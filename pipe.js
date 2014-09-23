@@ -20,13 +20,12 @@ exports.Pipe = function(type, keepalive)
   }
   if(keepalive) pipe.keepalive(keepalive);
 
-  pipe.send = function(packet, cb)
+  pipe.send = function()
   {
-    if(typeof cb != 'function') cb = function(){};
     pipe.keepalive();
     pipe.sentAt = Date.now();
     if(typeof pipe.onSend != 'function') return console.log('internal error, no pipe.onSend',pipe);
-    pipe.onSend(packet, cb);
+    pipe.onSend.apply(pipe,arguments);
   }
 
   pipe.ons = {};

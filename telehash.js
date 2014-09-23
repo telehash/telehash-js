@@ -426,30 +426,6 @@ exports.mesh = function(args, cbMesh)
         });
       }
       
-      // util to force a path sync
-      link.ping = function(done)
-      {
-        if(typeof done != 'function') done = function(){};
-        if(link.down) return done(link.down);
-        var json = {type:'path'};
-        json.paths = mesh.paths();
-        var channel = link.x.channel({json:json});
-        channel.receiving = function(err, packet, cbChan)
-        {
-          // process any responses
-          if(packet)
-          {
-            log.debug('path response, TODO get public udp paths',packet.json);
-          }
-          // only callback once w/ status
-          if(done) done(err);
-          done = false;
-          cbChan();
-        }
-        channel.send({json:json});
-      }
-      link.onStatus.push(link.ping); // auto-ping on first status
-
       // use this info as a router to reach this link
       link.router = function(router)
       {
@@ -558,7 +534,9 @@ exports.mesh = function(args, cbMesh)
       mesh.extended.forEach(function(ext){
         if(typeof ext.link != 'function') return;
         log.debug('extending link with',ext.name);
-        ext.link(mesh,link);
+        ext.link(link, function(err){
+          if(err) log.warn('extending a link returned an error',ext.name,err);
+        });
       });
 
     }

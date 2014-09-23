@@ -220,44 +220,11 @@ exports.mesh = function(args, cbMesh)
       }
       log.debug('inner',inner.json,inner.body)
 
-      // validate the csid
-      var csid = packet.head.toString('hex');
-      var csids = hashname.ids(inner.json);
-      csids.push(csid);
-      if(csid != hashname.match(mesh.keys,csids))
+      // process the untrusted hashname info to find a link
+      var link = mesh.from(inner, pipe, packet);
+      if(!link || !link.x)
       {
-        log.debug('invalid handshake, mismatch csid',csid,inner.json);
-        return;
-      }
-
-      // build a from json container
-      var from = {paths:[]};
-      from.hashname = hashname.fromPacket(inner,packet.head);
-      if(!from.hashname)
-      {
-        log.debug('invalid handshake, no hashname',inner);
-        return;
-      }
-      from.csid = csid;
-      from.key = inner.body;
-
-      // make sure we have a link
-      var link = mesh.links[from.hashname];
-      if(!link)
-      {
-        log.debug('untrusted hashname',from);
-        if(pipe.path) from.paths.push(pipe.path); // for the app
-        from.received = {packet:packet, pipe:pipe} // optimization for link
-        if(mesh.discoverable) mesh.discoverable.discover(from);
-        return;
-      }
-      
-      // call link again to do any initialization
-      from.sync == false; // tell .link to not auto-sync!
-      mesh.link(from);
-      if(!link.x)
-      {
-        log.debug('failed to create exchange',from);
+        log.debug('failed to create exchange from handshake',inner);
         return;
       }
 
@@ -281,6 +248,50 @@ exports.mesh = function(args, cbMesh)
         link.link(); // establish link channel
       }
     }
+  }
+  
+  // a safe way to handle incoming hashname information (de-mangler)
+  mesh.from = function(inner, pipe, handshake)
+  {
+    // validate the csid
+    if(handshake) inner.json[handshake.head.toString('hex')] = true; // make sure matches the handshake
+    var csid = hashname.match(mesh.keys,inner.json);
+    if(!csid)
+    {
+      log.debug('invalid hashname, unsupported csid',inner.json);
+      return false;
+    }
+    if(inner.json[csid] !== true)
+    {
+      log.debug('invalid hashname, mismatch csid',csid,inner.json);
+      return false;
+      
+    }
+
+    // build a from json container
+    var from = {paths:[]};
+    from.hashname = hashname.fromPacket(inner);
+    if(!from.hashname)
+    {
+      log.debug('invalid hashname info',inner);
+      return false;
+    }
+    from.csid = csid;
+    from.key = inner.body;
+
+    // make sure we have a link
+    if(!mesh.links[from.hashname])
+    {
+      log.debug('untrusted hashname',from);
+      if(pipe.path) from.paths.push(pipe.path); // for the app
+      if(handshake) from.received = {packet:handshake, pipe:pipe} // optimization for link
+      if(mesh.discoverable) mesh.discoverable.discover(from);
+      return false;
+    }
+    
+    // call link again to do any initialization w/ the new info
+    from.sync == false; // tell .link to not auto-sync!
+    return mesh.link(from);
   }
 
   // add a default router
@@ -459,7 +470,7 @@ exports.mesh = function(args, cbMesh)
           link.pipes.push(pipe);
           
           // send most recent handshake if it's not seen
-          if(!see) pipe.send(link.x && link.x.handshake());
+          if(!see) pipe.send(link.x && link.x.handshake(), link, function(){});
         }
 
         var seen = link.seen[pipe.uid];
@@ -558,7 +569,9 @@ exports.mesh = function(args, cbMesh)
           pipe = link.pipes[0];
         }
         log.debug(mesh.hashname.substr(0,8),'delivering',packet.length,'to',link.hashname.substr(0,8),pipe.path);
-        pipe.send(packet);
+        pipe.send(packet, link, function(err){
+          if(err) log.warn('error sending packet to pipe',link.hashname,pipe.path,err);
+        });
       }
     }
     // helpful

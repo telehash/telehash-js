@@ -29,4 +29,36 @@ describe('telehash/peer', function(){
     });
   });
 
+  it('should create a link through a peer', function(done){
+    telehash.log({debug:console.log});
+    telehash.mesh({id:idA,extensions:{peer:peer}},function(err, meshA){
+      expect(err).to.not.exist;
+      telehash.mesh({id:idB,extensions:{peer:peer}},function(err, meshB){
+        expect(err).to.not.exist;
+        telehash.mesh({id:idC,extensions:{peer:peer}},function(err, meshC){
+          expect(err).to.not.exist;
+
+          // connect both to B
+          meshA.mesh(meshB);
+          meshC.mesh(meshB);
+          
+          // let C trust A but not know more
+          expect(meshC.link(meshA.hashname)).to.exist;
+
+          // create a link from A->C with the peer path
+          var args = {hashname:meshC.hashname, paths:[]};
+          args.paths.push({type:'peer',hn:meshB.hashname});
+          var link = meshA.link(args);
+          expect(link).to.exist;
+
+          // it should go online
+          link.status(function(err){
+            expect(err).to.not.exist;
+            done();
+          });
+        });
+      });
+    });
+  });
+
 });

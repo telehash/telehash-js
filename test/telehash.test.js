@@ -159,22 +159,13 @@ describe('telehash', function(){
       telehash.mesh({id:idB,extensions:{}},function(err, meshB){
         expect(err).to.not.exist;
 
-        // create virtual pipes
-        var pipeAB = new telehash.Pipe('test');
-        var pipeBA = new telehash.Pipe('test');
-        pipeAB.onSend = function(packet){meshB.receive(packet,pipeBA)};
-        pipeBA.onSend = function(packet){meshA.receive(packet,pipeAB)};
-
-        var linkAB = meshA.link({keys:idB.keys});
-        linkAB.addPipe(pipeAB);
-        expect(linkAB).to.exist;
-        linkAB.status(function(err){
+        meshA.mesh(meshB);
+        var link = meshA.link(meshB.hashname);
+        expect(link).to.exist;
+        link.status(function(err){
           expect(err).to.not.exist;
           done();
         });
-        var linkBA = meshB.link({keys:idA.keys});
-        linkBA.addPipe(pipeBA);
-        expect(linkBA).to.exist;
       });
     });
   });

@@ -81,7 +81,7 @@ exports.mesh = function(args, cbMesh)
   mesh.keys = args.id.keys;
   delete args.id;
   mesh.hashname = hn;
-
+  
   // a json representation of the current mesh
   mesh.json = {};
   
@@ -154,6 +154,12 @@ exports.mesh = function(args, cbMesh)
       var link = mesh.links[token];
       if(!link)
       {
+        var route = mesh.routes[token];
+        if(route)
+        {
+          log.debug('routing packet to',route.path);
+          return route.send(packet, undefined, function(){});
+        }
         log.debug('dropping unknown channel packet to',token);
         return;
       }
@@ -294,8 +300,10 @@ exports.mesh = function(args, cbMesh)
     return mesh.link(from);
   }
 
+  mesh.routes = {}; // routed token => pipe mapping
+  mesh.routers = []; // default routers
+
   // add a default router
-  mesh.routers = [];
   mesh.router = function(direct, isDefault)
   {
     // update/set in json
@@ -477,7 +485,7 @@ exports.mesh = function(args, cbMesh)
         var seen = link.seen[pipe.uid];
         
         // added pipe that hasn't been seen since a sync, send most recent handshake again
-        if(!see && seen && seen < link.syncedAt) pipe.send(link.x.handshake());
+        if(!see && seen && seen < link.syncedAt) link.x.sending(link.x.handshake(),pipe);
 
         // whenever a pipe is seen after a sync, update it's timestamp and resort
         if(see && (!seen || seen < link.syncedAt))
@@ -536,7 +544,7 @@ exports.mesh = function(args, cbMesh)
         link.at = 0;
         link.syncedAt = Date.now();
         link.pipes.forEach(function(pipe){
-          pipe.send(handshake);
+          link.x.sending(handshake, pipe);
         });
         
         return true;

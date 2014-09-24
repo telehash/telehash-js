@@ -139,7 +139,11 @@ exports.mesh = function(args, cbMesh)
       cbExtend(err, extended);
     });
   };
-  
+
+  // when routing, we need to keep a 1-min cache to dedup any circular routes
+  var dedup = {};
+  setInterval(function dedupt(){dedup={}},60*1000);
+
   // handle incoming packets from any transports
   mesh.receive = function(packet, pipe)
   {
@@ -158,6 +162,9 @@ exports.mesh = function(args, cbMesh)
         if(route)
         {
           log.debug('routing packet to',route.path);
+          var dupid = crypto.createHash('sha256').update(packet).digest('hex');
+          if(dedup[dupid]) return log.debug('dropping duplicate');
+          dedup[dupid] = true;
           return route.send(packet, undefined, function(){});
         }
         log.debug('dropping unknown channel packet to',token);

@@ -173,8 +173,9 @@ exports.mesh = function(args, cbMesh)
       // this pipe is valid, if it hasn't been seen yet, we need to resync
       if(!link.seen[pipe.uid])
       {
+        log.debug('never seen pipe',pipe.uid,pipe.path)
         link.addPipe(pipe,true); // must see it first
-        link.sync(); // force full resync
+        process.nextTick(link.sync); // full resync in the background
       }
 
       // if channel exists, handle it
@@ -484,14 +485,11 @@ exports.mesh = function(args, cbMesh)
 
         var seen = link.seen[pipe.uid];
         
-        // added pipe that hasn't been seen since a sync, send most recent handshake again
-        if(!see && seen && seen < link.syncedAt) link.x.sending(link.x.handshake(),pipe);
-
         // whenever a pipe is seen after a sync, update it's timestamp and resort
         if(see && (!seen || seen < link.syncedAt))
         {
           seen = Date.now();
-          log.debug('pipe seen latency', pipe.path, seen - link.syncedAt);
+          log.debug('pipe seen latency', pipe.uid, pipe.path, seen - link.syncedAt);
           link.seen[pipe.uid] = seen;
 
           // always keep them in sorted order, by shortest latency or newest
@@ -506,8 +504,10 @@ exports.mesh = function(args, cbMesh)
             // if both old, prefer newest
             return seenB - seenA;
           });
-
         }
+
+        // added pipe that hasn't been seen since a sync, send most recent handshake again
+        if(!see && seen && seen < link.syncedAt) link.x.sending(link.x.handshake(),pipe);
       }
       
       // make sure the path is in the json

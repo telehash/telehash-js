@@ -5,7 +5,7 @@ var base32 = hashname.base32;
 var lob = require('lob-enc');
 var stringify = require('json-stable-stringify');
 
-exports.Pipe = require('./pipe').Pipe;
+var Pipe = exports.Pipe = require('./pipe').Pipe;
 
 // activity/debugging logging utilities
 var log = {
@@ -145,7 +145,7 @@ exports.mesh = function(args, cbMesh)
   {
     if(!packet || !pipe) return log.debug('invalid mesh.receive args',typeof packet,typeof pipe);
 
-    log.debug('incoming packet',packet.length,pipe.type);
+    log.debug(mesh.hashname.substr(0,8),'incoming packet',packet.length,pipe.type);
     
     // all channel packets
     if(packet.head.length == 0)
@@ -175,7 +175,7 @@ exports.mesh = function(args, cbMesh)
       if(link.x.channels[inner.json.c]) return link.x.channels[inner.json.c].receive(inner);
 
       // new channel open, valid?
-      if(inner.json.err || typeof inner.json.type != 'string') return log.debug('invalid channel open',inner.json);
+      if(inner.json.err || typeof inner.json.type != 'string') return log.debug('invalid channel open',inner.json,link.hashname);
 
       // do we handle this type
       log.debug('new channel open',inner.json);
@@ -232,7 +232,7 @@ exports.mesh = function(args, cbMesh)
       log.debug('handshake sync',at);
       
       // always send handshake back if not in sync
-      if(at !== 0) pipe.send(link.x.handshake(at));
+      if(at !== 0) link.x.sending(link.x.handshake(at),pipe);
 
       // pipes are only valid when they are in sync or we are acking theirs
       if(at === 0 || at === inner.json.at)
@@ -278,12 +278,12 @@ exports.mesh = function(args, cbMesh)
     }
     from.csid = csid;
     from.key = inner.body;
+    if(pipe.path) from.paths.push(pipe.path);
 
     // make sure we have a link
     if(!mesh.links[from.hashname])
     {
       log.debug('untrusted hashname',from);
-      if(pipe.path) from.paths.push(pipe.path); // for the app
       if(handshake) from.received = {packet:handshake, pipe:pipe} // optimization for link
       if(mesh.discoverable) mesh.discoverable.discover(from);
       return false;
@@ -595,6 +595,28 @@ exports.mesh = function(args, cbMesh)
     });
     
     return link;
+  }
+  
+  // utility to bind two meshes together, establishing links and internal pipes
+  mesh.mesh = function(meshB)
+  {
+    var meshA = mesh;
+
+    // create virtual pipes
+    var pipeAB = new Pipe('mesh');
+    var pipeBA = new Pipe('mesh');
+    
+    // direct pipes to the other side
+    pipeAB.onSend = function(packet){meshB.receive(packet,pipeBA)};
+    pipeBA.onSend = function(packet){meshA.receive(packet,pipeAB)};
+
+    // create links both ways
+    var linkAB = meshA.link({keys:meshB.keys});
+    var linkBA = meshB.link({keys:meshA.keys});
+
+    // add the internal pipes
+    linkAB.addPipe(pipeAB);
+    linkBA.addPipe(pipeBA);
   }
 
   // last, iterate load any/all extensions

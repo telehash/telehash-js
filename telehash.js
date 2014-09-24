@@ -305,14 +305,27 @@ exports.mesh = function(args, cbMesh)
   mesh.routers = []; // default routers
 
   // add a default router
-  mesh.router = function(direct, isDefault)
+  mesh.router = function(link, isRouter)
   {
-    // update/set in json
-    // validate direct||link
-    // create echange and add to firewall and exchanges
-    // add to .routers if isDefault
-    // send handshake
-    // start connect for all down links
+    if(typeof link != 'object' || !link.isLink) return log.warn('invald args to mesh.router, not a link',link);
+    if(typeof isRouter != 'boolean') isRouter = true; // default to true
+    var index = mesh.routers.indexOf(link);
+
+    // no longer a default
+    if(!isRouter)
+    {
+      delete link.json.router;
+      if(index >= 0) mesh.routers.splice(index,1);
+      return;
+    }
+    
+    // add default router to all
+    link.json.router = true;
+    if(index == -1) mesh.routers.push(link);
+    Object.keys(mesh.json).forEach(function(hn){
+      if(hn == link.hashname) return;
+      mesh.links[hn].addPath({type:'peer',hn:link.hashname});
+    });
   }
   
   // enabled discovery mode
@@ -601,7 +614,10 @@ exports.mesh = function(args, cbMesh)
     mesh.routers.forEach(function(router){
       link.addPath({type:'peer',hn:router});
     });
-    
+
+    // default router state can be passed in on args as a convenience
+    if(typeof args.router == 'boolean') mesh.router(link, args.router);
+
     return link;
   }
   

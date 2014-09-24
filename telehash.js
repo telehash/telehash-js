@@ -310,7 +310,8 @@ exports.mesh = function(args, cbMesh)
   mesh.discover = function(opts, cbDiscover)
   {
     if(!cbDiscover) cbDiscover = function(err){if(err) log.error(err)};
-    if(opts && typeof opts.discover != 'function') return cbDiscover('requires discover callback to be enabled');
+    if(opts === true) opts = {};
+    if(!opts.discover) opts.discover = mesh.link; // defaults to always link
     log.debug('discovery is',opts?'on':'off');
     mesh.discoverable = opts;
     // notify all extensions

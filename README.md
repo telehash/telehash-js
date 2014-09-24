@@ -100,8 +100,21 @@ By default links can only be established with a known hashname, which requires a
 Discovery mode also enables any supported network transport to announce and discover other endpoints that are simultaneously discoverable locally. This can be used for initial pairing of two hashnames.
 
 ````js
-mesh.discover({discover:callback},cb); // callback({hashname:'',keys:{},paths:{}}) is called for any discovered hashname, use .link to accept or just ignore to deny
+mesh.discover(true); // to enable
+mesh.discover(false); // to disable (default)
 ````
+
+Optional args and a callback (to know once discovery is enabled on all the transports) can be passed in:
+
+````js
+mesh.discover({args},done);
+````
+
+The args can include:
+
+* `discover:callback` - upon discovering any hashname this callback is given the info of `callback({hashname:'',keys:{},paths:{}})` and there is no response unless it is passed to `mesh.link(from)`
+* `announce:bool` - any transport that can send broadcasts locally will do so (defaults to `true`), incoming announcements will still be discovered when `false`
+* custom per-transport discovery options may be passed in
 
 ## Extensions
 

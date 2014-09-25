@@ -1,3 +1,4 @@
+// TEST
 var expect = require('chai').expect;
 var concat = require('concat-stream');
 var fs = require('fs');
@@ -40,7 +41,8 @@ describe('telehash/stream', function(){
     meshB.stream(function(link, req, accept){
       expect(link).to.exist;
       accept().pipe(concat(function(me){
-        console.log('MEMEME',me);
+        expect(me).to.exist;
+        expect(me.toString().indexOf('// TEST')).to.be.equal(0);
         done();
       }));
     })

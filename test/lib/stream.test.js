@@ -60,7 +60,7 @@ describe('telehash/stream', function(){
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
     expect(meshB).to.exist;
 
-    // accept and concat stream
+    // accept and mirror stream
     meshB.stream(function(linkBA, req, accept){
       expect(linkBA).to.exist;
       var streamBA = accept();
@@ -73,11 +73,13 @@ describe('telehash/stream', function(){
     // send stream
     var linkAB = meshA.link(meshB.hashname);
     var streamAB = linkAB.stream();
+    // accept and concat stream
     streamAB.pipe(concat(function(me){
       expect(me).to.exist;
       expect(me.toString().indexOf('// TEST')).to.be.equal(0);
       done();
     }));
+    // push test data (ourselves)
     fs.createReadStream(__filename).pipe(streamAB);
 
   });

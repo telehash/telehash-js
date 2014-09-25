@@ -52,4 +52,34 @@ describe('telehash/stream', function(){
 
   });
 
+  it('should stream bidi', function(done){
+    telehash.log({debug:console.log});
+
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
+    expect(meshB).to.exist;
+
+    // accept and concat stream
+    meshB.stream(function(linkBA, req, accept){
+      expect(linkBA).to.exist;
+      var streamBA = accept();
+      streamBA.pipe(streamBA); // mirror it back
+    });
+    
+    // pair them
+    meshA.mesh(meshB);
+    
+    // send stream
+    var linkAB = meshA.link(meshB.hashname);
+    var streamAB = linkAB.stream();
+    streamAB.pipe(concat(function(me){
+      expect(me).to.exist;
+      expect(me.toString().indexOf('// TEST')).to.be.equal(0);
+      done();
+    }));
+    fs.createReadStream(__filename).pipe(streamAB);
+
+  });
+
 });

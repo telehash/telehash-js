@@ -58,6 +58,7 @@ exports.generate = function(cb)
 
 exports.mesh = function(args, cbMesh)
 {
+  if(typeof cbMesh != 'function') cbMesh = function(err, mesh){ if(err) log.error(err); return mesh; }; // stub for sync usage
   if(typeof args != 'object' || typeof args.id != 'object') return cbMesh('invalid args, requires id');
   var hn = hashname.fromKeys(args.id.keys);
   if(!hn) return cbMesh('invalid keys');
@@ -661,5 +662,7 @@ exports.mesh = function(args, cbMesh)
       if(Object.keys(extboot).length == mesh.extensions.length) return cbMesh(error, mesh);
     });
   });
+  
+  return mesh;
 }
 

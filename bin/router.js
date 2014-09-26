@@ -2,18 +2,15 @@
 
 exports = {}; // testing
 
-var th = require("../node.js");
+var telehash = require("../node.js");
 var fs = require("fs");
 var path = require("path-extra");
 var argv = require("optimist")
   .default("port", 42424)
-  .default("bridge", true)
   .boolean("v").describe("v", "verbose")
-  .boolean("nolan").describe("nolan", "disable lan usage")
   .argv;
 
-if(argv.v) th.debug(console.log);
-//tele.info(function(){console.log.apply(console,arguments)});
+if(argv.v) telehash.log({debug:console.log});
 
 if(argv.port == 42420)
 {

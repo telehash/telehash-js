@@ -2,7 +2,7 @@ var fs = require('fs');
 
 // we just wrap the shared code
 var telehash = module.exports = require('./telehash');
-var log = telehash.log;
+var log = telehash.log();
 
 // networking
 module.exports.add(require('telehash-udp4'));

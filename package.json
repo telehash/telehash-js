@@ -8,8 +8,8 @@
      "lob-enc": "git+https://github.com/quartzjer/lob-enc.git",
      "hashname": "git+https://github.com/quartzjer/hashname.git",
      "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
-     "path-extra":"*",
-     "optimist": "*",
+     "path-extra":"~0.3.0",
+     "optimist": "~0.6.1",
      "json-stable-stringify": "~1.0.0"
    },
    "devDependencies": {

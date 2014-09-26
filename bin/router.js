@@ -2,34 +2,51 @@
 
 exports = {}; // testing
 
-var telehash = require("../node.js");
-var fs = require("fs");
-var path = require("path-extra");
-var argv = require("optimist")
-  .default("port", 42424)
-  .boolean("v").describe("v", "verbose")
-  .argv;
+var telehash = require('../node.js');
+var fs = require('fs');
+var path = require('path-extra');
 
-if(argv.v) telehash.log({debug:console.log});
+exports.router = function(args, cbRouter)
+{
+  args.router = true;
+  telehash.load(args, function(err, mesh){
+    if(mesh)
+    {
+      mesh.log.info(mesh.json);
+      mesh.log.info('router up');
+    }
+    cbRouter(err, mesh);
+  });
+}
+
+// if loading as a module, don't do script stuff
+if(module.parent) return;
+
+// we're a script, take args and start
+var argv = require('optimist')
+  .default('port', 42424)
+  .boolean('v').describe('v', 'verbose')
+  .argv;
 
 if(argv.port == 42420)
 {
-  console.log("that port is reserved");
+  console.log('that port is reserved');
   process.exit(1);
 }
 
-/*
 // localize our id file
-argv.id = (argv.id) ? path.resolve(argv.id) : path.join(path.homedir(),".seed.json");
-if(argv.seeds) argv.seeds = path.resolve(argv.seeds);
+argv.id = (argv.id) ? path.resolve(argv.id) : path.join(path.homedir(),'.router.json');
+argv.links = (argv.links) ? path.resolve(argv.links) : path.join(path.homedir(),'.links.json');
 
-tele.init(argv, function(err, seed){
-  if(!seed) return console.log("something went wrong :(",err) || process.exit(1);
-  var info = {paths:seed.paths, parts:seed.parts, keys:seed.keys};
-  
-  var seeds = {};
-  seeds[seed.hashname] = info;
-  console.log(JSON.stringify(seeds,null,2));
-  console.log("connected to "+Object.keys(seed.lines).length+" mesh seed peers");
+if(argv.v)
+{
+  telehash.log({debug:console.log});
+  console.log('router starting with args',argv);
+}
+
+exports.router(argv, function(err){
+  if(!err) return;
+  console.log('something went wrong :(',err,argv);
+  process.exit(1);
 });
-*/
+

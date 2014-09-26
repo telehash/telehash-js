@@ -17,9 +17,10 @@ var log = {
 // override/set any logging level
 exports.log = function(args)
 {
-  Object.keys(args).forEach(function(type){
+  if(typeof args == 'object') Object.keys(args).forEach(function(type){
     log[type] = args[type];
-  })
+  });
+  return log;
 }
 
 // keep track of all default extensions

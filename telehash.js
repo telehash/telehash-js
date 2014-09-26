@@ -651,17 +651,15 @@ exports.mesh = function(args, cbMesh)
     linkBA.addPipe(pipeBA);
   }
 
-  // last, iterate load any/all extensions
-  var error;
+  // last, iterate load any/all extensions async, callback when fully done
   var extboot = mesh.args.extensions || exports.extensions;
-  if(!Object.keys(extboot).length) return cbMesh(undefined, mesh);
-  // we have some to do, return when done
-  Object.keys(extboot).forEach(function(name){
-    mesh.extend(extboot[name], function(err){
-      error = error||err;
-      if(Object.keys(extboot).length == mesh.extensions.length) return cbMesh(error, mesh);
-    });
-  });
+  var todo = Object.keys(extboot);
+  function iter(err)
+  {
+    if(err || !todo.length) return cbMesh(err, mesh);
+    mesh.extend(extboot[todo.shift()], iter);
+  }
+  iter();
   
   return mesh;
 }

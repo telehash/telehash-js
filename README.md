@@ -10,7 +10,7 @@ The browser crypto that powers this is only possible thanks to the incredible wo
 
 # Router
 
-Telehash apps usually need one or more routers to assist in establishing p2p connections, there are some test ones in [mesh.json](mesh.json).  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.router({...})` function (shown below) or stored in your own `mesh.json`.
+Telehash apps usually need one or more routers to assist in establishing p2p connections, there are some test ones in [links.json](links.json).  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.link({...})` function (shown below) or stored in your own `links.json`.
 
 # Library Interface
 
@@ -26,26 +26,36 @@ th.generate(function(err, endpoint){
 });
 ```
 
-## Mesh Initialization / Startup
+## Mesh Creation
 
-Needs an endpoint object from a previously run `generate()` to initialize from:
+Needs an endpoint id object from a previously run `generate()` to initialize from:
 
 ```js
 var th = require("telehash");
-th.mesh({id:endpoint}, function(err, mesh){
+var id = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};
+
+var mesh = th.mesh({id:id});
+```
+
+A second argument can be passed and will be called after the mesh is fully initialized, and return any startup errors:
+
+```js
+th.mesh({id:id}, function(err, mesh){
   if(err) return console.log("mesh failed to initialize",err);
   // use mesh.* now
 });
 ```
 
-The first object passed in to the `mesh` function takes the following arguments:
+The args passed in to the `mesh` may include:
 
-* **id** - An endpoint object previously created, or a string pointing to a file to load the object from.
-* **mesh** - An object in the [mesh json](https://github.com/telehash/telehash.org/blob/master/json.md) format, or a string pointing to a json file to load from.
+* **id** - An endpoint id object previously generated
+* **links** - An object in the [mesh json](https://github.com/telehash/telehash.org/blob/master/json.md) format that will be auto-loaded
+
+In node, the `id` and `links` can be strings pointing to local filenames that will be auto-loaded.  In the browser they can be string keys to localStorage.  Those locations will also be generated and kept in sync for any changes.
 
 ## Establishing Links
 
-With just a hashname (requires a router to assist):
+A link can be created with just a hashname (this requires a router to assist):
 
 ````js
 var link = mesh.link(hashname);
@@ -60,7 +70,8 @@ link.status(function(err){
 });
 ````
 
-Can establish a link directly:
+A link can also be establish directly (no router required):
+
 ````js
 var link = mesh.link({keys:{},paths:{}});
 ````
@@ -79,16 +90,16 @@ var link = mesh.link(hashname, function(incoming, cb){
 
 ## Routing
 
-By default every mesh will allow routing between any of its active links to assist in p2p connectivity.
+By default every endpoint will assist with routing between any of the active links in its mesh in order to maximize connectivity, but this requires the routing endpoint to be connected to both which may not always be the case.
 
-One or more routers can be used by default to help establish all links, and/or they can be added individually to each link.
+One or more links can be dedicated routers for all other link requests, and/or any link can be used as a router for another:
 
 ````js
 mesh.router(link); // any link can be used as a default router
 mesh.link({...,router:true}); // another way to set a link as a default router from the start
 
 link.router(link); // just one link can be used as a router for another
-mesh.link({...,paths:[{type:'peer',hn:'linked'}]}); // including a peer path to an already-linked hn will automatically use it as a router
+mesh.link({...,paths:[{type:'peer',hn:'linked'}]}); // including a peer path to an already-linked hashname will automatically use it as a router
 ````
 
 Whenever a default router is added, it will also be advertised to other links as a peer path for this endpoint.
@@ -112,13 +123,37 @@ mesh.discover({args},done);
 
 The args can include:
 
-* `discover:callback` - upon discovering any hashname this callback is given the info of `callback({hashname:'',keys:{},paths:{}})` and there is no response unless it is passed to `mesh.link(from)`
-* `announce:bool` - any transport that can send broadcasts locally will do so (defaults to `true`), incoming announcements will still be discovered when `false`
+* `discover` - callback function, upon discovering any hashname it is given the info of `callback({hashname:'',keys:{},paths:{}})` and there is no response sent unless it is passed to `mesh.link(from)`
+* `announce` - bool, any transport that can send broadcasts locally will do so (defaults to `true`), incoming announcements will still be discovered when `false`
 * custom per-transport discovery options may be passed in
 
 ## Extensions
 
 Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [lib](lib/) folder, but additional ones can be added by the app.
+
+* **path** - check and synchronize all network paths on a link:
+````js
+link.ping(function(err, latency){
+  // error if it failed
+  // latency is number of milliseconds if it succeeded (may be 0)
+});
+````
+
+* **stream** - native duplex `Stream` creation, also supports streaming objects
+````js
+link.stream(); // returns a new duplex stream to this link, optional args are sent to the link during creation
+fs.createReadStream(filein).pipe(link.stream()); // can be used as a pipe
+// to receive incoming streams
+mesh.stream(function(link, args, cbAccept){
+  // link is who it came from
+  // args is set if any were given by the sender
+  // call cbAccept(err); to cancel
+  // cbAccept() returns a duplex stream
+  cbAccept().pipe(fs.createWriteStream(fileout));
+});
+````
+
+### Extension Backing API
 
 Extensions typically involve:
 
@@ -141,6 +176,10 @@ if(ext.link) ext.link(link, cb(err));
 
 
 ## Transports
+
+A mesh will use all available transports to establish and maintain a link.
+
+### Transport Backing API
 
 All transports are implemented as an extension that exposes the functionality of:
 

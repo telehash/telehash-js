@@ -13,8 +13,9 @@
      "json-stable-stringify": "~1.0.0"
    },
    "devDependencies": {
-     "concat-stream": "~1.4.6",
      "chai": "*",
+     "concat-stream": "~1.4.6",
+     "event-stream": "~3.1.7",
      "mocha": "*"
    },
    "bin" : {

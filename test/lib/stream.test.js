@@ -1,6 +1,7 @@
 // TEST
 var expect = require('chai').expect;
 var concat = require('concat-stream');
+var es = require('event-stream');
 var fs = require('fs');
 var telehash = require('../../telehash.js');
 var stream = require('../../lib/stream.js');
@@ -48,7 +49,7 @@ describe('telehash/stream', function(){
     })
     
     // send stream
-    fs.createReadStream(__filename).pipe(linkAB.stream());
+    fs.createReadStream(__filename).pipe(linkAB.stream()).on('error',done);
 
   });
 
@@ -79,8 +80,40 @@ describe('telehash/stream', function(){
       expect(me.toString().indexOf('// TEST')).to.be.equal(0);
       done();
     }));
+
     // push test data (ourselves)
-    fs.createReadStream(__filename).pipe(streamAB);
+    fs.createReadStream(__filename).pipe(streamAB).on('error',done);
+
+  });
+
+  it('should stream objects', function(done){
+    telehash.log({debug:console.log});
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
+    expect(meshB).to.exist;
+    
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+    
+    // accept and concat stream
+    meshB.stream(function(link, req, accept){
+      expect(link).to.exist;
+      accept().pipe(es.writeArray(function(err,items){
+        expect(err).to.not.exist;
+        expect(items).to.exist;
+        expect(items.length).to.be.equal(4);
+        expect(items[0]).to.be.equal(1);
+        expect(items[2]).to.be.equal(true);
+        expect(items[3].all).to.be.equal(42);
+        done();
+      }));
+    })
+    var streamAB = linkAB.stream();
+    
+    // stream objects
+    es.readArray([1,2,true,{all:42}]).pipe(streamAB).on('error',done);
 
   });
 

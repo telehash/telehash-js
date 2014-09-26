@@ -71,9 +71,11 @@ exports.mesh = function(args, cbMesh)
     pair.key = Buffer.isBuffer(args.id.keys[csid]) ? args.id.keys[csid] : base32.decode(args.id.keys[csid]);
     pair.secret = Buffer.isBuffer(args.id.secrets[csid]) ? args.id.secrets[csid] : base32.decode(args.id.secrets[csid]);
   });
+  opts.debug = log.debug;
   var self = e3x.self(opts);
   if(!self) return cbMesh(e3x.err);
   log.debug('created new mesh',hn);
+  
   // bundle stuff inside for extensions to use
   var mesh = {self:self, lib:exports, log:log};
 
@@ -651,15 +653,19 @@ exports.mesh = function(args, cbMesh)
     linkBA.addPipe(pipeBA);
   }
 
-  // last, iterate load any/all extensions async, callback when fully done
+  // last, iterate load any/all extensions, callback when fully done
   var extboot = mesh.args.extensions || exports.extensions;
   var todo = Object.keys(extboot);
-  function iter(err)
-  {
-    if(err || !todo.length) return cbMesh(err, mesh);
-    mesh.extend(extboot[todo.shift()], iter);
-  }
-  iter();
+  if(!todo.length) cbMesh(undefined, mesh);
+  var done = 0;
+  var error;
+  // run them all in parallel so that synchronous ones aren't blocked
+  todo.forEach(function(name){
+    mesh.extend(extboot[name], function(err){
+      error = error || err;
+      if(++done == todo.length) cbMesh(error, mesh);
+    });
+  });
   
   return mesh;
 }

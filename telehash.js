@@ -104,7 +104,7 @@ exports.mesh = function(args, cbMesh)
       args.hashname = hashname.fromKeys(args.keys);
       args.key = args.keys[args.csid];
     }
-    
+
     // make sure we have a valid hashname
     if(!hashname.isHashname(args.hashname)) return false;
     
@@ -121,6 +121,9 @@ exports.mesh = function(args, cbMesh)
     
     return json;
   }
+  
+  // load our own json id
+  mesh.jsonize({keys:mesh.keys});
 
   // on-demand extender
   mesh.extensions = []; // so we only run one once

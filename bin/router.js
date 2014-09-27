@@ -5,16 +5,13 @@ exports = {}; // testing
 var telehash = require('../node.js');
 var fs = require('fs');
 var path = require('path-extra');
+var repl = require('repl');
 
+// do any generic router specialization on a basic mesh
 exports.router = function(args, cbRouter)
 {
   args.router = true;
   telehash.load(args, function(err, mesh){
-    if(mesh)
-    {
-      mesh.log.info(mesh.json);
-      mesh.log.info('router up');
-    }
     cbRouter(err, mesh);
   });
 }
@@ -25,6 +22,7 @@ if(module.parent) return;
 // we're a script, take args and start
 var argv = require('optimist')
   .default('port', 42424)
+  .boolean('norepl').describe('norepl', 'disable REPL')
   .boolean('v').describe('v', 'verbose')
   .argv;
 
@@ -44,9 +42,25 @@ if(argv.v)
   console.log('router starting with args',argv);
 }
 
-exports.router(argv, function(err){
-  if(!err) return;
-  console.log('something went wrong :(',err,argv);
-  process.exit(1);
+exports.router(argv, function(err, mesh){
+  if(err)
+  {
+    console.log('something went wrong :(',err,argv);
+    return process.exit(1);
+  }
+  mesh.log.info(mesh.json);
+  mesh.log.info('router up');
+  if(argv.norepl !== false) return;
+  var r = repl.start({
+    prompt: mesh.hashname.substr(0,8)+'> ',
+    input: process.stdin,
+    output: process.stdout
+  });
+  r.context.mesh = mesh;
+  r.on('exit', function () {
+    // TODO any nice shutdown?
+    console.log(); // nice newline
+    process.exit(0);
+  });
 });
 

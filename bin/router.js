@@ -10,8 +10,9 @@ var repl = require('repl');
 // do any generic router specialization on a basic mesh
 exports.router = function(args, cbRouter)
 {
-  args.router = true;
   telehash.load(args, function(err, mesh){
+    mesh.json().router = true;
+    mesh.discover(true);
     cbRouter(err, mesh);
   });
 }

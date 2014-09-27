@@ -26,7 +26,7 @@ exports.mesh = function(mesh, cbExt)
     // handle any peer delivery through the router
     pipe.onSend = function(packet, link, cbSend)
     {
-      var router = mesh.links[to];
+      var router = mesh.index[to];
       if(!router) return cbSend('cannot peer to an unknown router: '+pipe.to);
       if(!router.x) return cbSend('cannot peer yet via this router: '+pipe.to);
       if(!link) return cbSend('requires link');
@@ -73,7 +73,7 @@ exports.mesh = function(mesh, cbExt)
     // be extra paranoid when routing
     var from = this;
     if(typeof open.json.peer != 'string') return log.debug('invalid peer request',open.json.peer);
-    var to = mesh.links[open.json.peer];
+    var to = mesh.index[open.json.peer];
     if(!to) return log.debug('dropping peer, no link to',open.json.peer);
     if(!to.x) return log.debug('dropping peer to unknown link',open.json.peer);
     if(to.down && from.down) return log.debug('can only route when either to or from is up',to.down,from.down);

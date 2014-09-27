@@ -1,5 +1,5 @@
 var expect = require('chai').expect;
-var Pipe = require('../pipe.js').Pipe;
+var Pipe = require('../../lib/pipe.js').Pipe;
 
 describe('pipe', function(){
 

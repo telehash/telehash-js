@@ -1,5 +1,4 @@
 var hashname = require('hashname');
-var Pipe = require('../pipe').Pipe;
 var lob = require('lob-enc');
 var crypto = require('crypto');
 
@@ -9,6 +8,7 @@ exports.name = 'peer';
 exports.mesh = function(mesh, cbExt)
 {
   var log = mesh.log;
+  var Pipe = mesh.lib.Pipe;
   var pipes = [];
   var peer = {};
   peer.open = {};

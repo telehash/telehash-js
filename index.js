@@ -1,7 +1,7 @@
 var fs = require('fs');
 
 // we just wrap the shared code
-var telehash = module.exports = require('./telehash');
+var telehash = module.exports = require('./lib/mesh.js');
 var log = telehash.log();
 
 // networking

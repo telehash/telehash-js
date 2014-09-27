@@ -1,5 +1,5 @@
 var expect = require('chai').expect;
-var telehash = require('../../telehash.js');
+var telehash = require('../../lib/mesh.js');
 var lob = require('lob-enc');
 var path = require('../../ext/path.js');
 

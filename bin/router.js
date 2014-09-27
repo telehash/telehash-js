@@ -2,7 +2,7 @@
 
 exports = {}; // testing
 
-var telehash = require('../node.js');
+var telehash = require('..');
 var fs = require('fs');
 var path = require('path-extra');
 var repl = require('repl');

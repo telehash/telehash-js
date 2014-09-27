@@ -1,5 +1,5 @@
 var expect = require('chai').expect;
-var telehash = require('../node.js');
+var telehash = require('..');
 telehash.log({debug:console.log});
 describe('node-telehash', function(){
 

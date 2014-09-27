@@ -1,7 +1,7 @@
 var expect = require('chai').expect;
 var telehash = require('../../telehash.js');
 var lob = require('lob-enc');
-var path = require('../../lib/path.js');
+var path = require('../../ext/path.js');
 
 describe('telehash/path', function(){
   var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};

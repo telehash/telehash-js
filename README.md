@@ -129,7 +129,7 @@ The args can include:
 
 ## Extensions
 
-Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [lib](lib/) folder, but additional ones can be added by the app.
+Most functionality is added by extending the core library to support additional channels and expose more methods. The built-in extensions live in the [ext](ext/) folder, but additional ones can be added by the app.
 
 * **path** - check and synchronize all network paths on a link:
 ````js

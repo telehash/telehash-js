@@ -8,9 +8,9 @@ var log = telehash.log();
 module.exports.add(require('telehash-udp4'));
 
 // standard extensions
-module.exports.add(require('./lib/path'));
-module.exports.add(require('./lib/peer'));
-module.exports.add(require('./lib/stream'));
+module.exports.add(require('./ext/path'));
+module.exports.add(require('./ext/peer'));
+module.exports.add(require('./ext/stream'));
 
 // wrap the mesh to accept file-based args
 module.exports.load = function(args, cbMesh)

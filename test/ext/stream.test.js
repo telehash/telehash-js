@@ -4,7 +4,7 @@ var concat = require('concat-stream');
 var es = require('event-stream');
 var fs = require('fs');
 var telehash = require('../../telehash.js');
-var stream = require('../../lib/stream.js');
+var stream = require('../../ext/stream.js');
 
 describe('telehash/stream', function(){
 

@@ -87,9 +87,19 @@ exports.mesh = function(args, cbMesh)
   mesh.hashname = hn;
   
   // a json representation of the current mesh
-  mesh.json = {};
+  mesh.json_store = {};
   
-  // internal util to manage .json store
+  // return normalized json string of all link info normalized
+  mesh.json = function(opts)
+  {
+    var ret = [];
+    Object.keys(mesh.json_store).forEach(function(hn){
+      ret.push(mesh.json_store[hn]);
+    });
+    return stringify(ret, opts);
+  }
+
+  // internal util to manage .json_store
   mesh.jsonize = function(args)
   {
     // take just hashname argument
@@ -109,8 +119,8 @@ exports.mesh = function(args, cbMesh)
     if(!hashname.isHashname(args.hashname)) return false;
     
     // add/get json store
-    var json = mesh.json[args.hashname];
-    if(!json) json = mesh.json[args.hashname] = {hashname:args.hashname,paths:[]};
+    var json = mesh.json_store[args.hashname];
+    if(!json) json = mesh.json_store[args.hashname] = {hashname:args.hashname,paths:[]};
 
     // json happy csid/key
     if(args.csid && mesh.keys[args.csid])
@@ -336,7 +346,7 @@ exports.mesh = function(args, cbMesh)
     // add default router to all
     link.json.router = true;
     if(index == -1) mesh.routers.push(link);
-    Object.keys(mesh.json).forEach(function(hn){
+    Object.keys(mesh.json_store).forEach(function(hn){
       if(hn == link.hashname) return;
       mesh.links[hn].addPath({type:'peer',hn:link.hashname});
     });

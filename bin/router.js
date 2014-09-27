@@ -48,7 +48,7 @@ exports.router(argv, function(err, mesh){
     console.log('something went wrong :(',err,argv);
     return process.exit(1);
   }
-  mesh.log.info(mesh.json);
+  mesh.log.info(mesh.json({space:2}));
   mesh.log.info('router up');
   if(argv.norepl !== false) return;
   var r = repl.start({

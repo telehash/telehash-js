@@ -10,6 +10,7 @@ var argv = require('optimist')
 
 repl.start(argv, function(mesh){
   mesh.json().router = true;
+  mesh.linked(); // we changed the json!
   mesh.discover(true);
 
   mesh.rlog('router:',mesh.json());

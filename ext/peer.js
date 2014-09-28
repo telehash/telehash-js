@@ -73,6 +73,7 @@ exports.mesh = function(mesh, cbExt)
     // be extra paranoid when routing
     var from = this;
     if(typeof open.json.peer != 'string') return log.debug('invalid peer request',open.json.peer);
+    if(open.json.peer == mesh.hashname) return log.debug('invalid peer to self');
     var to = mesh.index[open.json.peer];
     if(!to) return log.debug('dropping peer, no link to',open.json.peer);
     if(!to.x) return log.debug('dropping peer to unknown link',open.json.peer);

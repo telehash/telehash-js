@@ -19,11 +19,13 @@
      "mocha": "*"
    },
    "bin" : {
-     "router" : "./bin/router.js"
+     "router" : "./bin/router.js",
+     "mesh" : "./bin/mesh.js"
    },
    "scripts": {
      "start":"node ./bin/router.js",
      "router":"node ./bin/router.js",
+     "mesh":"node ./bin/mesh.js",
      "test": "make test"
   },
   "keywords": [

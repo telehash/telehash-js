@@ -170,4 +170,16 @@ describe('telehash', function(){
     });
   });
 
+  it('should event on link json', function(done){
+    telehash.mesh({id:idA,extensions:{}},function(err, mesh){
+      expect(mesh.linked).to.be.a('function');
+      expect(mesh.linked()).to.be.a('string');
+      mesh.linked(function(all, str){
+        expect(Array.isArray(all)).to.be.true;
+        expect(str).to.be.a('string');
+        done();
+      });
+    });
+  });
+
 });

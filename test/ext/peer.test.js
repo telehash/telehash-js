@@ -19,7 +19,7 @@ describe('telehash/peer', function(){
       mesh.extend(peer, function(err){
         expect(err).to.not.exist;
         var link = mesh.link({keys:idB.keys});
-        link.addPath({type:'peer',hn:link.hashname},function(pipe){
+        link.addPath({type:'peer',hn:idA.hashname},function(pipe){
           expect(pipe).to.be.an('object');
           expect(pipe.isPipe).to.be.true;
           expect(link.pipes.length).to.be.equal(1);

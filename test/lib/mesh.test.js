@@ -58,6 +58,16 @@ describe('telehash', function(){
     });
   });
 
+  it('should extend a link', function(done){
+    telehash.mesh({id:idA,extensions:{}},function(err, mesh){
+      var link = mesh.link({keys:idB.keys});
+      mesh.extending({link:function(link2){
+        expect(link2).to.be.equal(link);
+        done();
+      }});
+    });
+  });
+
   it('should return an exchange', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       var link = mesh.link({keys:idB.keys});

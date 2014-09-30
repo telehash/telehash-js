@@ -8,14 +8,53 @@ exports.mesh = function(mesh, cbMesh)
   var tp = {};
 
   // TODO use mesh.streamize
-  // TODO extend mesh to have .request(url)
-  // TODO mesh.proxy(url||server) will start handling ext.open.thtp
 
   tp.link = function(link, cbLink)
   {
-    // TODO link.proxy() returns a request handler
-    // TODO link.request(path) issues a request
+    link.request = function(req, res)
+    {
+      // is req a string, parse as url
+      // is res a function, use as callback
+      // set up pipes
+    }
     cbLink();
+  }
+
+  // accept a request to a url where the hashname is the hostname, calls link.request
+  mesh.request = function(req, res)
+  {
+    // is req a string, or req.hostname is hashname, or req.url
+    // get the link, then link.request(options, cbRequest)
+  }
+  
+  // start accepting incoming thtp requests
+  mesh.proxy = function(options)
+  {
+    if(typeof options == 'string')
+    {
+      var proxy = httplib.createServer();
+      var to = urllib.parse(options);
+      if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
+      proxy.on('request', function(req, res){
+        var opt = {host:to.hostname,port:to.port,headers:req.headers,method:req.method,path:req.path};
+        req.pipe(httplib.request(opt, function(pres){
+          pres.pipe(res);
+        }));
+      });
+    }else{
+      // server given as argument
+      var proxy = options;
+    }
+
+    // handler for incoming thtp channels
+    ext.open.thtp = function(args, open, cbOpen){
+      var link = this;
+      // TODO, create channel and receive until we have a request
+      // add header id'ing requesting hashname
+      // create a res stream
+      // run proxy.request(req, res);
+    }
+
   }
 
   cbMesh(undefined, tp);

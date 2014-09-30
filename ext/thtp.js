@@ -5,18 +5,29 @@ exports.name = 'thtp';
 
 exports.mesh = function(mesh, cbMesh)
 {
-  var tp = {};
+  var ext = {};
 
   // TODO use mesh.streamize
 
-  tp.link = function(link, cbLink)
+  ext.link = function(link, cbLink)
   {
-    link.request = function(req, res)
+
+    // proxy an existing http://nodejs.org/api/http.html#http_http_incomingmessage request/response pair
+    link.proxy = function(req, res)
     {
-      // is req a string, parse as url
-      // is res a function, use as callback
-      // set up pipes
+      // if not res, create a res and fire 'response' event
     }
+    
+    // create a new request just like http://nodejs.org/api/http.html#http_http_request_options_callback
+    link.request = function(options, cbRequest)
+    {
+      // is options a string, parse as url
+      // create a request
+      // if cbRequest, set .on('response',cbRequest);
+      // call link.proxy()
+      // return req
+    }
+
     cbLink();
   }
 
@@ -30,6 +41,7 @@ exports.mesh = function(mesh, cbMesh)
   // start accepting incoming thtp requests
   mesh.proxy = function(options)
   {
+    // provide a url to directly proxy to
     if(typeof options == 'string')
     {
       var proxy = httplib.createServer();
@@ -42,7 +54,7 @@ exports.mesh = function(mesh, cbMesh)
         }));
       });
     }else{
-      // server given as argument
+      // local http server given as argument
       var proxy = options;
     }
 
@@ -52,12 +64,12 @@ exports.mesh = function(mesh, cbMesh)
       // TODO, create channel and receive until we have a request
       // add header id'ing requesting hashname
       // create a res stream
-      // run proxy.request(req, res);
+      // proxy.emit('request',req, res);
     }
 
   }
 
-  cbMesh(undefined, tp);
+  cbMesh(undefined, ext);
 
   /*
   self.thtp.request = function(args, cbRequest)

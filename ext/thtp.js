@@ -9,11 +9,12 @@ exports.mesh = function(mesh, cbMesh)
 
   // TODO use mesh.streamize
   // TODO extend mesh to have .request(url)
-  // TODO extend links to have .request(path)
-  // TODO mesh.proxy(url||server) will handle ext.open.thtp
+  // TODO mesh.proxy(url||server) will start handling ext.open.thtp
 
   tp.link = function(link, cbLink)
   {
+    // TODO link.proxy() returns a request handler
+    // TODO link.request(path) issues a request
     cbLink();
   }
 

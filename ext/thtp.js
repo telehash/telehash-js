@@ -43,19 +43,19 @@ exports.mesh = function(mesh, cbMesh)
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
-        stream.statusCode = parseInt(packet.json[':status'])||500;
-        stream.reasonPhrase = packet.json[':reason']||'';
+        sdecode.statusCode = parseInt(packet.json[':status'])||500;
+        sdecode.reasonPhrase = packet.json[':reason']||'';
         delete packet.json[':status'];
         delete packet.json[':reason'];
-        stream.headers = packet.json;
+        sdecode.headers = packet.json;
 
         // direct response two ways depending on args
         if(typeof res == 'object')
         {
           res.writeHead(statusCode, packet.json);
-          stream.pipe(res);
+          sdecode.pipe(res);
         }else if(typeof res == 'function'){
-          res(stream); // handler must set up stream piping
+          res(sdecode); // handler must set up stream piping
         }else{
           return cbStream('no result handler');
         }
@@ -133,7 +133,8 @@ exports.mesh = function(mesh, cbMesh)
       var link = this;
       var channel = link.x.channel(open);
       // pipe the channel into a decoder, then handle it
-      var req = mesh.streamize(channel).pipe(lob.stream(function(packet, cbStream){
+      var req = mesh.streamize(channel);
+      req.pipe(lob.stream(function(packet, cbStream){
 
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
         req.method = packet.json[':method'];

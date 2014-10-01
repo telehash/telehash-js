@@ -1,5 +1,6 @@
 var expect = require('chai').expect;
 var concat = require('concat-stream');
+var httplib = require('http');
 var telehash = require('../../lib/mesh.js');
 var lob = require('lob-enc');
 var stream = require('../../ext/stream.js');
@@ -33,7 +34,7 @@ describe('telehash/thtp', function(){
     });
   });
 
-  it('should receive a proxy request', function(done){
+  it('should receive an internal proxy request', function(done){
 //    telehash.log({debug:console.log});
     var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
     expect(meshA).to.exist;
@@ -61,6 +62,34 @@ describe('telehash/thtp', function(){
     linkAB.request({method:'post',path:'/'}, function(err){
       expect(err).to.not.exist;
     }).end('test');
+
+  });
+
+  it('should proxy to a real server', function(done){
+//    telehash.log({debug:console.log});
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
+    expect(meshB).to.exist;
+    
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+    
+    // dummy proxy
+    var proxy = httplib.createServer(function(req, res){
+      expect(req.url).to.be.equal('/test');
+      res.end('test');
+    });
+    meshB.proxy(proxy);
+    
+    // send request and gather response
+    linkAB.request('/test', function(err){
+      expect(err).to.not.exist;
+    }).pipe(concat(function(body){
+//      expect(body.toString()).to.be.equal('test');
+      done();
+    }));
 
   });
 

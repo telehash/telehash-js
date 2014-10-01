@@ -84,13 +84,13 @@ describe('telehash/thtp', function(){
     meshB.proxy(proxy);
     
     // send request and gather response
-    linkAB.request('/test', function(err){
+    linkAB.request('/test', function(err, res){
       expect(err).to.not.exist;
-    }).pipe(concat(function(body){
-//      expect(body.toString()).to.be.equal('test');
-      done();
-    }));
-
+      res.pipe(concat(function(body){
+        expect(body.toString()).to.be.equal('test');
+        done();
+      }));
+    });
   });
 
 });

@@ -52,7 +52,7 @@ exports.mesh = function(mesh, cbMesh)
         // direct response two ways depending on args
         if(typeof res == 'object')
         {
-          res.writeHead(statusCode, packet.json);
+          res.writeHead(sdecode.statusCode, packet.json);
           sdecode.pipe(res);
         }else if(typeof res == 'function'){
           res(sdecode); // handler must set up stream piping

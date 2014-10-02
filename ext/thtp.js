@@ -4,6 +4,7 @@ var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
 
+// implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
 exports.name = 'thtp';
 
 exports.mesh = function(mesh, cbMesh)

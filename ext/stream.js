@@ -1,6 +1,7 @@
 var Duplex = require('stream').Duplex;
 var lob = require('lob-enc');
 
+// implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/stream.md
 exports.name = 'stream';
 
 exports.mesh = function(mesh, cbExt)

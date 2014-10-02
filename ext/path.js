@@ -1,3 +1,4 @@
+// implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/path.md
 exports.name = 'path';
 
 exports.mesh = function(mesh, cbExt)

@@ -2,7 +2,7 @@ var hashname = require('hashname');
 var lob = require('lob-enc');
 var crypto = require('crypto');
 
-// handle type:peer paths to create peer channels
+// handle type:peer paths to create peer channels, https://github.com/telehash/telehash.org/blob/v3/v3/channels/peer.md
 exports.name = 'peer';
 
 exports.mesh = function(mesh, cbExt)

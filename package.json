@@ -1,12 +1,12 @@
 {
    "name": "telehash",
-   "version": "0.3.14",
+   "version": "0.3.15",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
-     "e3x": "git+https://github.com/quartzjer/e3x.git",
-     "lob-enc": "git+https://github.com/quartzjer/lob-enc.git",
-     "hashname": "git+https://github.com/quartzjer/hashname.git",
+     "e3x": "git+https://github.com/telehash/e3x.git",
+     "lob-enc": "git+https://github.com/telehash/lob-enc.git",
+     "hashname": "git+https://github.com/telehash/hashname.git",
      "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
      "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
      "path-extra":"~0.3.0",
@@ -37,15 +37,15 @@
     "mesh"
   ],
   "description": "A telehash library for node and browserify",
-  "homepage": "https://github.com/telehash/node-telehash",
+  "homepage": "https://github.com/telehash/telehash-js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/telehash/node-telehash.git"
+    "url": "https://github.com/telehash/telehash-js.git"
   },
   "licenses": [
   {
     "type": "MIT",
-    "url": "https://github.com/telehash/node-telehash/raw/master/LICENSE"
+    "url": "https://github.com/telehash/telehash-js/raw/master/LICENSE"
   }
   ],
   "author": {

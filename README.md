@@ -1,16 +1,16 @@
 # Overview
 
-[![Build Status](https://travis-ci.org/telehash/node-telehash.svg?branch=v3)](https://travis-ci.org/telehash/node-telehash)
+[![Build Status](https://travis-ci.org/telehash/telehash-js.svg?branch=v3)](https://travis-ci.org/telehash/telehash-js)
 
 [![telehash](https://nodei.co/npm/telehash.png)](https://nodei.co/npm/telehash/)
 
-This module presents a simple high-level API for using [telehash v3](https://github.com/telehash/telehash.org/tree/v3/v3) for both node and browserify.
+This module presents a simple high-level API for using [telehash v3](https://github.com/telehash/telehash.org/tree/master/v3) for both node and browserify.
 
 The browser crypto that powers this is only possible thanks to the incredible work done by the team behind [Forge](https://github.com/digitalbazaar/forge), [Tom Wu](http://www-cs-students.stanford.edu/~tjw/), and the [Sanford Javascript Crypto Library](https://github.com/bitwiseshiftleft/sjcl).
 
 # Router
 
-Telehash apps usually need one or more routers to assist in establishing p2p connections, there are some test ones in [links.json](links.json).  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.link({...})` function (shown below) or stored in your own `links.json`.
+Telehash apps usually need one or more mesh routers to assist in establishing p2p links, there are some test ones in [links.json](links.json).  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.link({...})` function (shown below) or stored in your own `links.json`.
 
 # Library Interface
 
@@ -49,7 +49,7 @@ th.mesh({id:id}, function(err, mesh){
 The args passed in to the `mesh` may include:
 
 * **id** - An endpoint id object previously generated
-* **links** - An object in the [mesh json](https://github.com/telehash/telehash.org/blob/master/json.md) format that will be auto-loaded
+* **links** - An object in the [mesh json](https://github.com/telehash/telehash.org/blob/master/v3/json.md) format that will be auto-loaded
 
 In node, the `id` and `links` can be strings pointing to local filenames that will be auto-loaded.  In the browser they can be string keys to localStorage.  Those locations will also be generated and kept in sync for any changes.
 

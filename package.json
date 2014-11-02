@@ -1,10 +1,10 @@
 {
    "name": "telehash",
-   "version": "0.3.15",
+   "version": "0.3.16",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
-     "e3x": "git+https://github.com/telehash/e3x.git",
+     "e3x": "git+https://github.com/telehash/e3x-js.git",
      "lob-enc": "git+https://github.com/telehash/lob-enc.git",
      "hashname": "git+https://github.com/telehash/hashname.git",
      "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",

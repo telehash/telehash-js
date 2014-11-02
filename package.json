@@ -1,40 +1,42 @@
 {
    "name": "telehash",
-   "version": "0.2.14",
+   "version": "0.3.14",
    "main":"index.js",
    "browserify":"browser.js",
    "dependencies": {
-     "telehash-cs1a": "0.0.x",
-     "telehash-cs2a": "0.0.x",
-     "telehash-cs3a": "0.0.x",
-     "telehash-ipv4": "0.0.x",
-     "telehash-ipv6": "0.0.x",
-     "telehash-http": "0.0.x",
-     "telehash-webrtc": "0.0.x",
-     "telehash-telesocket": "0.0.x",
-     "telehash-thtp": "0.0.x",
-     "telehash-token": "0.0.x",
-     "telehash-stream": "0.0.x",
-     "telehash-seeds": "0.0.x",
-     "telehash-js":"0.1.x"
+     "e3x": "git+https://github.com/quartzjer/e3x.git",
+     "lob-enc": "git+https://github.com/quartzjer/lob-enc.git",
+     "hashname": "git+https://github.com/quartzjer/hashname.git",
+     "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
+     "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
+     "path-extra":"~0.3.0",
+     "optimist": "~0.6.1",
+     "json-stable-stringify": "~1.0.0"
    },
    "devDependencies": {
-     "path-extra":"*",
-     "optimist": "*"
+     "chai": "*",
+     "concat-stream": "~1.4.6",
+     "event-stream": "~3.1.7",
+     "mocha": "*"
+   },
+   "bin" : {
+     "router" : "./bin/router.js",
+     "mesh" : "./bin/mesh.js"
    },
    "scripts": {
-     "start":"node ./seed.js",
-     "seed":"node ./seed.js"
+     "start":"node ./bin/router.js",
+     "router":"node ./bin/router.js",
+     "mesh":"node ./bin/mesh.js",
+     "test": "make test"
   },
   "keywords": [
     "telehash",
     "crypto",
     "p2p",
-    "dht",
     "json",
     "mesh"
   ],
-  "description": "A simplified telehash library for node and browserify",
+  "description": "A telehash library for node and browserify",
   "homepage": "https://github.com/telehash/node-telehash",
   "repository": {
     "type": "git",

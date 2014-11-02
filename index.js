@@ -1,64 +1,74 @@
-var fs = require("fs");
-var thjs = require("telehash-js");
-exports.debug = thjs.debug;
-exports.info = thjs.info;
+var fs = require('fs');
 
-function install(self, args)
+// we just wrap the shared code
+var telehash = module.exports = require('./lib/mesh.js');
+var log = telehash.log();
+
+// node specific extensions
+module.exports.add(require('telehash-udp4'));
+module.exports.add(require('telehash-http'));
+
+// wrap the mesh to accept file-based args
+module.exports.load = function(args, cbMesh)
 {
-  // crypto
-  require("telehash-cs1a").install(self, args);
-  require("telehash-cs2a").install(self, args);
-  require("telehash-cs3a").install(self, args);
+  var idFile, linksFile;
 
-  // networking
-  require("telehash-ipv4").install(self, args);
-  require("telehash-ipv6").install(self, args);
-  require("telehash-http").install(self, args);
-
-  // extensions
-  require("telehash-stream").install(self, args);
-  require("telehash-telesocket").install(self, args);
-  require("telehash-thtp").install(self, args);
-  require("telehash-token").install(self, args);
-}
-
-exports.init = function(args, cbDone)
-{
-  if(!args) args = {};
-  var self = new thjs.switch();
-  if(args.bridge) self.isBridge(true);
-
-  install(self, args);
-
-  function seed()
+  // set up some node-specific things after the mesh is created
+  function loaded(err)
   {
-    require("telehash-seeds").install(self, args);
-    
-    self.online(function(err){
-      cbDone(err, self);      
+    if(err)
+    {
+      log.error(err);
+      cbMesh(err);
+      return false;
+    }
+
+    return telehash.mesh(args, function(err, mesh){
+      if(!mesh) return cbMesh(err);
+
+      // sync links automatically to file whenever they change
+      if(linksFile) mesh.linked(function(json, str){
+        log.debug('syncing links json',linksFile,str.length);
+        fs.writeFileSync(linksFile, str);
+      });
+
+      cbMesh(err, mesh);
     });
   }
 
-  if(args.id)
+  if(typeof args.links == 'string')
   {
-    if(typeof args.id == "string" && fs.existsSync(args.id)) args.id = require(args.id);
-    if(typeof args.id == "object")
+    linksFile = args.links;
+    if(fs.existsSync(args.links))
     {
-      var err;
-      if((err = self.load(args.id))) return cbDone("error loading id, "+err+": "+JSON.stringify(args.id));
-      seed();
-      return self;
+      log.debug('loading links',args.links);
+      args.links = require(args.links);
     }
   }
 
-  self.make(function(err,id){
-    if(err) return cbDone("error creating id, "+err);
-    if(typeof args.id == "string") fs.writeFileSync(args.id, JSON.stringify(id, null, 4));
-    args.id = id;
-    self.load(id);
-    seed();      
-  });
-  
-  return self;
-}
+  if(typeof args.id == 'string')
+  {
+    idFile = args.id;
 
+    if(fs.existsSync(args.id))
+    {
+      log.debug('loading id',args.id);
+      args.id = require(args.id);
+      return loaded();
+    }
+
+    // create new
+    log.debug('generating new id');
+    telehash.generate(function(err,id){
+      if(err) return loaded(err);
+      args.id = id;
+      log.debug('saving to',idFile);
+      fs.writeFile(idFile, JSON.stringify(id, null, 4), loaded);
+    });
+
+    return;
+  }
+  
+  // default passthrough
+  return loaded();
+}

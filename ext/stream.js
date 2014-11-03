@@ -114,7 +114,7 @@ exports.mesh = function(mesh, cbExt)
     link.stream = function(packet)
     {
       var open = {json:{type:'stream'},body:packet};
-      open.json.seq = 0; // always reliable
+      open.json.seq = 1; // always reliable
       var channel = link.x.channel(open);
       var stream = mesh.streamize(channel);
       channel.send(open);

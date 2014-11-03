@@ -35,7 +35,7 @@ exports.mesh = function(mesh, cbMesh)
       
       // create the channel request
       var open = {json:{type:'thtp'}};
-      open.json.seq = 0; // always reliable
+      open.json.seq = 1; // always reliable
       open.body = packet.slice(0,1000); // send as much of the headers as we can
       var channel = link.x.channel(open);
 

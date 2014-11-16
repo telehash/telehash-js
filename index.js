@@ -7,6 +7,7 @@ var log = telehash.log();
 // node specific extensions
 module.exports.add(require('telehash-udp4'));
 module.exports.add(require('telehash-http'));
+module.exports.add(require('telehash-tcp4'));
 
 // wrap the mesh to accept file-based args
 module.exports.load = function(args, cbMesh)

@@ -11,14 +11,14 @@ describe('node-telehash', function(){
   });
 
   it('should have extensions', function(){
-    expect(Object.keys(telehash.extensions).length).to.be.equal(5);
+    expect(Object.keys(telehash.extensions).length).to.be.equal(6);
   });
   
   it('should create a real mesh', function(done){
     telehash.mesh({id:idA},function(err, mesh){
       expect(err).to.not.exist;
       expect(mesh).to.be.an('object');
-      expect(mesh.extended.length).to.be.equal(6);
+      expect(mesh.extended.length).to.be.equal(7);
       expect(mesh.paths().length).to.be.above(0);
       expect(mesh.discover({discover:function(){}},function(err){
         expect(err).to.not.exist;

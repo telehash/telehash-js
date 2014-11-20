@@ -48,6 +48,18 @@ describe('telehash', function(){
     });
   });
 
+  it('should receive cloaked packets', function(done){
+    telehash.mesh({id:idA,extensions:{}},function(err, mesh){
+      expect(err).to.not.exist;
+      expect(mesh).to.be.an('object');
+      var pipe = new telehash.Pipe('test');
+      expect(pipe.cloaked).to.be.false;
+      mesh.receive(new Buffer("208cb2d0532f74acae82","hex"), pipe);
+      expect(pipe.cloaked).to.be.true;
+      done();
+    });
+  });
+
   it('should create a link', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       var link = mesh.link({keys:idB.keys});

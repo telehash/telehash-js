@@ -20,6 +20,7 @@ describe('URI', function(){
     expect(uri.keys).to.be.an('object');
     expect(Object.keys(uri.keys).length).to.be.equal(3);
     expect(uri.token).to.be.equal('token');
+    expect(Object.keys(uri.paths).length).to.be.above(2);
   });
 
   it('should decode', function(){

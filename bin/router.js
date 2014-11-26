@@ -14,4 +14,5 @@ repl.start(argv, function(mesh){
   mesh.discover(true);
 
   mesh.rlog('router:',mesh.json());
+  mesh.rlog('router:',mesh.uri());
 });

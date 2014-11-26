@@ -44,6 +44,8 @@ describe('telehash', function(){
       expect(mesh.router).to.be.a('function');
       expect(mesh.link).to.be.a('function');
       expect(mesh.discover).to.be.a('function');
+      expect(mesh.json()).to.be.an('object');
+      expect(mesh.uri()).to.be.a('string');
       done();
     });
   });
@@ -66,6 +68,15 @@ describe('telehash', function(){
       expect(link).to.be.an('object');
       expect(link.hashname).to.be.equal(idB.hashname);
       expect(link.router).to.be.a('function');
+      done();
+    });
+  });
+
+  it('should create a link from a uri', function(done){
+    telehash.mesh({id:idA,extensions:{}},function(err, mesh){
+      var link = mesh.link('link://localhost?1a=apkoh54rkobkeela6d62hblhqd7grqd5dm');
+      expect(link).to.be.an('object');
+      expect(link.hashname).to.be.equal(idB.hashname);
       done();
     });
   });

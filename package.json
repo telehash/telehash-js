@@ -2,8 +2,8 @@
    "name": "telehash",
    "version": "0.3.20",
    "main":"index.js",
-   "browserify":"browser.js",
    "dependencies": {
+     "browserify-fs": "~1.0.0",
      "e3x": "git+https://github.com/telehash/e3x-js.git",
      "lob-enc": "git+https://github.com/telehash/lob-enc.git",
      "hashname": "git+https://github.com/telehash/hashname.git",
@@ -20,11 +20,17 @@
      "event-stream": "~3.1.7",
      "mocha": "*"
    },
+   "browser": {
+     "fs": "browserify-fs",
+     "telehash-udp4":false,
+     "telehash-tcp4":false
+   },
    "bin" : {
      "router" : "./bin/router.js",
      "mesh" : "./bin/mesh.js"
    },
    "scripts": {
+     "browserify": "browserify index.js -o bundle.js",
      "start":"node ./bin/router.js",
      "router":"node ./bin/router.js",
      "mesh":"node ./bin/mesh.js",

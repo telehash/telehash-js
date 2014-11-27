@@ -3,7 +3,7 @@
    "version": "0.3.21",
    "main":"index.js",
    "dependencies": {
-     "browserify-fs": "~1.0.0",
+     "localstorage-fs": "~0.1.0",
      "e3x": "git+https://github.com/telehash/e3x-js.git",
      "lob-enc": "git+https://github.com/telehash/lob-enc.git",
      "hashname": "git+https://github.com/telehash/hashname.git",
@@ -21,7 +21,7 @@
      "mocha": "*"
    },
    "browser": {
-     "fs": "browserify-fs",
+     "fs": "localstorage-fs",
      "telehash-udp4":false,
      "telehash-tcp4":false
    },
@@ -35,6 +35,15 @@
      "router":"node ./bin/router.js",
      "mesh":"node ./bin/mesh.js",
      "test": "make test"
+  },
+  "testling": {
+    "harness": "mocha-bdd",
+    "files": "test/*.js",
+    "browsers": [
+      "ie/8..latest",
+      "chrome/latest",
+      "firefox/latest"
+    ]
   },
   "keywords": [
     "telehash",

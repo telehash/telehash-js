@@ -21,6 +21,7 @@ telehash.generate(function(err, id){
   if(err) return error(err);
   telehash.mesh({id:id}, function(err, mesh){
     if(err) return error(err);
+    if(process.argv[2]) mesh.link(process.argv[2]);
     rl.on('line', function(line){
       var link = mesh.link(JSON.parse(line));
       link.status(function(err){

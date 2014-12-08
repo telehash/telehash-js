@@ -56,7 +56,11 @@ describe('telehash', function(){
       expect(mesh).to.be.an('object');
       var pipe = new telehash.Pipe('test');
       expect(pipe.cloaked).to.be.false;
-      mesh.receive(new Buffer("208cb2d0532f74acae82","hex"), pipe);
+      mesh.receive(new Buffer("d7448f28bb70b4a55962","hex"), pipe);
+      expect(pipe.cloaked).to.be.true;
+      var pipe = new telehash.Pipe('test');
+      expect(pipe.cloaked).to.be.false;
+      mesh.receive(new Buffer("b8921a332948eedec882b3102aa9d6de8688d73a195b0cab64bbf61f5c6805df85e901c1fb774046f46a43ba5440a5cad24eb486","hex"), pipe);
       expect(pipe.cloaked).to.be.true;
       done();
     });

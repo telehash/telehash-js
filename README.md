@@ -119,6 +119,8 @@ mesh.discover(true); // to enable
 mesh.discover(false); // to disable (default)
 ````
 
+While discover is enabled, `mesh.accept` will be called for all discovered local endpoints.
+
 Optional args and a callback (to know once discovery is enabled on all the transports) can be passed in:
 
 ````js

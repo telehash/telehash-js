@@ -130,21 +130,22 @@ describe('telehash', function(){
     }};
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
       mesh.extend(ext, function(){
-        mesh.discover({discover:function(){}});
+        mesh.discover(true);
       });
     });
   });
 
   it('should discover', function(done){
     telehash.mesh({id:idB,extensions:{}},function(err, mesh){
-      mesh.discover({discover:function(from){
+      mesh.accept = function(from){
         expect(from).to.be.an('object');
         expect(from.csid).to.be.equal('1a');
         expect(from.hashname).to.be.equal(idA.hashname);
         expect(from.paths[0].type).to.be.equal('test');
         expect(mesh.link(from)).to.exist;
         done();
-      }},function(err){
+      };
+      mesh.discover({},function(err){
         expect(err).to.not.exist;
         var pipe = new telehash.Pipe('test');
         pipe.path = {type:'test'};

@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.3.22",
+   "version": "0.3.23",
    "main":"index.js",
    "dependencies": {
      "localstorage-fs": "~0.1.0",

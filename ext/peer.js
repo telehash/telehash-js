@@ -111,8 +111,8 @@ exports.mesh = function(mesh, cbExt)
         mesh.receive(attached, pipe);
         mesh.receive(attached, args.pipe);
       }else{
-        // otherwise try processing any keys
-        mesh.from(attached, pipe);
+        // otherwise try processing it as an un-encrypted handshake
+        mesh.handshake(via.hashname, attached, pipe);
       }
       cbOpen();
     });

@@ -76,17 +76,21 @@ A link can also be establish directly (no router required):
 var link = mesh.link({keys:{},paths:{}});
 ````
 
-### Authorizing Links (optional)
+The `.link({args})` will also take an argument of `"jwt":"..."` to include a [JWT](http://jwt.io/) in the link request for identifying/authorizing the sender.
 
-To send a custom packet or validate one with any link request, pass a function for the second argument to `.link()`:
+### Accepting/Authorizing Links
+
+When an incoming link is requested the local app must decide if it accepts that link.  By default all unknown links/senders are ignored and never responded to in order to protect the privacy of the recipient.
+
+To process incoming link requests:
 
 ````js
-var link = mesh.link(hashname, function(incoming, cb){
-  // incoming is an inbound link packet, or false when generating an initial outgoing packet
-  // cb(err, outgoing) to respond, any err will mark the link offline or outgoing is online (once mutual)
-});
+mesh.accept = function(from){};
 ````
 
+The accept function will always be called with a from object that includes the hashname of the sender and any additional details about the request including `keys`, `paths`, and all handshake types received as `hset`.
+
+To authorize/accept the request, simply perform a `mesh.link(from)` and it will respond and create the link.
 
 ## Routing
 
@@ -106,9 +110,9 @@ Whenever a default router is added, it will also be advertised to other links as
 
 ## Discovery Mode
 
-By default links can only be established with a known hashname, which requires apps to have an independent way to exchange hashnames beforehand. Discovery mode enables a server model where an endpoint can accept links from new hashnames it doesn't know yet.  This means that the endpoint will reveal itself to unknown and not-yet-trusted hashnames, it can be discovered by anyone with access to a local network or it's network information so the mode should be used sparingly or only in public server models.
+Discovery mode enables any network transport to send un-encrypted announcements to any other endpoints that are available locally only. This can be used to automatically establish a link to a local peer when there is no other mechanism to exchange keys, such as when they are offline.
 
-Discovery mode also enables any supported network transport to announce and discover other endpoints that are simultaneously discoverable locally. This can be used for initial pairing of two hashnames.
+It is important to note that this should be used sparingly, as anything on a local network will be made aware of the sending hashname.  While this is generally very low risk, it should not be left on by default except in special cases.
 
 ````js
 mesh.discover(true); // to enable
@@ -123,8 +127,7 @@ mesh.discover({args},done);
 
 The args can include:
 
-* `discover` - callback function, upon discovering any hashname it is given the info of `callback({hashname:'',keys:{},paths:{}})` and there is no response sent unless it is passed to `mesh.link(from)`
-* `announce` - bool, any transport that can send broadcasts locally will do so (defaults to `true`), incoming announcements will still be discovered when `false`
+* `jwt` - a JWT to include in the announcement to help identify the sender
 * custom per-transport discovery options may be passed in
 
 ## Extensions

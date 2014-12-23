@@ -89,7 +89,7 @@ exports.mesh = function(mesh, cbExt)
     }
 
     // just forward the body directly as a connect
-    var json = {type:'connect',c:to.x.cid()};
+    var json = {type:'connect',c:to.x.cid(),peer:from.hashname};
     log.debug('sending connect to',to.hashname,json,open.body);
     to.x.send({json:json,body:open.body});
   }
@@ -112,7 +112,7 @@ exports.mesh = function(mesh, cbExt)
         mesh.receive(attached, args.pipe);
       }else{
         // otherwise try processing it as an un-encrypted handshake
-        mesh.handshake(via.hashname, attached, pipe);
+        mesh.handshake(open.json.peer||via.hashname, attached, pipe);
       }
       cbOpen();
     });

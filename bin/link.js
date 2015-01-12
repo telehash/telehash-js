@@ -17,6 +17,8 @@ function error(err)
   process.exit(1);
 }
 
+telehash.log({debug:console.log});
+
 telehash.generate(function(err, id){
   if(err) return error(err);
   telehash.mesh({id:id}, function(err, mesh){

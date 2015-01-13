@@ -28,9 +28,9 @@ telehash.generate(function(err, id){
       var link = mesh.link(JSON.parse(line));
       link.status(function(err){
         if(err) return error(err);
-        process.exit(0);
+        setTimeout(function(){process.exit(0)},100);
       });
-      setTimeout(function(){error('timeout')},1000);
+      setTimeout(function(){error('timeout')},2000);
     });
   });
 });

@@ -9,6 +9,9 @@ module.exports.add(require('telehash-udp4'));
 module.exports.add(require('telehash-http'));
 module.exports.add(require('telehash-tcp4'));
 
+// attach our package+version to be helpful
+module.exports.package = require('./package.json');
+
 // wrap the mesh to accept file-based args
 module.exports.load = function(args, cbMesh)
 {

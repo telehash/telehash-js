@@ -1,5 +1,13 @@
 <script src="../../bundle.js"></script>
 Loaded.
 <script>
-console.log(telehash)
+console.log("generating an endpoint id")
+telehash.generate(function(err, id){
+  if(err) return console.log("endpoint generation failed",err);
+  console.log("creating a mesh with",id.hashname,id.keys);
+  telehash.mesh({id:id}, function(err, mesh){
+    if(err) return console.log("mesh failed to initialize",err);
+    console.log("mesh",mesh);
+  });
+});
 </script>

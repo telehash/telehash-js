@@ -10,9 +10,13 @@ telehash.generate(function(err, id){
     console.log("mesh",mesh);
     // try to discover a local router for testing
     mesh.discover(true);
-    mesh.accept(function(from){
+    mesh.accept = function(from){
       console.log("incoming link request",from);
-    });
+      var link = mesh.link(from);
+      link.status(function(err){
+        console.log("link is",err?err:"up");
+      });
+    };
   });
 });
 </script>

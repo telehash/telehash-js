@@ -1,13 +1,18 @@
 <script src="../../bundle.js"></script>
 Loaded.
 <script>
-console.log("generating an endpoint id")
+console.log("generating an endpoint id w/ version",telehash.package.version);
 telehash.generate(function(err, id){
   if(err) return console.log("endpoint generation failed",err);
   console.log("creating a mesh with",id.hashname,id.keys);
   telehash.mesh({id:id}, function(err, mesh){
     if(err) return console.log("mesh failed to initialize",err);
     console.log("mesh",mesh);
+    // try to discover a local router for testing
+    mesh.discover(true);
+    mesh.accept(function(from){
+      console.log("incoming link request",from);
+    });
   });
 });
 </script>

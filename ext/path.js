@@ -20,7 +20,7 @@ exports.mesh = function(mesh, cbExt)
     // go through all the pipes we have already and send a response
     link.pipes.forEach(pong);
     // add any of the included paths, and send to them too
-    if(Array.isArray(open.paths)) open.paths.forEach(function(path){
+    if(Array.isArray(open.json.paths)) open.json.paths.forEach(function(path){
       link.addPath(path,pong);
     });
   }
@@ -48,6 +48,7 @@ exports.mesh = function(mesh, cbExt)
         done = false;
         cbChan();
       }
+      mesh.log.debug('sending path ping to',link.hashname,json.paths);
       channel.send({json:json});
     }
 

@@ -11,6 +11,7 @@ var argv = require('optimist')
 repl.start(argv, function(mesh){
   mesh.router(true);
   mesh.discover(true);
+  mesh.accept = mesh.link; // auto-link any
 
   mesh.rlog('router:',mesh.json());
   mesh.rlog('router:',mesh.uri());

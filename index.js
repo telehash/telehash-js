@@ -1,7 +1,7 @@
 var fs = require('fs');
 
 // we just wrap the shared code
-var telehash = module.exports = require('./lib/mesh.js');
+var telehash = global.telehash = module.exports = require('./lib/mesh.js');
 var log = telehash.log();
 
 // node specific extensions
@@ -57,8 +57,13 @@ module.exports.load = function(args, cbMesh)
     if(fs.existsSync(args.id))
     {
       log.debug('loading id',args.id);
-      args.id = require(args.id);
-      return loaded();
+      var err;
+      try{
+        args.id = JSON.parse(fs.readFileSync(args.id));
+      }catch(E){
+        err = E;
+      }
+      return loaded(err);
     }
 
     // create new

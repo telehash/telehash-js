@@ -1,6 +1,6 @@
 {
    "name": "telehash",
-   "version": "0.3.23",
+   "version": "0.3.24",
    "main":"index.js",
    "dependencies": {
      "localstorage-fs": "~0.1.0",
@@ -10,6 +10,7 @@
      "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
      "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
      "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
+     "telehash-webrtc": "git+https://github.com/quartzjer/telehash-webrtc.git",
      "path-extra":"~0.3.0",
      "optimist": "~0.6.1",
      "json-stable-stringify": "~1.0.0"

@@ -8,6 +8,7 @@ var log = telehash.log();
 module.exports.add(require('telehash-udp4'));
 module.exports.add(require('telehash-http'));
 module.exports.add(require('telehash-tcp4'));
+module.exports.add(require('telehash-webrtc'));
 
 // attach our package+version to be helpful
 module.exports.package = require('./package.json');

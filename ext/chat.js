@@ -1,7 +1,6 @@
 var crypto = require("crypto");
 var jstream = require("JSONStream");
 var es = require("event-stream");
-exports.telehash = require("telehash");
 
 //var log = console.log;
 var log = function(){};

@@ -158,6 +158,16 @@ mesh.stream(function(link, args, cbAccept){
 });
 ````
 
+* **chat** - send and receive one-to-one or group chat messages
+````js
+// create or join a new chat
+mesh.chat(args,function(err, chat){
+});
+
+// set handler for when invited to a chat
+mesh.invited(function(link, chat){});
+````
+
 ### Extension Backing API
 
 Extensions typically involve:

@@ -11,28 +11,33 @@ exports.name = 'chat';
 
 exports.mesh = function(mesh, cbMesh)
 {
-  var self = {open:{}};
-  mesh.chat = {}
-  mesh.join = {};
-  mesh.setJoin = {};
-  mesh.setInvite = {};
+  var lib = mesh.lib;
+  var self = {open:{}, chats:{}};
 
   // overwrite-able callback for invites
-  self.onInivte = function(chat){};
+  var invited = function(chat){};
+  mesh.invited = function(handler){ invited = handler; };
 
-  // create/join a new chat id can be false (auto-generate), an endpoint, or an endpoint@originator
-  mesh.chat = function(id, cbReady)
+  // create/join a new chat, args can be 'name' or 'name@leader'
+  mesh.chat = function(args, cbReady)
   {
-    if(!id) id = self.randomHEX(16);
-    var parts = id.split("@");
-    if(!parts[1]) id = [parts[0],self.hashname].join("@");
-    var parts = id.split("@");
+    if(typeof args == 'string')
+    {
+      var parts = args.split('@');
+      args = {};
+      args.name = parts[0];
+      args.leader = parts[1] ? mesh.link(parts[1]) : false;
+    }
+    
+    if(!args.name) args.name = crypto.randomBytes(8).toString('hex');
+    if(!args.leader) args.leader = mesh; // ourselves
+    var id8 = lib.sip.hash(args.leader.hashname,args.name);
 
     var chat = {};
-    chat.id = id;
+    chat.id = lib.base32.encode(id8);
     self.chats[chat.id] = chat;
-    chat.endpoint = parts[0];
-    chat.originator = parts[1];
+    chat.name = args.name;
+    chat.leader = args.leader;
     chat.log = {};
     chat.connected = {};
     chat.connecting = {};
@@ -48,8 +53,9 @@ exports.mesh = function(mesh, cbMesh)
 
     // serve the thtp requests for this chat
     chat.base = "/chat/"+mhash(chat.id).toString("hex")+"/";
-    self.thtp.match(chat.base,function(req,cbRes){
+    mesh.thtp.match(chat.base,function(req,cbRes){
       var parts = req.path.split("/");
+      if(parts[3] == "name") return cbRes({body:chat.name});
       if(parts[3] == "roster") return cbRes({json:chat.roster});
       if(parts[3] == "id" && chat.log[parts[4]]) return cbRes({body:self.pencode(chat.log[parts[4]])});
       cbRes({status:404,body:"not found"});

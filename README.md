@@ -165,7 +165,7 @@ mesh.chat(args,function(err, chat){
 });
 
 // set handler for when invited to a chat
-mesh.invited(function(link, chat){});
+mesh.invited(function(chat){});
 ````
 
 ### Extension Backing API

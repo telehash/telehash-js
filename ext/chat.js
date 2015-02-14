@@ -2,9 +2,6 @@ var crypto = require("crypto");
 var jstream = require("JSONStream");
 var es = require("event-stream");
 
-//var log = console.log;
-var log = function(){};
-
 // implements https://github.com/telehash/telehash.org/blob/master/v3/channels/chat.md
 exports.name = 'chat';
 

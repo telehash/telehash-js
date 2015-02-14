@@ -160,8 +160,13 @@ mesh.stream(function(link, args, cbAccept){
 
 * **chat** - send and receive one-to-one or group chat messages
 ````js
-// create or join a new chat
+// create or load a new chat
 mesh.chat(args,function(err, chat){
+  chat.join({join}, onJoined);
+  chat.inbox; // incoming message stream
+  chat.outbox; // valid once joined to send messages
+  chat.roster; // hn->link
+  chat.add(link,perm); // only if leader
 });
 
 // set handler for when invited to a chat

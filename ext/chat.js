@@ -13,7 +13,7 @@ exports.mesh = function(mesh, cbMesh)
   // overwrite-able callback for invites
   var invited = function(chat){};
   mesh.invited = function(handler){ invited = handler; };
-
+  
   // create/join a new chat, args can be 'name' or 'name@leader'
   mesh.chat = function(args, cbReady)
   {

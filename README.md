@@ -162,11 +162,12 @@ mesh.stream(function(link, args, cbAccept){
 ````js
 // create or load a new chat
 mesh.chat(args,function(err, chat){
-  chat.join({join}, onJoined);
+  chat.join({join}, onJoined); // starts connections
   chat.inbox; // incoming message stream
   chat.outbox; // valid once joined to send messages
-  chat.roster; // hn->link
+  chat.roster; // hn->participant {join:join, link:link, history:[]}
   chat.add(link,perm); // only if leader
+  chat.history(back, cbLoaded); // call to load historical messages
 });
 
 // set handler for when invited to a chat

@@ -194,7 +194,7 @@ exports.mesh = function(mesh, cbMesh)
     {
       if(!msg.json.type) msg.json.type = 'chat';
       if(!msg.json.id) msg.json.id = stamp();
-      var packet = self.pencode(msg.json,msg.body);
+      var packet = mesh.lib.lob.packet(msg.json,msg.body);
 
       if(msg.json.type == 'chat')
       {
@@ -204,62 +204,42 @@ exports.mesh = function(mesh, cbMesh)
 
       // deliver to anyone connected
       Object.keys(chat.connected).forEach(function(to){
-        chat.connected[to].message(packet);
+        chat.connected[to].write(packet);
       });
     }
   
-    chat.receive = function(from,msg)
-    {
-      if(msg.js.type == 'chat') chat.onMessage(from,msg);
-      // TODO statuses
-    }
-    
-
     chat.sync(cbDone);
     return chat;
   }
 
 
-  self.open['chat'] = function(err, packet, chan, cbChat)
-  {
-    if(err) return;
-    cbChat();
+  self.open.chat = function(args, open, cbOpen){
+    var link = this;
 
     // ensure valid request
-    var parts = (typeof packet.js.to == 'string') && packet.js.to.split('@');
-    if(!parts || !parts[0] || !parts[1] || parts[0].length > 32 || !self.isHashname(parts[1])) return chan.err('invalid');
-
-    var chat = self.chats[packet.js.to];
-
-    log('CHAT REQUEST',packet.js,chat&&chat.id);
+    var id = mesh.lib.base32.decode(open.json.chat);
+    if(!id || id.length != 8) return cbOpen('invalid chat id');
     
-    // new invited-to chat from originator
+    // process invites
+    var chat = self.chats[open.json.chat];
     if(!chat)
     {
-      if(!packet.js.from || parts[1] != packet.from.hashname) return chan.err('invalid');
-      chat = self.chat(packet.js.to,function(err,chat){
-        if(err) return chan.err('failed');
-        self.onInvite(chat);
+      if(open.json.chat != open.json.join) return cbOpen('unknown chat');
+      if(!mesh.invited) return cbOpen('cannot accept invites');
+      // create to load roster then call invited
+      mesh.chat({leader:link,id:open.json.chat},function(err, chat){
+        if(err) return cbOpen(err);
+        chat.invited = open;
+        mesh.invited(chat);
       });
+      return;
     }
 
-    // make sure allowed
-    var state = chat.roster[packet.from.hashname];
-    if(!state) state = chat.roster['*'];
-    if(chat.originator == packet.from.hashname) state = packet.js.from;
-    if(!(state == 'invited' || state == packet.js.from)) return chan.err('denied');
+    log('CHAT REQUEST',open.json,chat);
 
-    // add in
-    chat.connect(chan,packet.js.from);
+    // is sender in the roster?
+    // TODO respond, make channel, add connected
 
-    // check for updated roster
-    if(packet.js.roster != chat.rosterHash) chat.sync();
-
-    // reply
-    var js = {from:chat.from,roster:chat.rosterHash};
-    if(chat.last) js.last = chat.last;
-    log('CHAT IN OUT',js);
-    chan.send({js:js});
   }
 
   cbMesh(undefined, self);

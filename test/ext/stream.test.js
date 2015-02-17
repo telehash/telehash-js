@@ -117,4 +117,38 @@ describe('telehash/stream', function(){
 
   });
 
+  it('should stream packets', function(done){
+    telehash.log({debug:console.log});
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
+    expect(meshB).to.exist;
+    
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+    
+    // accept and concat stream
+    meshB.stream(function(link, req, accept){
+      expect(link).to.exist;
+      accept().pipe(es.writeArray(function(err,items){
+        expect(err).to.not.exist;
+        expect(items).to.exist;
+        expect(items.length).to.be.equal(1);
+        expect(meshA.lib.lob.isPacket(items[0])).to.be.true;
+        expect(items[0].json.foo).to.be.true;
+        expect(items[0].body.length).to.be.equal(42);
+        done();
+      }));
+    })
+    var streamAB = linkAB.stream();
+    
+    // stream a packet
+    var packet = meshA.lib.lob.packet({"foo":true},new Buffer(42));
+    streamAB.on('error',done);
+    streamAB.write(packet,'lob');
+    streamAB.end();
+
+  });
+  
 });

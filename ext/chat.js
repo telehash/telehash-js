@@ -36,7 +36,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.outbox = new stream.Writeable();
     
     // in scope only
-    var chans = {}; // by hashname
+    var connected = {}; // by hashname
 
     // load more history on demand, tries to get 'back' number from every participant
     chat.history = function(back, cbDone){
@@ -47,7 +47,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.base = '/chat/'+chat.id+'/';
     mesh.thtp.match(chat.base,function(req,cbRes){
       var parts = req.path.split('/');
-      if(parts[3] == 'roster') return cbRes({body:chat.rosterjs});
+      if(parts[3] == 'roster') return cbRes({body:chat.roster});
       if(parts[3] == 'id' && chat.log[parts[4]]) return cbRes({body:self.pencode(chat.log[parts[4]])});
       cbRes({status:404,body:'not found'});
     });
@@ -75,6 +75,7 @@ exports.mesh = function(mesh, cbMesh)
       chat.joined = join;
       join.json.type = 'join';
       join.json.id = (chat.leader == mesh) ? chat.id : stamp();
+      chat.last = join.json.id;
       join.json.at = Math.floor(Date.now()/1000);
       if(chat.log[0]) join.json.after = chat.log[0].id;
       chat.add(mesh.hashname,chat.join.from);
@@ -134,17 +135,6 @@ exports.mesh = function(mesh, cbMesh)
       }));
     }
 
-  
-    chat.connect = function(chan,joinid)
-    {
-      chat.connected[chan.hashname] = chan;
-      chat.add(chan.hashname,joinid);
-      chan.joined = chat.joined;
-      chan.chat = chat;
-      chan.wrap('message');
-      return chan;
-    }
-
     chat.add = function(hashname, join){
       join = join||'*';
       if(chat.roster[hashname] == join) return;
@@ -202,14 +192,14 @@ exports.mesh = function(mesh, cbMesh)
 
     chat.send = function(msg)
     {
-      if(!msg.js.type) msg.js.type = 'chat';
-      if(!msg.js.id) msg.js.id = stamp();
-      var packet = self.pencode(msg.js,msg.body);
+      if(!msg.json.type) msg.json.type = 'chat';
+      if(!msg.json.id) msg.json.id = stamp();
+      var packet = self.pencode(msg.json,msg.body);
 
-      if(msg.js.type == 'chat')
+      if(msg.json.type == 'chat')
       {
-        chat.log[msg.js.id] = packet;
-        chat.last = msg.js.id;
+        chat.log[msg.json.id] = packet;
+        chat.last = msg.json.id;
       }
 
       // deliver to anyone connected

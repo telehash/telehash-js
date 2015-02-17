@@ -40,8 +40,15 @@ exports.mesh = function(mesh, cbExt)
       // support object streams
       if(!Buffer.isBuffer(data))
       {
-        data = JSON.stringify(data);
-        var enc = 'json';
+        if(typeof data != 'string')
+        {
+          data = JSON.stringify(data);
+          enc = 'json';
+        }
+      }else{
+        // detect packet encoding, or none
+        if(mesh.lib.lob.isPacket(data)) enc = 'lob';
+        else enc = '';
       }
       // chunk it
       while(data.length)
@@ -82,9 +89,21 @@ exports.mesh = function(mesh, cbExt)
             body = JSON.parse(body)
           }catch(E){
             mesh.log.warn('stream json chunk parse error',E,body.toString());
+            err = E;
+          }
+          if(packet.json.enc == 'lob')
+          {
+            var packet = mesh.lib.lob.decode(body);
+            if(!packet)
+            {
+              mesh.log.warn('stream lob chunk decode error',body.toString('hex'));
+              err = 'lob decode failed';
+            }else{
+              body = packet;
+            }
           }
           
-          if(!stream.push(body)) more = cbMore;
+          if(!err && !stream.push(body)) more = cbMore;
         }
       }
       if(err) return stream.emit('error',err);

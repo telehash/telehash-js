@@ -1,6 +1,5 @@
 var crypto = require('crypto');
 var stream = require('stream');
-var jstream = require('JSONStream');
 var es = require('event-stream');
 
 // implements https://github.com/telehash/telehash.org/blob/master/v3/channels/chat.md
@@ -37,7 +36,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.outbox = new stream.Writeable();
     
     // in scope only
-    var roster = {}; // by hashname
+    var chans = {}; // by hashname
 
     // load more history on demand, tries to get 'back' number from every participant
     chat.history = function(back, cbDone){

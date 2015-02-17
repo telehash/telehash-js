@@ -109,6 +109,12 @@ exports.mesh = function(mesh, cbMesh)
     return mesh.link(req.hostname).request(req, cbRequest);
   }
   
+  var mPaths = {};
+  mesh.match = function(path, cbMatch)
+  {
+    mPaths[path] = cbMatch;
+  }
+    
   // start accepting incoming thtp requests
   mesh.proxy = function(options)
   {
@@ -179,8 +185,19 @@ exports.mesh = function(mesh, cbMesh)
           res.push(data);
         }
 
-        // show the bouncer our fake id
-        proxy.emit('request', req, res);
+        // see if it's an internal path
+        var match;
+        Object.keys(mPaths).forEach(function(path){
+          if(req.url.indexOf(path) != 0) return;
+          if(match && match.length > path) return; // prefer longest match
+          match = path;
+        });
+
+        // internal handler
+        if(match) mPaths[match](req, res);
+
+        // otherwise show the bouncer our fake id
+        else proxy.emit('request', req, res);
         
         cbStream();
       }));

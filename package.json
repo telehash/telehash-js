@@ -3,7 +3,6 @@
   "version": "0.3.24",
   "main": "index.js",
   "dependencies": {
-    "JSONStream": "^0.10.0",
     "e3x": "git+https://github.com/telehash/e3x-js.git",
     "event-stream": "^3.2.2",
     "hashname": "git+https://github.com/telehash/hashname.git",

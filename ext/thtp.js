@@ -116,12 +116,13 @@ exports.mesh = function(mesh, cbMesh)
   }
     
   // start accepting incoming thtp requests
+  var proxy = false;
   mesh.proxy = function(options)
   {
     // provide a url to directly proxy to
     if(typeof options == 'string')
     {
-      var proxy = httplib.createServer();
+      proxy = httplib.createServer();
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
@@ -132,80 +133,83 @@ exports.mesh = function(mesh, cbMesh)
       });
     }else{
       // local http server given as argument
-      var proxy = options;
+      proxy = options;
     }
+  }
 
-    // handler for incoming thtp channels
-    ext.open.thtp = function(args, open, cbOpen){
-      var link = this;
-      var channel = link.x.channel(open);
-      // pipe the channel into a decoder, then handle it
-      var req = mesh.streamize(channel);
-      req.pipe(lob.stream(function(packet, cbStream){
+  // handler for incoming thtp channels
+  ext.open.thtp = function(args, open, cbOpen){
+    var link = this;
+    var channel = link.x.channel(open);
+    // pipe the channel into a decoder, then handle it
+    var req = mesh.streamize(channel);
+    req.pipe(lob.stream(function(packet, cbStream){
 
-        // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
-        req.method = packet.json[':method'];
-        req.url = packet.json[':path'];
-        req.headers = packet.json;
-        req.headers['x-hashname'] = link.hashname; // for any http handler visibility
+      // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
+      req.method = packet.json[':method'];
+      req.url = packet.json[':path'];
+      req.headers = packet.json;
+      req.headers['x-hashname'] = link.hashname; // for any http handler visibility
 
-        // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
-        var res = new streamlib.Transform();
-        res.pipe(req); // any output goes back
+      // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
+      var res = new streamlib.Transform();
+      res.pipe(req); // any output goes back
 
-        // write out the header bytes first
-        res.writeHead = function(statusCode, reasonPhrase, headers)
+      // write out the header bytes first
+      res.writeHead = function(statusCode, reasonPhrase, headers)
+      {
+        // don't double!
+        if(res.statusCode) return mesh.log.warn('double call to thtp writeHead',(new Error()).stack);
+        // be friendly
+        if(!headers && typeof reasonPhrase == 'object')
         {
-          // don't double!
-          if(res.statusCode) return mesh.log.warn('double call to thtp writeHead',(new Error()).stack);
-          // be friendly
-          if(!headers && typeof reasonPhrase == 'object')
-          {
-            headers = reasonPhrase;
-            reasonPhrase = false;
-          }
-          res.statusCode = parseInt(statusCode)||500;
-
-          // construct the thtp response
-          var json = {};
-          json[':status'] = res.statusCode;
-          if(reasonPhrase) json[':reason'] = reasonPhrase;
-          if(headers) Object.keys(headers).forEach(function(header){
-            json[header.toLowerCase()] = headers[header];
-          });
-          
-          // send it
-          res.push(lob.encode(json, false));
+          headers = reasonPhrase;
+          reasonPhrase = false;
         }
+        res.statusCode = parseInt(statusCode)||500;
 
-        // just ensure headers are written before sending data
-        res._transform = function(data,enc,cbTransform)
-        {
-          if(!res.statusCode) res.writeHead(200);
-          res.push(data);
-        }
-
-        // see if it's an internal path
-        var match;
-        Object.keys(mPaths).forEach(function(path){
-          if(req.url.indexOf(path) != 0) return;
-          if(match && match.length > path) return; // prefer longest match
-          match = path;
+        // construct the thtp response
+        var json = {};
+        json[':status'] = res.statusCode;
+        if(reasonPhrase) json[':reason'] = reasonPhrase;
+        if(headers) Object.keys(headers).forEach(function(header){
+          json[header.toLowerCase()] = headers[header];
         });
-
-        // internal handler
-        if(match) mPaths[match](req, res);
-
-        // otherwise show the bouncer our fake id
-        else proxy.emit('request', req, res);
         
-        cbStream();
-      }));
+        // send it
+        res.push(lob.encode(json, false));
+        return res;
+      }
 
-      channel.receive(open); // actually opens it and handles any body in the stream
-      cbOpen();
-    }
+      // just ensure headers are written before sending data
+      res._transform = function(data,enc,cbTransform)
+      {
+        if(!res.statusCode) res.writeHead(200);
+        res.push(data);
+      }
 
+      // see if it's an internal path
+      var match;
+      Object.keys(mPaths).forEach(function(path){
+        if(req.url.indexOf(path) != 0) return;
+        if(match && match.length > path) return; // prefer longest match
+        match = path;
+      });
+
+      // internal handler
+      if(match) mPaths[match](req, res);
+
+      // otherwise show the bouncer our fake id
+      else if(proxy) proxy.emit('request', req, res);
+      
+      // otherwise error
+      else res.writeHead(500,'not supported').end();
+      
+      cbStream();
+    }));
+
+    channel.receive(open); // actually opens it and handles any body in the stream
+    cbOpen();
   }
 
   cbMesh(undefined, ext);

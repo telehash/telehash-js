@@ -31,6 +31,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.messages = {}; // index of all cached chat messages "id":{...}
     chat.log = []; // ordered combined history ["id","id"]
     chat.roster = {}; // joins by hashname
+    chat.last = {}; // lasts by hashname
     chat.joined = false;
     chat.inbox = new stream.Readable();
     chat.outbox = new stream.Writeable();
@@ -75,7 +76,7 @@ exports.mesh = function(mesh, cbMesh)
       chat.joined = join;
       join.json.type = 'join';
       join.json.id = (chat.leader == mesh) ? chat.id : stamp();
-      chat.last = join.json.id;
+      chat.last[mesh.hashname] = join.json.id;
       join.json.at = Math.floor(Date.now()/1000);
       if(chat.log[0]) join.json.after = chat.log[0].id;
       chat.add(mesh.hashname,chat.join.from);
@@ -85,28 +86,8 @@ exports.mesh = function(mesh, cbMesh)
 
     chat.sync = function(cbDone)
     {
-      // after roster is sync'd, check each participant
-      function done()
-      {
-        Object.keys(chat.roster).forEach(function(hn){
-          if(hn == mesh.hashname) return;
-          if(chat.roster[hn].rhash != chat.rhash) chat.roster[hn].sync();
-        });
-        if(cbDone) cbDone();
-      }
-
-      // we are the leader, make sure others are in sync
-      if(chat.leader == mesh)
-      {
-        // generate current hash
-        var roster = {};
-        Object.keys(chat.roster).forEach(function(hn){
-          roster[hn] = chat.roster[hn].id;
-        });
-        chat.rhash = lib.sip.hash(mesh.hashname, JSON.stringify(roster));
-
-        return done();
-      }
+      // leader is always in sync
+      if(chat.leader == mesh) return cbDone();
 
       // non-leaders always fetch updated roster to sync
       chat.leader.request(chat.base+'roster', fail).pipe(es.wait(function(err, body){
@@ -116,78 +97,58 @@ exports.mesh = function(mesh, cbMesh)
         }catch(E){
           return fail(E);
         }
-        // update the hash to detect changes
-        chat.rhash = lib.sip.hash(chat.leader.hashname, body);
+
+        // create a queue of required message ids to sync
+        var queue = [chat.id];
         
-        // sync the roster to the leader's version, drops any missing
-        var existing = chat.roster;
-        chat.roster = {};
+        // sync the roster, adding any new
         Object.keys(roster).forEach(function(hn){
-          // join ids must match or it starts over
-          if(existing[hn] && existing[hn].id == roster[hn])
-          {
-            chat.roster[hn] = existing[hn];
-          }else{
-            // add and sync immediately
-            chat.add(hn,roster[hn]).sync();
-          }
+          if(!chat.roster[hn]) chat.roster[hn] = roster[hn];
+          chat.add(hn);
+          // queue up known join ids to sync-fetch
+          if(roster[hn] != '*') queue.push(roster[hn]);
         });
+        
+        // perform the queue before being done w/ the sync
+        // TODO
+        cbDone();
+
       }));
     }
 
-    chat.add = function(hashname, join){
-      join = join||'*';
-      if(chat.roster[hashname] == join) return;
-      var part = chat.roster[hashname];
+    chat.add = function(hashname){
+      if(typeof hashname == 'object') hashname = hashname.hashname; // allow passing a link obj
+      if(!mesh.lib.hashname.isHashname(hashname)) return; // sanity check
+      if(!chat.roster[hashname] && chat.leader != mesh) return; // only leaders can add new
+      if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
+      if(!chat.joined) return; // must be joined
+      if(connected[hashname]) return; // already online
+      mesh.link(hashname, function(err, link){
+        if(err || !link.up) return; // must be online
       
-      // add new participant state
-      if(!part) part = chat.roster[hashname] = {
-        sync: function(){
-          if(part.rhash == chat.rhash) return; // in sync
-          if(chat.connected[hn] && chat.connected[hn].joined == chat.joined) return;
-          log('CHAT OUT',js);
-          chat.connecting[hn] = true;
-          self.start(hn,'chat',{bare:true,js:js},function(err,packet,chan,cbChat){
-            delete chat.connecting[hn];
-            if(err) return error(err);
-            log('CHAT IN',packet.js);
-            chat.connect(chan,packet.js.from);
-            cbChat();
-          });
-        }
-      };
-      var part = chat.roster[hashname];
-      part.join = join;
-      
-      // support remove if leader
-      if(chat.leader == mesh && join == '')
+        // send a new chat invite channel
+        var open = {type:'chat'};
+        open.seq = 1; // always reliable
+        open.join = open.chat = chat.id;
+        open.last = chat.last[mesh.hashname];
+        var channel = link.x.channel(open);
+        
+        // process first response before making connected
+        channel.receiving = function(err, packet, cbMore) {
+          if(err) return; // TODO event error?
+          if(!packet.json.join || !packet.json.last) return mesh.log.warn('bad chat response',packet);
+          if(chat.roster[hashname] == '*') chat.roster[hashname] = packet.json.join;
+          if(chat.roster[hashname] != packet.json.join) return mesh.log.warn('bad chat join',packet);
+          chat.last[hashname] = packet.json.last;
+          var stream = connected[hashname] = mesh.streamize(channel);
+          // TODO stream.pipe()
+          // TODO get/cache join id
+          cbMore();
+        };
 
-      // update roster hash
-      if(id) chat.roster[hashname] = id;
-      else delete chat.roster[hashname];
-      chat.rosterHash = mhash(Object.keys(chat.roster).sort().map(function(key){ return key+chat.roster[key]; }).join('')).toString('hex');
+        channel.send(open);
+      });
 
-      if(!id) return setJoin(hashname,{js:{text:'removed'}});
-
-      // not an actual message yet
-      if(id.indexOf(',') == -1) return setJoin(hashname,{js:{text:id}});
-    
-      // already have it
-      if(chat.joins[hashname] && chat.joins[hashname].js.id == id) return setJoin(hashname,chat.joins[hashname]);
-
-      // fetch join message from originator unless it's us
-      var errd;
-      var to = (chat.originator != self.hashname) ? chat.originator : hashname;
-      self.thtp.request({hashname:to,path:chat.base+'id/'+id},function(err){
-        if(!err) return;
-        setJoin(hashname,{js:{text:err}});
-        errd = true;
-      }).pipe(es.join()).pipe(es.map(function(packet){
-        if(errd) return;
-        var msg = self.pdecode(packet);
-        if(!msg) return setJoin(hashname,{js:{text:'bad join'}});
-        setJoin(hashname,msg);
-      }));
     }
 
     chat.send = function(msg)
@@ -199,7 +160,7 @@ exports.mesh = function(mesh, cbMesh)
       if(msg.json.type == 'chat')
       {
         chat.log[msg.json.id] = packet;
-        chat.last = msg.json.id;
+        chat.last[mesh.hashname] = msg.json.id; // our last id
       }
 
       // deliver to anyone connected
@@ -236,6 +197,11 @@ exports.mesh = function(mesh, cbMesh)
     }
 
     log('CHAT REQUEST',open.json,chat);
+
+    if(packet.json.chat != chat.id) return mesh.log.warn('bad chat id',packet);
+    if(!packet.json.join || !packet.json.last) return mesh.log.warn('bad chat response',packet);
+    if(chat.roster[hashname] == '*') chat.roster[hashname] = packet.json.join;
+    if(chat.roster[hashname] != packet.json.join) return mesh.log.warn('bad chat join',packet);
 
     // is sender in the roster?
     // TODO respond, make channel, add connected

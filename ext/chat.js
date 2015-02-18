@@ -17,6 +17,11 @@ exports.mesh = function(mesh, cbMesh)
   // create/join a new chat
   mesh.chat = function(args, cbReady)
   {
+    if(typeof args == 'function' && !cbReady)
+    {
+      cbReady = args;
+      args = {};
+    }
     if(typeof args != 'object') return cbReady('bad args');
 
     // generate or load basics for the unique chat id
@@ -34,7 +39,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.last = {}; // lasts by hashname
     chat.joined = false;
     chat.inbox = new stream.Readable();
-    chat.outbox = new stream.Writeable();
+    chat.outbox = new stream.Writable();
     
     // in scope only
     var connected = {}; // by hashname
@@ -46,7 +51,7 @@ exports.mesh = function(mesh, cbMesh)
 
     // serve the thtp requests for this chat
     chat.base = '/chat/'+chat.id+'/';
-    mesh.thtp.match(chat.base,function(req,cbRes){
+    mesh.match(chat.base,function(req,cbRes){
       var parts = req.path.split('/');
       if(parts[3] == 'roster') return cbRes({body:chat.roster});
       if(parts[3] == 'id' && chat.log[parts[4]]) return cbRes({body:self.pencode(chat.log[parts[4]])});
@@ -72,22 +77,23 @@ exports.mesh = function(mesh, cbMesh)
 
     chat.join = function(join, cbDone)
     {
+      if(!join) return cbDone('requires join message');
       chat.seq = chat.depth;
       chat.joined = join;
       join.json.type = 'join';
       join.json.id = (chat.leader == mesh) ? chat.id : stamp();
-      chat.last[mesh.hashname] = join.json.id;
+      chat.roster[mesh.hashname] = chat.last[mesh.hashname] = join.json.id;
       join.json.at = Math.floor(Date.now()/1000);
       if(chat.log[0]) join.json.after = chat.log[0].id;
-      chat.add(mesh.hashname,chat.join.from);
 
+      // tries to sync first if we're not the leader
       chat.sync(cbDone);
     }
 
     chat.sync = function(cbDone)
     {
       // leader is always in sync
-      if(chat.leader == mesh) return cbDone();
+      if(chat.leader == mesh) return cbDone(undefined, chat);
 
       // non-leaders always fetch updated roster to sync
       chat.leader.request(chat.base+'roster', fail).pipe(es.wait(function(err, body){
@@ -111,14 +117,14 @@ exports.mesh = function(mesh, cbMesh)
         
         // perform the queue before being done w/ the sync
         // TODO
-        cbDone();
+        cbDone(undefined, chat);
 
       }));
     }
 
     chat.add = function(hashname){
       if(typeof hashname == 'object') hashname = hashname.hashname; // allow passing a link obj
-      if(!mesh.lib.hashname.isHashname(hashname)) return; // sanity check
+      if(!lib.hashname.isHashname(hashname)) return; // sanity check
       if(!chat.roster[hashname] && chat.leader != mesh) return; // only leaders can add new
       if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
       if(!chat.joined) return; // must be joined
@@ -155,7 +161,7 @@ exports.mesh = function(mesh, cbMesh)
     {
       if(!msg.json.type) msg.json.type = 'chat';
       if(!msg.json.id) msg.json.id = stamp();
-      var packet = mesh.lib.lob.packet(msg.json,msg.body);
+      var packet = lib.lob.packet(msg.json,msg.body);
 
       if(msg.json.type == 'chat')
       {
@@ -169,7 +175,7 @@ exports.mesh = function(mesh, cbMesh)
       });
     }
   
-    chat.sync(cbDone);
+    chat.sync(cbReady);
     return chat;
   }
 
@@ -178,7 +184,7 @@ exports.mesh = function(mesh, cbMesh)
     var link = this;
 
     // ensure valid request
-    var id = mesh.lib.base32.decode(open.json.chat);
+    var id = lib.base32.decode(open.json.chat);
     if(!id || id.length != 8) return cbOpen('invalid chat id');
     
     // process invites

@@ -15,9 +15,10 @@ exports.mesh = function(mesh, cbExt)
     ext.onStream = onStream;
   }
   
-  // takes any channel and returns a Duplex stream
-  mesh.streamize = function(chan)
+  // takes any channel and returns a Duplex stream, oneshot is thtp style (one packet/channel)
+  mesh.streamize = function(chan, encoding)
   {
+    if(!encoding) encoding = 'binary';
     if(typeof chan != 'object' || !chan.isChannel)
     {
       mesh.log.warn('invalid channel passed to streamize');
@@ -37,18 +38,13 @@ exports.mesh = function(mesh, cbExt)
     stream._write = function(data,enc,cbWrite)
     {
       if(chan.state == 'gone') return cbWrite('closed');
-      // support object streams
-      if(!Buffer.isBuffer(data))
+      // switch to our default encoding syntax
+      enc = encoding;
+      // dynamically detect object streams and change encoding
+      if(!Buffer.isBuffer(data) && typeof data != 'string')
       {
-        if(typeof data != 'string')
-        {
-          data = JSON.stringify(data);
-          enc = 'json';
-        }
-      }else{
-        // detect packet encoding, or none
-        if(mesh.lib.lob.isPacket(data)) enc = 'lob';
-        else enc = '';
+        data = JSON.stringify(data);
+        enc = 'json';
       }
       // chunk it
       while(data.length)
@@ -59,7 +55,7 @@ exports.mesh = function(mesh, cbExt)
         // last packet gets continuation callback
         if(!data.length)
         {
-          if(enc) packet.json.enc = enc;
+          if(enc != 'binary') packet.json.enc = enc;
           packet.callback = cbWrite;
         }else{
           packet.json.chunk = true;
@@ -78,7 +74,7 @@ exports.mesh = function(mesh, cbExt)
     var data = new Buffer(0);
     chan.receiving = function(err, packet, cbMore) {
       // was a wait writing, let it through
-      if(packet.body.length)
+      if(packet.body.length || data.length)
       {
         data = Buffer.concat([data,packet.body]);
         if(!packet.json.chunk)
@@ -130,12 +126,12 @@ exports.mesh = function(mesh, cbExt)
   ext.link = function(link, cbLink)
   {
     // create a new stream to this link
-    link.stream = function(packet)
+    link.stream = function(packet, encoding)
     {
       var open = {json:{type:'stream'},body:packet};
       open.json.seq = 1; // always reliable
       var channel = link.x.channel(open);
-      var stream = mesh.streamize(channel);
+      var stream = mesh.streamize(channel, encoding);
       channel.send(open);
       return stream;
     }

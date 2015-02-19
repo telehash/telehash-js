@@ -141,12 +141,12 @@ describe('telehash/stream', function(){
         done();
       }));
     })
-    var streamAB = linkAB.stream();
+    var streamAB = linkAB.stream(undefined, 'lob');
     
     // stream a packet
     var packet = meshA.lib.lob.packet({"foo":true},new Buffer(42));
     streamAB.on('error',done);
-    streamAB.write(packet,'lob');
+    streamAB.write(packet);
     streamAB.end();
 
   });

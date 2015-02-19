@@ -1,6 +1,5 @@
 var crypto = require('crypto');
 var stream = require('stream');
-var es = require('event-stream');
 
 // implements https://github.com/telehash/telehash.org/blob/master/v3/channels/chat.md
 exports.name = 'chat';
@@ -51,18 +50,20 @@ exports.mesh = function(mesh, cbMesh)
 
     // serve the thtp requests for this chat
     chat.base = '/chat/'+chat.id+'/';
-    mesh.match(chat.base,function(req,cbRes){
-      var parts = req.path.split('/');
-      if(parts[3] == 'roster') return cbRes({body:chat.roster});
-      if(parts[3] == 'id' && chat.log[parts[4]]) return cbRes({body:self.pencode(chat.log[parts[4]])});
-      cbRes({status:404,body:'not found'});
+    mesh.match(chat.base,function(req,res){
+      var parts = req.url.split('/');
+      console.log('THTP CHAT REQ',parts);
+      if(parts[3] == 'roster') return res.end(JSON.stringify(chat.roster));
+      if(parts[3] == 'id' && chat.log[parts[4]]) return res.end(self.pencode(chat.log[parts[4]]));
+      res.writeHead(404).end();
     });
 
-    function fail(err)
+    function fail(err, cbErr)
     {
       if(!err) return; // only catch errors
       chat.err = err;
       // TODO error inbox/outbox
+      if(cbErr) cbErr(err);
     }
 
     // internal message id generator
@@ -85,9 +86,11 @@ exports.mesh = function(mesh, cbMesh)
       chat.roster[mesh.hashname] = chat.last[mesh.hashname] = join.json.id;
       join.json.at = Math.floor(Date.now()/1000);
       if(chat.log[0]) join.json.after = chat.log[0].id;
+      
+      // TODO check chat.invited to respond
 
       // tries to sync first if we're not the leader
-      chat.sync(cbDone);
+      if(cbDone) chat.sync(cbDone);
     }
 
     chat.sync = function(cbDone)
@@ -96,63 +99,72 @@ exports.mesh = function(mesh, cbMesh)
       if(chat.leader == mesh) return cbDone(undefined, chat);
 
       // non-leaders always fetch updated roster to sync
-      chat.leader.request(chat.base+'roster', fail).pipe(es.wait(function(err, body){
-        if(err) return fail(err);
-        try{
-          var roster = JSON.parse(body)
-        }catch(E){
-          return fail(E);
-        }
+      var parts = [];
+      chat.leader.request(chat.base+'roster', function(err, res){
+        if(err) return cbDone(err);
+        res.on('data',function(data){ parts.push(data);}).on('end',function(){
+          var body = Buffer.concat(parts);
+          try{
+            var roster = JSON.parse(body.toString());
+          }catch(E){
+            return fail(E.toString(), cbDone);
+          }
+          
+          console.log("ROSTER",roster);
 
-        // create a queue of required message ids to sync
-        var queue = [chat.id];
+          // create a queue of required message ids to sync
+          var queue = [chat.id];
         
-        // sync the roster, adding any new
-        Object.keys(roster).forEach(function(hn){
-          if(!chat.roster[hn]) chat.roster[hn] = roster[hn];
-          chat.add(hn);
-          // queue up known join ids to sync-fetch
-          if(roster[hn] != '*') queue.push(roster[hn]);
+          // sync the roster, adding any new
+          Object.keys(roster).forEach(function(hn){
+            if(!chat.roster[hn]) chat.roster[hn] = roster[hn];
+            chat.add(hn);
+            // queue up known join ids to sync-fetch
+            if(roster[hn] != '*') queue.push(roster[hn]);
+          });
+        
+          // perform the queue before being done w/ the sync
+          // TODO
+          cbDone(undefined, chat);
         });
-        
-        // perform the queue before being done w/ the sync
-        // TODO
-        cbDone(undefined, chat);
-
-      }));
+      });
     }
 
-    chat.add = function(hashname){
+    chat.add = function(hashname, cbDone){
+      if(!cbDone) cbDone = function(){};
       if(typeof hashname == 'object') hashname = hashname.hashname; // allow passing a link obj
-      if(!lib.hashname.isHashname(hashname)) return; // sanity check
-      if(!chat.roster[hashname] && chat.leader != mesh) return; // only leaders can add new
+      if(!lib.hashname.isHashname(hashname)) return cbDone('invalid hashname'); // sanity check
+      if(!chat.roster[hashname] && chat.leader != mesh) return cbDone('not the leader'); // only leaders can add new
       if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
-      if(!chat.joined) return; // must be joined
-      if(connected[hashname]) return; // already online
+      if(!chat.joined) return cbDone('not joined'); // must be joined
+      if(connected[hashname]) return cbDone(undefined, chat.roster[hashname]); // already online
+      console.log('MLINK',hashname);
       mesh.link(hashname, function(err, link){
-        if(err || !link.up) return; // must be online
+        if(err || !link.up) return cbDone('offline'); // must be online
       
         // send a new chat invite channel
         var open = {type:'chat'};
         open.seq = 1; // always reliable
         open.join = open.chat = chat.id;
         open.last = chat.last[mesh.hashname];
-        var channel = link.x.channel(open);
+        var channel = link.x.channel({json:open});
         
         // process first response before making connected
         channel.receiving = function(err, packet, cbMore) {
-          if(err) return; // TODO event error?
-          if(!packet.json.join || !packet.json.last) return mesh.log.warn('bad chat response',packet);
+          if(err) return cbDone(err);
+          if(!packet.json.join || !packet.json.last) return cbDone('bad chat response');
           if(chat.roster[hashname] == '*') chat.roster[hashname] = packet.json.join;
-          if(chat.roster[hashname] != packet.json.join) return mesh.log.warn('bad chat join',packet);
+          if(chat.roster[hashname] != packet.json.join) return cbDone('bad chat join');
           chat.last[hashname] = packet.json.last;
-          var stream = connected[hashname] = mesh.streamize(channel);
+          var stream = connected[hashname] = mesh.streamize(channel, 'lob');
           // TODO stream.pipe()
           // TODO get/cache join id
           cbMore();
+          cbDone(undefined, packet.json.join);
         };
 
-        channel.send(open);
+        mesh.log.debug('sending chat',open);
+        channel.send({json:open});
       });
 
     }

@@ -4,7 +4,6 @@
   "main": "index.js",
   "dependencies": {
     "e3x": "git+https://github.com/telehash/e3x-js.git",
-    "event-stream": "^3.2.2",
     "hashname": "git+https://github.com/telehash/hashname.git",
     "json-stable-stringify": "~1.0.0",
     "lob-enc": "git+https://github.com/telehash/lob-enc.git",

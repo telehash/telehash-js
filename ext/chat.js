@@ -10,8 +10,8 @@ exports.mesh = function(mesh, cbMesh)
   var self = {open:{}, chats:{}};
 
   // overwrite-able callback for invites
-  var invited = function(chat){};
-  mesh.invited = function(handler){ invited = handler; };
+  var cbInvite = false;
+  mesh.invited = function(handler){ cbInvite = handler; };
   
   // create/join a new chat
   mesh.chat = function(args, cbReady)
@@ -52,7 +52,6 @@ exports.mesh = function(mesh, cbMesh)
     chat.base = '/chat/'+chat.id+'/';
     mesh.match(chat.base,function(req,res){
       var parts = req.url.split('/');
-      console.log('THTP CHAT REQ',parts);
       if(parts[3] == 'roster') return res.end(JSON.stringify(chat.roster));
       if(parts[3] == 'id' && chat.log[parts[4]]) return res.end(self.pencode(chat.log[parts[4]]));
       res.writeHead(404).end();
@@ -87,7 +86,16 @@ exports.mesh = function(mesh, cbMesh)
       join.json.at = Math.floor(Date.now()/1000);
       if(chat.log[0]) join.json.after = chat.log[0].id;
       
-      // TODO check chat.invited to respond
+      // check chat.invited to respond
+      if(chat.invited)
+      {
+        // temp hack! TODO
+        var channel = chat.leader.x.channel(chat.invited);
+        chat.invited = false;
+        channel.send({json:{join:join.json.id,last:join.json.id}});
+        var stream = connected[chat.leader.hashname] = mesh.streamize(channel, 'lob');
+        // TODO refactor w/ copy code below
+      }
 
       // tries to sync first if we're not the leader
       if(cbDone) chat.sync(cbDone);
@@ -110,8 +118,6 @@ exports.mesh = function(mesh, cbMesh)
             return fail(E.toString(), cbDone);
           }
           
-          console.log("ROSTER",roster);
-
           // create a queue of required message ids to sync
           var queue = [chat.id];
         
@@ -138,7 +144,6 @@ exports.mesh = function(mesh, cbMesh)
       if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
       if(!chat.joined) return cbDone('not joined'); // must be joined
       if(connected[hashname]) return cbDone(undefined, chat.roster[hashname]); // already online
-      console.log('MLINK',hashname);
       mesh.link(hashname, function(err, link){
         if(err || !link.up) return cbDone('offline'); // must be online
       
@@ -204,12 +209,12 @@ exports.mesh = function(mesh, cbMesh)
     if(!chat)
     {
       if(open.json.chat != open.json.join) return cbOpen('unknown chat');
-      if(!mesh.invited) return cbOpen('cannot accept invites');
+      if(!cbInvite) return cbOpen('cannot accept invites');
       // create to load roster then call invited
       mesh.chat({leader:link,id:open.json.chat},function(err, chat){
         if(err) return cbOpen(err);
         chat.invited = open;
-        mesh.invited(chat);
+        cbInvite(chat);
       });
       return;
     }

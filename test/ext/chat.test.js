@@ -71,15 +71,15 @@ describe('telehash/chat', function(){
           expect(err).to.not.exist;
           // they're linked, set up invite handler on B
           meshB.invited(function(chat){
-            console.log('INVITED',chat);
+//            console.log('INVITED',chat.id);
             chat.join({json:{}}); // auto-join
           });
           // initiate chat from A->B
           meshA.chat(function(err, chat){
             expect(err).to.not.exist;
-            console.log('CHAT',chat.id);
             chat.join({json:{}});
             chat.add(linkAB, function(err, join){
+//              console.log('CHAT JOIN',err,join);
               expect(err).to.not.exist;
               done();
             });

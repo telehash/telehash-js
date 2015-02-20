@@ -21,6 +21,13 @@ exports.mesh = function(mesh, cbMesh)
       cbReady = args;
       args = {};
     }
+    // accept uri arg
+    if(typeof args == 'string')
+    {
+      var leader = mesh.link(args);
+      if(!leader || !leader.args.token) return cbReady('bad uri: '+args);
+      args = {leader:leader,id:leader.args.token};
+    }
     if(typeof args != 'object') return cbReady('bad args');
 
     // generate or load basics for the unique chat id
@@ -78,6 +85,8 @@ exports.mesh = function(mesh, cbMesh)
     chat.join = function(join, cbDone)
     {
       if(!join) return cbDone('requires join message');
+      if(typeof join == 'string') join = {json:{text:join}}; // convenient
+      if(!join.json) join = {json:join}; // friendly to make a packet
       chat.seq = chat.depth;
       chat.joined = join;
       join.json.type = 'join';

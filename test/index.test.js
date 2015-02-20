@@ -18,7 +18,7 @@ describe('telehash-js', function(){
     telehash.mesh({id:idA},function(err, mesh){
       expect(err).to.not.exist;
       expect(mesh).to.be.an('object');
-      expect(mesh.extended.length).to.be.equal(7);
+      expect(mesh.extended.length).to.be.equal(9);
       expect(mesh.paths().length).to.be.above(0);
       expect(mesh.discover({discover:function(){}},function(err){
         expect(err).to.not.exist;

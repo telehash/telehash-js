@@ -34,7 +34,7 @@ describe('telehash/chat', function(){
 
   it('should create a new leader chat', function(done){
     // mock mesh
-    var mesh = {hashname:'fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq',lib:telehash};
+    var mesh = {hashname:'fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq', lib:telehash, log:{debug:console.log}};
     thtp.mesh(mesh, function(){});
     chat.mesh(mesh, function(err, ext){
       mesh.chat(function(err, chat){
@@ -79,7 +79,7 @@ describe('telehash/chat', function(){
             expect(err).to.not.exist;
             chat.join({json:{}});
             chat.add(linkAB, function(err, join){
-              console.log('CHAT JOIN',err,join);
+              console.log('CHAT JOIN',err,join.json);
               expect(err).to.not.exist;
               done();
             });

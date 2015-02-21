@@ -44,8 +44,9 @@ exports.mesh = function(mesh, cbMesh)
     chat.roster = {}; // joins by hashname
     chat.last = {}; // lasts by hashname
     chat.joined = false;
-    chat.inbox = new stream.Readable();
-    chat.outbox = new stream.Writable();
+    chat.inbox = new stream.Readable({objectMode:true});
+    chat.inbox._read = function(){}; // all evented
+    chat.outbox = new stream.Writable({objectMode:true});
     chat.connecting = {}; // incoming opens
     
     // in scope only
@@ -61,7 +62,8 @@ exports.mesh = function(mesh, cbMesh)
     mesh.match(chat.base,function(req,res){
       var parts = req.url.split('/');
       if(parts[3] == 'roster') return res.end(JSON.stringify(chat.roster));
-      if(parts[3] == 'id' && chat.log[parts[4]]) return res.end(self.pencode(chat.log[parts[4]]));
+      if(parts[3] == 'id' && chat.messages[parts[4]]) return res.end(chat.messages[parts[4]]);
+      mesh.log.debug('unknown request',parts);
       res.writeHead(404).end();
     });
 
@@ -86,19 +88,54 @@ exports.mesh = function(mesh, cbMesh)
     chat.join = function(join, cbDone)
     {
       if(!cbDone) cbDone = function(err){ if(err) mesh.log.debug(err); };
+      if(chat.joined) return cbDone('already joined');
       if(!join) return cbDone('requires join message');
       if(typeof join == 'string') join = {json:{text:join}}; // convenient
       if(!join.json) join = {json:join}; // friendly to make a packet
-      chat.seq = chat.depth;
       chat.joined = join;
       join.json.type = 'join';
       join.json.id = (chat.leader == mesh) ? chat.id : stamp();
-      chat.roster[mesh.hashname] = chat.last[mesh.hashname] = join.json.id;
-      join.json.at = Math.floor(Date.now()/1000);
-      if(chat.log[0]) join.json.after = chat.log[0].id;
+      chat.roster[mesh.hashname] = join.json.id;
+      chat.send(join);
       
       // tries to sync first if we're not the leader
       chat.sync(cbDone);
+    }
+    
+    // internal to cache and event a message
+    chat.receive = function(link, msg)
+    {
+      msg.from = link.hashname;
+
+      // put in our caches/log
+      if(msg.json.type == 'chat' || msg.json.type == 'join')
+      {
+        chat.messages[msg.json.id] = msg;
+        chat.last[msg.from] = msg.json.id; // our last id
+      // TODO put ordered in chat.log
+        chat.log.unshift(msg);
+      }
+      mesh.log.debug('receiving message',msg.from,msg.json);
+      chat.inbox.push(msg);
+    }
+
+    // ensures it's in our cache or fetches if not
+    chat.cache = function(link, id, cbDone)
+    {
+      if(chat.messages[id]) return cbDone(undefined, chat.messages[id]);
+      link.request(chat.base+'id/'+id, function(err, res){
+        if(err) return cbDone(err);
+        if(res.statusCode != 200) return cbDone(res.statusCode);
+        var parts = [];
+        res.on('data',function(data){ parts.push(data);}).on('end',function(){
+          var msg = lib.lob.decode(Buffer.concat(parts));
+          if(!msg) return cbDone('parse error');
+          if(msg.json.id != id) return cbDone('id mismatch');
+          chat.receive(link, msg);
+          cbDone(undefined, msg);
+        });
+      });
+      
     }
 
     chat.sync = function(cbDone)
@@ -125,9 +162,13 @@ exports.mesh = function(mesh, cbMesh)
             if(chat.roster[hn] != '*') queue.push(chat.roster[hn]);
           });
         
-          // perform the queue before being done w/ the sync
-          // TODO
-          cbDone(undefined, chat);
+          // sync the message queue before being done
+          function iter()
+          {
+            if(!queue.length) return cbDone(undefined, chat);
+            chat.cache(chat.leader, queue.shift(), iter);
+          }
+          iter();
         });
       });
     }
@@ -173,9 +214,10 @@ exports.mesh = function(mesh, cbMesh)
           chat.last[hashname] = packet.json.last;
           var stream = connected[hashname] = mesh.streamize(channel, 'lob');
           // TODO stream.pipe()
-          // TODO get/cache join id
           cbMore();
-          cbDone(undefined, packet.json.join);
+
+          // fetches/returns the join message
+          chat.cache(link, packet.json.join, cbDone);
         };
 
         mesh.log.debug('sending chat',json);
@@ -184,23 +226,32 @@ exports.mesh = function(mesh, cbMesh)
 
     }
 
+    // outgoing helper
     chat.send = function(msg)
     {
+      if(typeof msg == 'string') msg = {json:{text:msg}}; // convenient
+      if(!msg.json) msg = {json:msg}; // friendly to make a packet
       if(!msg.json.type) msg.json.type = 'chat';
       if(!msg.json.id) msg.json.id = stamp();
-      var packet = lib.lob.packet(msg.json,msg.body);
+      if(!msg.json.at) msg.json.at = Math.floor(Date.now()/1000);
+      if(!msg.json.after && chat.log[0]) msg.json.after = chat.log[0].json.id;
+      msg = lib.lob.packet(msg.json,msg.body); // consistency
 
-      if(msg.json.type == 'chat')
-      {
-        chat.log[msg.json.id] = packet;
-        chat.last[mesh.hashname] = msg.json.id; // our last id
-      }
+      // we receive it first
+      chat.receive(mesh, msg);
 
       // deliver to anyone connected
       Object.keys(connected).forEach(function(to){
-        connected[to].write(packet);
+        connected[to].write(msg);
+        // TODO, set up auto-delivery ack events
       });
     }
+    
+    // read messages from stream too
+    chat.outbox._write = function(data, enc, cbDone){
+      chat.send(data);
+      cbDone();
+    };
   
     chat.sync(cbReady);
     return chat;

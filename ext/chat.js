@@ -1,5 +1,5 @@
 var crypto = require('crypto');
-var stream = require('stream');
+var streamlib = require('stream');
 
 // implements https://github.com/telehash/telehash.org/blob/master/v3/channels/chat.md
 exports.name = 'chat';
@@ -44,9 +44,9 @@ exports.mesh = function(mesh, cbMesh)
     chat.roster = {}; // joins by hashname
     chat.last = {}; // lasts by hashname
     chat.joined = false;
-    chat.inbox = new stream.Readable({objectMode:true});
+    chat.inbox = new streamlib.Readable({objectMode:true});
     chat.inbox._read = function(){}; // all evented
-    chat.outbox = new stream.Writable({objectMode:true});
+    chat.outbox = new streamlib.Writable({objectMode:true});
     chat.connecting = {}; // incoming opens
     
     // in scope only
@@ -158,8 +158,9 @@ exports.mesh = function(mesh, cbMesh)
           // create a queue of required message ids to sync
           var queue = [chat.id];
           Object.keys(chat.roster).forEach(function(hn){
+            if(hn == mesh.hashname) return; // skip self
             chat.add(hn); // check/try connection
-            if(chat.roster[hn] != '*') queue.push(chat.roster[hn]);
+            if(chat.roster[hn] != '*') queue.push(chat.roster[hn]); // sync any joins
           });
         
           // sync the message queue before being done
@@ -173,16 +174,40 @@ exports.mesh = function(mesh, cbMesh)
       });
     }
 
+    // this channel is ready
+    chat.connected = function(link, channel, cbDone)
+    {
+      mesh.log.debug('chat connected',link.hashname);
+      // TODO disconnect old channels
+      var stream = connected[link.hashname] = mesh.streamize(channel, 'lob');
+      stream.on('data', function(msg){
+        // TODO validate id!
+        if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
+        chat.receive(link, msg);
+      });
+      // TODO end/cleanup
+
+      // ensures messages are sync'd
+      chat.cache(link, chat.last[link.hashname], function(){
+        chat.cache(link, chat.roster[link.hashname], cbDone);
+      });
+      
+    }
+
     chat.add = function(hashname, cbDone){
-      if(!cbDone) cbDone = function(err){ if(err) mesh.log.debug(err); };
+      function done(err, join)
+      {
+        if(err) mesh.log.debug(err);
+        if(cbDone) cbDone(err, join);
+        cbDone = false;
+      };
       if(typeof hashname == 'object') hashname = hashname.hashname; // allow passing a link obj
-      if(!lib.hashname.isHashname(hashname)) return cbDone('invalid hashname'); // sanity check
-      if(!chat.roster[hashname] && chat.leader != mesh) return cbDone('not the leader'); // only leaders can add new
+      if(!lib.hashname.isHashname(hashname)) return done('invalid hashname'); // sanity check
+      if(!chat.roster[hashname] && chat.leader != mesh) return done('not the leader'); // only leaders can add new
       if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
-      if(!chat.joined) return cbDone('not joined'); // must be joined
-      if(connected[hashname]) return cbDone(undefined, chat.roster[hashname]); // already online
+      if(!chat.joined) return done('not joined'); // must be joined
       mesh.link(hashname, function(err, link){
-        if(err || !link.up) return cbDone('offline'); // must be online
+        if(err || !link.up) return done('offline'); // must be online
       
         // minimum chat packet
         var json = {join:chat.joined.json.id, last:chat.last[mesh.hashname]};
@@ -191,13 +216,17 @@ exports.mesh = function(mesh, cbMesh)
         if(chat.connecting[hashname])
         {
           mesh.log.debug('responding to cached open',chat.connecting[hashname]);
-          var channel = link.x.channel(chat.connecting[hashname]);
+          var packet = chat.connecting[hashname];
           delete chat.connecting[hashname];
+          chat.last[hashname] = packet.json.last;
+          var channel = link.x.channel(packet);
+          channel.receive(packet); // for reliability
           channel.send({json:json});
-          var stream = connected[hashname] = mesh.streamize(channel, 'lob');
-          // TODO
+          chat.connected(link, channel, done);
           return;
         }
+      
+        if(connected[hashname]) return done(undefined, chat.roster[hashname]); // already online
       
         // start a new outgoing chat channel
         json.type = 'chat';
@@ -207,17 +236,13 @@ exports.mesh = function(mesh, cbMesh)
         
         // process first response before making connected
         channel.receiving = function(err, packet, cbMore) {
-          if(err) return cbDone(err);
-          if(!packet.json.join || !packet.json.last) return cbDone('bad chat response');
+          if(err) return done(err);
+          if(!packet.json.join || !packet.json.last) return done('bad chat response');
           if(chat.roster[hashname] == '*') chat.roster[hashname] = packet.json.join;
-          if(chat.roster[hashname] != packet.json.join) return cbDone('bad chat join');
+          if(chat.roster[hashname] != packet.json.join) return done('bad chat join');
           chat.last[hashname] = packet.json.last;
-          var stream = connected[hashname] = mesh.streamize(channel, 'lob');
-          // TODO stream.pipe()
+          chat.connected(link, channel, done);
           cbMore();
-
-          // fetches/returns the join message
-          chat.cache(link, packet.json.join, cbDone);
         };
 
         mesh.log.debug('sending chat',json);
@@ -242,6 +267,7 @@ exports.mesh = function(mesh, cbMesh)
 
       // deliver to anyone connected
       Object.keys(connected).forEach(function(to){
+        mesh.log.debug('sending to',to,msg.json.id);
         connected[to].write(msg);
         // TODO, set up auto-delivery ack events
       });
@@ -277,19 +303,23 @@ exports.mesh = function(mesh, cbMesh)
         if(err) return cbOpen(err);
         chat.connecting[link.hashname] = open;
         cbInvite(chat);
+        cbOpen();
       });
       return;
     }
 
     mesh.log.debug('CHAT REQUEST',open.json,chat);
 
-    if(packet.json.chat != chat.id) return mesh.log.warn('bad chat id',packet);
-    if(!packet.json.join || !packet.json.last) return mesh.log.warn('bad chat response',packet);
-    if(chat.roster[hashname] == '*') chat.roster[hashname] = packet.json.join;
-    if(chat.roster[hashname] != packet.json.join) return mesh.log.warn('bad chat join',packet);
+    if(open.json.chat != chat.id) return mesh.log.warn('bad chat id',open.json);
+    if(!open.json.join || !open.json.last) return mesh.log.warn('bad chat open',open.json);
+    if(chat.roster[link.hashname] == '*') chat.roster[link.hashname] = open.json.join;
+    if(chat.roster[link.hashname] != open.json.join) return mesh.log.warn('bad chat join',open.json);
 
-    // is sender in the roster?
-    // TODO respond, make channel, add connected
+    // let chat.add respond
+    chat.connecting[link.hashname] = open;
+    chat.add(link.hashname, function(err){
+      cbOpen(err);
+    });
 
   }
 

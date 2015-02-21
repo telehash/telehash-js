@@ -93,4 +93,51 @@ describe('telehash/chat', function(){
     });
   });
 
+  it('should echo messages', function(done){
+    telehash.log({debug:console.log});
+    telehash.mesh({id:idA,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshA){
+      expect(err).to.not.exist;
+      telehash.mesh({id:idB,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshB){
+        expect(err).to.not.exist;
+
+        // create virtual pipes
+        var pipeAB = new telehash.Pipe('test');
+        var pipeBA = new telehash.Pipe('test');
+        pipeAB.onSend = function(packet){meshB.receive(packet,pipeBA)};
+        pipeBA.onSend = function(packet){meshA.receive(packet,pipeAB)};
+
+        var linkAB = meshA.link({keys:idB.keys});
+        linkAB.addPipe(pipeAB);
+        expect(linkAB).to.exist;
+        linkAB.status(function(err){
+          expect(err).to.not.exist;
+          // they're linked, set up invite handler on B
+          meshB.invited(function(chat){
+            chat.join('B B'); // auto-join
+            chat.inbox.on('data', function(msg){
+              console.log('ECHOB',msg.json);
+              if(msg.from == meshA.hashname && msg.json.type == 'chat') chat.send(msg.json.text);
+            });
+          });
+          // initiate chat from A->B
+          meshA.chat(function(err, chat){
+            expect(err).to.not.exist;
+            chat.join('A A');
+            chat.add(linkAB, function(err, join){
+              expect(err).to.not.exist;
+              chat.outbox.write('echo');
+            });
+            chat.inbox.on('data', function(msg){
+              console.log('ECHOA',msg.from,msg.json);
+              if(msg.from == meshB.hashname && msg.json.text == 'echo') done();
+            });
+            
+          });
+        });
+        var linkBA = meshB.link({keys:idA.keys});
+        linkBA.addPipe(pipeBA);
+        expect(linkBA).to.exist;
+      });
+    });
+  });
 });

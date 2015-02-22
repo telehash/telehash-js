@@ -72,11 +72,10 @@ describe('telehash/chat', function(){
           });
 
           // initiate chat from A->B
-          meshA.chat(function(err, chat){
+          meshA.chat({json:{}}, function(err, chat){
             expect(err).to.not.exist;
-            chat.join({json:{}});
-            chat.add(linkAB, function(err, join){
-              console.log('CHAT JOIN',err,join.json);
+            chat.join(linkAB, function(err){
+              console.log('CHAT JOIN',err);
               expect(err).to.not.exist;
               done();
             });

@@ -32,6 +32,7 @@ exports.mesh = function(mesh, cbExt)
 
     stream.on('error',function(err){
       if(err == chan.err) return; // ignore our own generated errors
+      mesh.log.debug('streamized error',err);
       chan.send({json:{err:err.toString()}});
     });
 

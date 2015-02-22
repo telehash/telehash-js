@@ -4,7 +4,6 @@ var httplib = require('http');
 var telehash = require('../../lib/mesh.js');
 var lob = require('lob-enc');
 var chat = require('../../ext/chat.js');
-var thtp = require('../../ext/thtp.js');
 var stream = require('../../ext/stream.js');
 
 describe('telehash/chat', function(){
@@ -21,7 +20,6 @@ describe('telehash/chat', function(){
     chat.mesh(mesh, function(err, ext){
       expect(err).to.not.exist;
       expect(ext).to.be.a('object');
-//      expect(ext.chat).to.be.a('function');
       expect(mesh.chat).to.be.a('function');
       done();
     });
@@ -35,27 +33,24 @@ describe('telehash/chat', function(){
   it('should create a new leader chat', function(done){
     // mock mesh
     var mesh = {hashname:'fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq', lib:telehash, log:{debug:console.log}};
-    thtp.mesh(mesh, function(){});
     chat.mesh(mesh, function(err, ext){
-      mesh.chat(function(err, chat){
+      mesh.chat({json:{}}, function(err, chat){
         expect(err).to.not.exist;
         expect(chat).to.be.a('object');
         expect(chat.id).to.be.a('string');
-        chat.join({json:{}}, function(err, chat){
-          expect(err).to.not.exist;
-          expect(chat.roster).to.be.a('object');
-          expect(chat.roster[mesh.hashname]).to.be.equal(chat.id);
-          done();
-        });
+        expect(chat.profiles).to.be.a('object');
+        expect(chat.profiles[mesh.hashname]).to.be.a('object');
+        expect(chat.profiles[mesh.hashname].json.id).to.be.equal(chat.id);
+        done();
       });
     });
   });
 
   it('should establish a 1:1 chat', function(done){
     telehash.log({debug:console.log});
-    telehash.mesh({id:idA,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshA){
+    telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
-      telehash.mesh({id:idB,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshB){
+      telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
         expect(err).to.not.exist;
 
         // create virtual pipes
@@ -69,11 +64,13 @@ describe('telehash/chat', function(){
         expect(linkAB).to.exist;
         linkAB.status(function(err){
           expect(err).to.not.exist;
+
           // they're linked, set up invite handler on B
-          meshB.invited(function(chat){
-            console.log('INVITED',chat.id);
-            chat.join({json:{}}); // auto-join
+          meshB.invited(function(link, profile){
+            console.log('INVITED',profile.json);
+            meshB.chat({leader:link,id:profile.json.id},{json:{}}); // auto-join
           });
+
           // initiate chat from A->B
           meshA.chat(function(err, chat){
             expect(err).to.not.exist;
@@ -95,9 +92,9 @@ describe('telehash/chat', function(){
 
   it('should echo messages', function(done){
     telehash.log({debug:console.log});
-    telehash.mesh({id:idA,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshA){
+    telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
-      telehash.mesh({id:idB,extensions:{chat:chat,thtp:thtp,stream:stream}},function(err, meshB){
+      telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
         expect(err).to.not.exist;
 
         // create virtual pipes

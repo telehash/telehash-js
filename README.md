@@ -160,20 +160,18 @@ mesh.stream(function(link, args, cbAccept){
 
 * **chat** - send and receive one-to-one or group chat messages
 ````js
-// create or load a new chat
-mesh.chat(args,function(err, chat){
-  chat.join({join}, onJoined); // starts connections, required if leader
+// create or join a new chat
+mesh.chat(args, profile, function(err, chat){
   chat.inbox; // incoming message stream
-  chat.outbox; // valid once joined to send messages
-  chat.roster; // hn->participant {join:join, last:last}
+  chat.outbox; // stream to send messages
+  chat.roster; // hn->profile
   chat.messages; // cache/index by message id
   chat.log; // ordered known chat history ["id2", "id1", ...]
-  chat.add(link,join); // only if leader
-  chat.history(back, cbLoaded); // call to load/gc historical messages
+  chat.join(link); // leader can use to accept/invite others
 });
 
 // set handler for when invited to a chat
-mesh.invited(function(chat){});
+mesh.invited(function(link, profile){});
 ````
 
 ### Extension Backing API

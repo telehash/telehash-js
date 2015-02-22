@@ -41,6 +41,7 @@ exports.mesh = function(mesh, cbMesh)
 
       // create a stream to encode the http->thtp
       var sencode = mesh.streamize(channel);
+
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
@@ -61,6 +62,8 @@ exports.mesh = function(mesh, cbMesh)
           return cbStream('no result handler');
         }
         cbStream();
+      }).on('error', function(err){
+        mesh.log.error('got thtp error',err);
       });
 
       // any response is decoded
@@ -68,6 +71,7 @@ exports.mesh = function(mesh, cbMesh)
 
       // finish sending the open
       channel.send(open);
+
       // if more header data, send it too
       if(packet.length > 1000) sencode.write(packet.slice(1000));
 
@@ -150,6 +154,7 @@ exports.mesh = function(mesh, cbMesh)
       req.url = packet.json[':path'];
       req.headers = packet.json;
       req.headers['x-hashname'] = link.hashname; // for any http handler visibility
+      req.hashname = link.hashname;
 
       // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
       var res = new streamlib.Transform();

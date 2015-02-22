@@ -11,7 +11,13 @@ var chat;
 argv.eval = function(cmd, context, filename, callback) {
   if(!chat) return callback(null, 'not connected');
   cmd = cmd.slice(1,cmd.length-1).trim(); // goop from REPL lib
-  if(cmd == '') return callback(null, Object.keys(chat.nicks).join(', '));
+  if(cmd == '')
+  {
+    var list = Object.keys(chat.nicks).map(function(hn){return chat.nicks[hn]});
+    if(list.length == 0) list.push('nobody');
+    callback(null, list.join(', '));
+    return;
+  }
   // send any raw text out to the chat
   chat.outbox.write(cmd);
   callback(null, 'sent');
@@ -40,8 +46,8 @@ repl.start(argv, function(mesh){
     // process incoming messages
     chat.nicks = {};
     chat.inbox.on('data',function(msg){
-      console.log('MSG',msg.json);
       if(msg.from == mesh.hashname) return; // ignore our own
+      console.log('MSG',JSON.stringify(msg.json));
       if(msg.json.type == 'request')
       {
         mesh.rlog('accepting',msg.json.text,msg.from);
@@ -52,7 +58,7 @@ repl.start(argv, function(mesh){
         chat.nicks[msg.from] = msg.json.text;
         mesh.rlog(chat.nicks[msg.from],'just joined');
       }
-      if(msg.json.type == 'chat') mesh.rlog(chat.nicks[msg.from]+'> '+msg.text);
+      if(msg.json.type == 'chat') mesh.rlog(chat.nicks[msg.from]+': '+msg.json.text);
     });
   });
 

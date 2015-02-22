@@ -203,7 +203,10 @@ exports.mesh = function(mesh, cbMesh)
         if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
         chat.receive(link, msg);
       });
-      // TODO end/cleanup
+      stream.on('end', function(){
+        mesh.log.info('chat stream ended',link.hashname);
+        if(connected[link.hashname] == stream) delete connected[link.hashname];
+      });
 
       // ensures messages are sync'd
       chat.cache(link, chat.last[link.hashname], function(){
@@ -215,7 +218,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.add = function(hashname, cbDone){
       function done(err, join)
       {
-        console.log("ADDED",err,join);
+        console.log("ADDED",err,join&&join.json);
         if(err) mesh.log.debug(err);
         if(cbDone) cbDone(err, join);
         cbDone = false;
@@ -245,7 +248,8 @@ exports.mesh = function(mesh, cbMesh)
           return;
         }
       
-        if(connected[hashname]) return done(undefined, chat.roster[hashname]); // already online
+        // already online
+        if(connected[hashname]) return done(undefined, chat.messages[chat.roster[hashname]]);
       
         // start a new outgoing chat channel
         json.type = 'chat';
@@ -327,7 +331,7 @@ exports.mesh = function(mesh, cbMesh)
       return;
     }
 
-    mesh.log.info('CHAT REQUEST',open.json,chat);
+    mesh.log.info('CHAT REQUEST',open.json,chat.roster);
 
     if(open.json.chat != chat.id) return mesh.log.warn('bad chat id',open.json);
     if(!open.json.join || !open.json.last) return mesh.log.warn('bad chat open',open.json);

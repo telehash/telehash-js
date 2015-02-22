@@ -60,7 +60,11 @@ exports.mesh = function(mesh, cbMesh)
     // serve the thtp requests for this chat
     chat.base = '/chat/'+chat.id+'/';
     mesh.match(chat.base,function(req,res){
+      // must be in roster for all requests
+      if(!chat.roster[req.hashname]) return res.writeHead(401).end();
+      // match sub-paths
       var parts = req.url.split('/');
+      console.log('THTP CHAT',parts);
       if(parts[3] == 'roster') return res.end(JSON.stringify(chat.roster));
       if(parts[3] == 'id' && chat.messages[parts[4]]) return res.end(chat.messages[parts[4]]);
       mesh.log.debug('unknown request',parts);
@@ -70,6 +74,7 @@ exports.mesh = function(mesh, cbMesh)
     function fail(err, cbErr)
     {
       if(!err) return; // only catch errors
+      mesh.log.warn('chat fail',err);
       chat.err = err;
       // TODO error inbox/outbox
       if(cbErr) cbErr(err);
@@ -98,8 +103,13 @@ exports.mesh = function(mesh, cbMesh)
       chat.roster[mesh.hashname] = join.json.id;
       chat.send(join);
       
-      // tries to sync first if we're not the leader
-      chat.sync(cbDone);
+      // leader is done here
+      if(chat.leader == mesh) return cbDone(undefined, chat);
+
+      // add the leader to make sure we're connected then in sync
+      chat.add(chat.leader, function(){
+        chat.sync(cbDone);
+      });
     }
     
     // internal to cache and event a message
@@ -119,10 +129,9 @@ exports.mesh = function(mesh, cbMesh)
       chat.inbox.push(msg);
     }
 
-    // ensures it's in our cache or fetches if not
-    chat.cache = function(link, id, cbDone)
+    // always fetches a message
+    chat.get = function(link, id, cbDone)
     {
-      if(chat.messages[id]) return cbDone(undefined, chat.messages[id]);
       link.request(chat.base+'id/'+id, function(err, res){
         if(err) return cbDone(err);
         if(res.statusCode != 200) return cbDone(res.statusCode);
@@ -131,11 +140,19 @@ exports.mesh = function(mesh, cbMesh)
           var msg = lib.lob.decode(Buffer.concat(parts));
           if(!msg) return cbDone('parse error');
           if(msg.json.id != id) return cbDone('id mismatch');
-          chat.receive(link, msg);
           cbDone(undefined, msg);
         });
       });
-      
+    }
+
+    // ensures it's in our cache or fetches if not
+    chat.cache = function(link, id, cbDone)
+    {
+      if(chat.messages[id]) return cbDone(undefined, chat.messages[id]);
+      chat.get(link, id, function(err, msg){
+        if(msg) chat.receive(link, msg); // also pipe in
+        cbDone(err, msg);
+      });
     }
 
     chat.sync = function(cbDone)
@@ -147,6 +164,7 @@ exports.mesh = function(mesh, cbMesh)
       var parts = [];
       chat.leader.request(chat.base+'roster', function(err, res){
         if(err) return cbDone(err);
+        if(res.statusCode != 200) return cbDone(res.statusCode, chat); // may have to join first
         res.on('data',function(data){ parts.push(data);}).on('end',function(){
           var body = Buffer.concat(parts);
           try{
@@ -197,13 +215,14 @@ exports.mesh = function(mesh, cbMesh)
     chat.add = function(hashname, cbDone){
       function done(err, join)
       {
+        console.log("ADDED",err,join);
         if(err) mesh.log.debug(err);
         if(cbDone) cbDone(err, join);
         cbDone = false;
       };
       if(typeof hashname == 'object') hashname = hashname.hashname; // allow passing a link obj
+      console.log("ADD1",hashname,typeof cbDone);
       if(!lib.hashname.isHashname(hashname)) return done('invalid hashname'); // sanity check
-      if(!chat.roster[hashname] && chat.leader != mesh) return done('not the leader'); // only leaders can add new
       if(!chat.roster[hashname]) chat.roster[hashname] = '*'; // allow in master roster
       if(!chat.joined) return done('not joined'); // must be joined
       mesh.link(hashname, function(err, link){
@@ -298,7 +317,7 @@ exports.mesh = function(mesh, cbMesh)
       if(open.json.chat != open.json.join) return cbOpen('unknown chat');
       if(!cbInvite) return cbOpen('cannot accept invites');
       // create to load roster then call invited
-      mesh.log.debug('CHAT INVITE',open.json);
+      mesh.log.info('CHAT INVITE',open.json);
       mesh.chat({leader:link,id:open.json.chat},function(err, chat){
         if(err) return cbOpen(err);
         chat.connecting[link.hashname] = open;
@@ -308,15 +327,29 @@ exports.mesh = function(mesh, cbMesh)
       return;
     }
 
-    mesh.log.debug('CHAT REQUEST',open.json,chat);
+    mesh.log.info('CHAT REQUEST',open.json,chat);
 
     if(open.json.chat != chat.id) return mesh.log.warn('bad chat id',open.json);
     if(!open.json.join || !open.json.last) return mesh.log.warn('bad chat open',open.json);
     if(chat.roster[link.hashname] == '*') chat.roster[link.hashname] = open.json.join;
-    if(chat.roster[link.hashname] != open.json.join) return mesh.log.warn('bad chat join',open.json);
+    if(chat.roster[link.hashname] && chat.roster[link.hashname] != open.json.join) return mesh.log.warn('bad chat join',open.json);
+    
+    // cache connection request
+    chat.connecting[link.hashname] = open;
+
+    // only leader can accept unknowns
+    if(!chat.roster[link.hashname])
+    {
+      if(chat.leader != mesh) return; // drop
+      // fetch join for leader to decide with
+      chat.get(link, open.json.join, function(err, msg){
+        if(err) return;
+        msg.json.type = 'request';
+        chat.receive(link, msg); // leader checks for this type
+      });
+    }
 
     // let chat.add respond
-    chat.connecting[link.hashname] = open;
     chat.add(link.hashname, function(err){
       cbOpen(err);
     });

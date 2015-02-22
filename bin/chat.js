@@ -7,8 +7,14 @@ var argv = require('optimist')
   .describe('nick', 'nickname')
   .argv;
 
+var chat;
 argv.eval = function(cmd, context, filename, callback) {
-  callback(null, 'foo');
+  if(!chat) return callback(null, 'not connected');
+  cmd = cmd.slice(1,cmd.length-1).trim(); // goop from REPL lib
+  if(cmd == '') return callback(null, Object.keys(chat.nicks).join(', '));
+  // send any raw text out to the chat
+  chat.outbox.write(cmd);
+  callback(null, 'sent');
 }
 
 repl.start(argv, function(mesh){
@@ -17,12 +23,36 @@ repl.start(argv, function(mesh){
   mesh.accept = mesh.link; // auto-link any
 
   // create a chat
-  var args = argv._[0] || {}; // from given uri, or blank
-  mesh.chat(args, function(err, chat){
-    if(err) return mesh.rlog('err',err);
-    chat.join(argv.nick,function(err){
-      if(argv._[0]) mesh.rlog('joined');
+  var args = argv._[0] || {}; // from given uri, or blank for new one
+  mesh.chat(args, function(err, ref){
+    console.log("CHATNEW",err,typeof ref)
+    chat = ref;
+    if(err) mesh.rlog('err',err);
+    if(!chat) process.exit(1);
+
+    // automatically join the chat
+    chat.join(argv.nick, function(err){
+      if(err) return mesh.rlog('error',err);
+      if(argv._[0]) mesh.rlog('connected');
       else mesh.rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
+    });
+    
+    // process incoming messages
+    chat.nicks = {};
+    chat.inbox.on('data',function(msg){
+      console.log('MSG',msg.json);
+      if(msg.from == mesh.hashname) return; // ignore our own
+      if(msg.json.type == 'request')
+      {
+        mesh.rlog('accepting',msg.json.text,msg.from);
+        chat.add(msg.from);
+      }
+      if(msg.json.type == 'join')
+      {
+        chat.nicks[msg.from] = msg.json.text;
+        mesh.rlog(chat.nicks[msg.from],'just joined');
+      }
+      if(msg.json.type == 'chat') mesh.rlog(chat.nicks[msg.from]+'> '+msg.text);
     });
   });
 

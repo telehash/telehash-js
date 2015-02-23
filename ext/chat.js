@@ -137,15 +137,15 @@ exports.mesh = function(mesh, cbMesh)
       }
     }
 
-    chat.join = function(link, last)
+    chat.join = function(link, profile)
     {
       chat.invited[link.hashname] = true;
 
       // if we don't have their profile yet, send a join
       if(!chat.profiles[link.hashname])
       {
-        var open = {json:{type:'join',join:chat.id,seq:1}};
-        if(last) open.json.last = last;
+        var open = {json:{type:'profile',chat:chat.id,seq:1}};
+        if(profile) open.json.profile = profile;
         var channel = link.x.channel(open);
         channel.send(open);
         var stream = mesh.streamize(channel,'lob');
@@ -212,11 +212,11 @@ exports.mesh = function(mesh, cbMesh)
   }
 
 
-  self.open.join = function(args, open, cbOpen){
+  self.open.profile = function(args, open, cbOpen){
     var link = this;
 
     // ensure valid request
-    var id = lib.base32.decode(open.json.join);
+    var id = lib.base32.decode(open.json.chat);
     if(!id || id.length != 8) return cbOpen('invalid chat id');
     
     // accept and stream until the profile
@@ -233,10 +233,10 @@ exports.mesh = function(mesh, cbMesh)
       stream.end(); // send all done
 
       // process invites for unknown chats
-      var chat = self.chats[open.json.join];
+      var chat = self.chats[open.json.chat];
       if(!chat)
       {
-        if(open.json.join != profile.json.id) return cbOpen('unknown chat');
+        if(open.json.chat != profile.json.id) return cbOpen('unknown chat');
         if(!cbInvite) return cbOpen('cannot accept invites');
 
         // send the invite request to the app
@@ -248,13 +248,13 @@ exports.mesh = function(mesh, cbMesh)
       if(chat.leader == link)
       {
         // see if they need our profile yet
-        if(!open.json.last) chat.join(link, profile.json.id);
+        if(!open.json.profile) chat.join(link, profile.json.id);
 
         chat.profiles[link.hashname] = profile;
         chat.last[link.hashname] = profile.json.id;
 
         // this will now connect
-        if(open.json.last) chat.join(link);
+        if(open.json.profile) chat.join(link);
 
         return;
       }
@@ -268,7 +268,7 @@ exports.mesh = function(mesh, cbMesh)
       }
 
       // see if they need our profile yet
-      if(!open.json.last) chat.join(link, profile.json.id);
+      if(!open.json.profile) chat.join(link, profile.json.id);
 
       // add new profile
       if(!chat.profiles[link.hashname])
@@ -280,7 +280,7 @@ exports.mesh = function(mesh, cbMesh)
       }
 
       // if they have ours, this will get connected now
-      if(open.json.last) chat.join(link);
+      if(open.json.profile) chat.join(link);
 
     });
 

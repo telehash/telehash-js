@@ -95,6 +95,13 @@ exports.mesh = function(mesh, cbMesh)
     {
       msg.from = link.hashname;
 
+      // massage join
+      if(msg.json.type == 'join')
+      {
+        msg.join = lib.lob.decode(msg.body);
+        msg.json.join = msg.join.json; // convenience
+      }
+
       // put in our caches/log
       if(msg.json.type == 'chat' || msg.json.type == 'join')
       {
@@ -118,7 +125,7 @@ exports.mesh = function(mesh, cbMesh)
         chat.receive(link, msg);
       });
       stream.on('end', function(){
-        mesh.log.info('chat stream ended',link.hashname);
+        mesh.log.debug('chat stream ended',link.hashname);
         if(chat.streams[link.hashname] == stream) delete chat.streams[link.hashname];
       });
 
@@ -135,7 +142,6 @@ exports.mesh = function(mesh, cbMesh)
       chat.invited[link.hashname] = true;
 
       // if we don't have their profile yet, send a join
-      console.log("PROFILED OUT",chat.leading,chat.id,chat.profiles,link.hashname);
       if(!chat.profiles[link.hashname])
       {
         var open = {json:{type:'join',join:chat.id,seq:1}};
@@ -148,7 +154,6 @@ exports.mesh = function(mesh, cbMesh)
           if(link == chat.leader) fail(err);
         });
         stream.on('finish',function(){
-          console.log("FINNN",chat.leading,chat.profiles)
           if(chat.profiles[link.hashname]) chat.join(link);
         });
         stream.end();
@@ -224,7 +229,7 @@ exports.mesh = function(mesh, cbMesh)
 
       if(profile.json.type != 'profile' || !profile.json.id) return cbOpen('bad profile');
 
-      mesh.log.info('JOIN REQUEST',open.json,profile.json);
+      mesh.log.debug('join request',open.json,profile.json);
       stream.end(); // send all done
 
       // process invites for unknown chats
@@ -247,7 +252,6 @@ exports.mesh = function(mesh, cbMesh)
 
         chat.profiles[link.hashname] = profile;
         chat.last[link.hashname] = profile.json.id;
-        console.log("LEADER PROFILED",chat.id,chat.profiles);
 
         // this will now connect
         if(open.json.last) chat.join(link);
@@ -271,7 +275,6 @@ exports.mesh = function(mesh, cbMesh)
       {
         chat.profiles[link.hashname] = profile;
         chat.last[link.hashname] = profile.json.id;
-        console.log("PARTICIPANT PROFILED",chat.id,chat.profiles);
         var join = {json:{type:'join',from:link.hashname},body:lib.lob.encode(profile)};
         chat.send(join);
       }
@@ -289,7 +292,7 @@ exports.mesh = function(mesh, cbMesh)
   self.open.chat = function(args, open, cbOpen){
     var link = this;
 
-    mesh.log.info('CHAT REQUEST',open.json);
+    mesh.log.debug('chat request',open.json);
 
     // ensure valid request
     var id = lib.base32.decode(open.json.chat);
@@ -297,7 +300,6 @@ exports.mesh = function(mesh, cbMesh)
     
     var chat = self.chats[open.json.chat];
     if(!chat) return cbOpen('unknown chat');
-    console.log('PROFILED CHECK',chat.leading,chat.id,chat.profiles,link.hashname)
     if(!chat.profiles[link.hashname]) return cbOpen('no profile');
 //    if(!chat.messages[open.json.last]) return cbOpen('unknown last');
 

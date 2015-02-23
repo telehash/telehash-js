@@ -11,13 +11,16 @@ var chat;
 argv.eval = function(cmd, context, filename, callback) {
   if(!chat) return callback(null, 'not connected');
   cmd = cmd.slice(1,cmd.length-1).trim(); // goop from REPL lib
+  
+  // no command so we just print list of connected
   if(cmd == '')
   {
-    var list = Object.keys(chat.nicks).map(function(hn){return chat.nicks[hn]});
+    var list = Object.keys(chat.profiles).map(function(hn){return chat.profiles[hn].json.text});
     if(list.length == 0) list.push('nobody');
     callback(null, list.join(', '));
     return;
   }
+
   // send any raw text out to the chat
   chat.outbox.write(cmd);
   callback(null, 'sent');
@@ -30,35 +33,29 @@ repl.start(argv, function(mesh){
 
   // create a chat
   var args = argv._[0] || {}; // from given uri, or blank for new one
-  mesh.chat(args, function(err, ref){
-    console.log("CHATNEW",err,typeof ref)
+  mesh.chat(args, argv.nick, function(err, ref){
     chat = ref;
     if(err) mesh.rlog('err',err);
     if(!chat) process.exit(1);
 
-    // automatically join the chat
-    chat.join(argv.nick, function(err){
-      if(err) return mesh.rlog('error',err);
-      if(argv._[0]) mesh.rlog('connected');
-      else mesh.rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
-    });
+    if(argv._[0]) mesh.rlog('connected');
+    else mesh.rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
     
     // process incoming messages
     chat.nicks = {};
     chat.inbox.on('data',function(msg){
-      if(msg.from == mesh.hashname) return; // ignore our own
-      console.log('MSG',JSON.stringify(msg.json));
-      if(msg.json.type == 'request')
-      {
-        mesh.rlog('accepting',msg.json.text,msg.from);
-        chat.add(msg.from);
-      }
+//      console.log('MSG',JSON.stringify(msg.json));
+      var nick = (chat.profiles[msg.from]) ? chat.profiles[msg.from].json.text : 'unknown';
       if(msg.json.type == 'join')
       {
-        chat.nicks[msg.from] = msg.json.text;
-        mesh.rlog(chat.nicks[msg.from],'just joined');
+        mesh.rlog(nick,'just joined');
       }
-      if(msg.json.type == 'chat') mesh.rlog(chat.nicks[msg.from]+': '+msg.json.text);
+      if(msg.json.type == 'profile')
+      {
+        mesh.rlog('accepting',msg.json.text,msg.from);
+        chat.join(mesh.link(msg.from));
+      }
+      if(msg.from != mesh.hashname && msg.json.type == 'chat') mesh.rlog(nick+': '+msg.json.text);
     });
   });
 

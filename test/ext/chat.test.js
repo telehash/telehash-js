@@ -71,6 +71,7 @@ describe('telehash/chat', function(){
             // auto-accept it
             meshB.chat({leader:link,id:profile.json.id},{json:{}},function(err){
               expect(err).to.not.exist;
+              done();
             });
           });
 
@@ -80,7 +81,6 @@ describe('telehash/chat', function(){
             chat.join(linkAB, function(err){
               console.log('CHAT JOIN',err);
               expect(err).to.not.exist;
-              done();
             });
             
           });
@@ -110,24 +110,30 @@ describe('telehash/chat', function(){
         expect(linkAB).to.exist;
         linkAB.status(function(err){
           expect(err).to.not.exist;
+
           // they're linked, set up invite handler on B
-          meshB.invited(function(chat){
-            chat.join('B B'); // auto-join
-            chat.inbox.on('data', function(msg){
-              console.log('ECHOB',msg.json);
-              if(msg.from == meshA.hashname && msg.json.type == 'chat') chat.send(msg.json.text);
+          meshB.invited(function(link, profile){
+            console.log('INVITED',profile.json);
+            // auto-accept it
+            meshB.chat({leader:link,id:profile.json.id},'B B',function(err, chat){
+              expect(err).to.not.exist;
+              chat.inbox.on('data', function(msg){
+                console.log('ECHOB',msg.json);
+                if(msg.from == meshA.hashname && msg.json.type == 'chat') chat.send(msg.json.text);
+              });
             });
           });
+
           // initiate chat from A->B
-          meshA.chat(function(err, chat){
+          meshA.chat('A A',function(err, chat){
             expect(err).to.not.exist;
-            chat.join('A A');
-            chat.add(linkAB, function(err, join){
-              expect(err).to.not.exist;
-              chat.outbox.write('echo');
-            });
+            chat.join(linkAB);
             chat.inbox.on('data', function(msg){
               console.log('ECHOA',msg.from,msg.json);
+              if(msg.json.from == meshB.hashname && msg.json.type == 'join')
+              {
+                chat.outbox.write('echo');
+              }
               if(msg.from == meshB.hashname && msg.json.text == 'echo') done();
             });
             

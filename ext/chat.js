@@ -75,7 +75,9 @@ exports.mesh = function(mesh, cbMesh)
       mesh.log.warn('chat fail',err);
       chat.err = err;
       // TODO error inbox/outbox
-      if(cbErr) cbErr(err);
+      if(typeof cbErr == 'function') cbErr(err);
+      if(cbReady) cbReady(err);
+      cbReady = false;
     }
 
     // internal message id generator
@@ -120,41 +122,41 @@ exports.mesh = function(mesh, cbMesh)
         if(chat.streams[link.hashname] == stream) delete chat.streams[link.hashname];
       });
 
+      // signal good startup
+      if(cbReady)
+      {
+        cbReady(undefined, chat);
+        cbReady = false;
+      }
     }
 
-    chat.join = function(link, cbDone)
+    chat.join = function(link, last)
     {
       chat.invited[link.hashname] = true;
 
-      function done(err){
-        console.log('DONEEEE',err)
-        if(err) mesh.log.debug('join error',err);
-        if(cbDone) cbDone(err);
-        cbDone = false;
-        delete chat.inviting[link.hashname];
-        
-        // can we connect now?
-        if(!err && chat.profiles[link.hashname]) chat.join(link);
-      }
-
       // if we don't have their profile yet, send a join
-      console.log("PROFILED OUT",chat.id,chat.profiles,link.hashname);
+      console.log("PROFILED OUT",chat.leading,chat.id,chat.profiles,link.hashname);
       if(!chat.profiles[link.hashname])
       {
-        if(chat.inviting[link.hashname]) return mesh.log.debug('invitation in progress');
         var open = {json:{type:'join',join:chat.id,seq:1}};
+        if(last) open.json.last = last;
         var channel = link.x.channel(open);
         channel.send(open);
         var stream = mesh.streamize(channel,'lob');
-        chat.inviting[link.hashname] = stream; // so only one at a time
         stream.write(chat.profile);
-        stream.on('error',fail);
-        stream.on('finish',done);
+        stream.on('error', function(err){
+          if(link == chat.leader) fail(err);
+        });
+        stream.on('finish',function(){
+          console.log("FINNN",chat.leading,chat.profiles)
+          if(chat.profiles[link.hashname]) chat.join(link);
+        });
         stream.end();
         return;
       }
       
-      if(chat.streams[link.hashname]) return done('already connected');
+      // already connected
+      if(chat.streams[link.hashname]) return;
 
       // let's get chatting
       var open = {json:{type:'chat',chat:chat.id,seq:1}};
@@ -162,7 +164,6 @@ exports.mesh = function(mesh, cbMesh)
       var chan = link.x.channel(open);
       chan.send(open);
       chat.connect(link, chan);
-      done();
 
     }
 
@@ -194,8 +195,13 @@ exports.mesh = function(mesh, cbMesh)
     };
   
     // if not the leader, send our profile to them to start
-    if(!chat.leading) chat.join(chat.leader, cbReady);
-    else cbReady(undefined, chat);
+    if(!chat.leading)
+    {
+      chat.join(chat.leader);
+    }else{
+      cbReady(undefined, chat);
+      cbReady = false;
+    }
 
     return chat;
   }
@@ -237,7 +243,7 @@ exports.mesh = function(mesh, cbMesh)
       if(chat.leader == link)
       {
         // see if they need our profile yet
-        if(!open.json.last) chat.join(link);
+        if(!open.json.last) chat.join(link, profile.json.id);
 
         chat.profiles[link.hashname] = profile;
         chat.last[link.hashname] = profile.json.id;
@@ -258,7 +264,7 @@ exports.mesh = function(mesh, cbMesh)
       }
 
       // see if they need our profile yet
-      if(!open.json.last) chat.join(link);
+      if(!open.json.last) chat.join(link, profile.json.id);
 
       // add new profile
       if(!chat.profiles[link.hashname])
@@ -291,9 +297,9 @@ exports.mesh = function(mesh, cbMesh)
     
     var chat = self.chats[open.json.chat];
     if(!chat) return cbOpen('unknown chat');
-    console.log('PROFILED CHECK',chat.id,chat.profiles,link.hashname)
+    console.log('PROFILED CHECK',chat.leading,chat.id,chat.profiles,link.hashname)
     if(!chat.profiles[link.hashname]) return cbOpen('no profile');
-    if(!chat.messages[open.json.last]) return cbOpen('unknown last');
+//    if(!chat.messages[open.json.last]) return cbOpen('unknown last');
 
     var chan = link.x.channel(open);
     chan.receive(open);

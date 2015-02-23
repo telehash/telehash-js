@@ -68,7 +68,10 @@ describe('telehash/chat', function(){
           // they're linked, set up invite handler on B
           meshB.invited(function(link, profile){
             console.log('INVITED',profile.json);
-            meshB.chat({leader:link,id:profile.json.id},{json:{}}); // auto-join
+            // auto-accept it
+            meshB.chat({leader:link,id:profile.json.id},{json:{}},function(err){
+              expect(err).to.not.exist;
+            });
           });
 
           // initiate chat from A->B

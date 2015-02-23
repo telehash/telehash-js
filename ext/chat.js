@@ -53,6 +53,7 @@ exports.mesh = function(mesh, cbMesh)
     chat.profiles = {}; // profiles by hashname
     chat.last = {}; // last message id by hashname
     chat.invited = {}; // ACL
+    chat.inviting = {}; // one at a time
     chat.inbox = new streamlib.Readable({objectMode:true});
     chat.inbox._read = function(){}; // all evented
     chat.outbox = new streamlib.Writable({objectMode:true});
@@ -123,37 +124,45 @@ exports.mesh = function(mesh, cbMesh)
 
     chat.join = function(link, cbDone)
     {
+      chat.invited[link.hashname] = true;
+
       function done(err){
+        console.log('DONEEEE',err)
         if(err) mesh.log.debug('join error',err);
         if(cbDone) cbDone(err);
         cbDone = false;
+        delete chat.inviting[link.hashname];
+        
+        // can we connect now?
+        if(!err && chat.profiles[link.hashname]) chat.join(link);
       }
 
-      chat.invited[link.hashname] = true;
+      // if we don't have their profile yet, send a join
+      console.log("PROFILED OUT",chat.id,chat.profiles,link.hashname);
+      if(!chat.profiles[link.hashname])
+      {
+        if(chat.inviting[link.hashname]) return mesh.log.debug('invitation in progress');
+        var open = {json:{type:'join',join:chat.id,seq:1}};
+        var channel = link.x.channel(open);
+        channel.send(open);
+        var stream = mesh.streamize(channel,'lob');
+        chat.inviting[link.hashname] = stream; // so only one at a time
+        stream.write(chat.profile);
+        stream.on('error',fail);
+        stream.on('finish',done);
+        stream.end();
+        return;
+      }
+      
+      if(chat.streams[link.hashname]) return done('already connected');
 
-      // only continue when online
-      mesh.link(link.hashname, function(err, link){
-        if(err || !link.up) return done('offline');
-        
-        // if we don't have their profile yet, send a join
-        if(!chat.profiles[link.hashname])
-        {
-          var open = {json:{type:'join',join:chat.id,seq:1}};
-          var channel = link.x.channel(open);
-          channel.send(open);
-          var stream = mesh.streamize(channel,'lob');
-          stream.write(chat.profile);
-          stream.end();
-          return;
-        }
-
-        // let's get chatting
-        var open = {json:{type:'chat',chat:chat.id,seq:1}};
-        open.json.last = chat.last[link.hashname];
-        var chan = link.x.channel(open);
-        chan.send(open);
-        chat.connect(link, chan);
-      });
+      // let's get chatting
+      var open = {json:{type:'chat',chat:chat.id,seq:1}};
+      open.json.last = chat.last[link.hashname];
+      var chan = link.x.channel(open);
+      chan.send(open);
+      chat.connect(link, chan);
+      done();
 
     }
 
@@ -209,6 +218,9 @@ exports.mesh = function(mesh, cbMesh)
 
       if(profile.json.type != 'profile' || !profile.json.id) return cbOpen('bad profile');
 
+      mesh.log.info('JOIN REQUEST',open.json,profile.json);
+      stream.end(); // send all done
+
       // process invites for unknown chats
       var chat = self.chats[open.json.join];
       if(!chat)
@@ -221,17 +233,19 @@ exports.mesh = function(mesh, cbMesh)
         return;
       }
       
-      mesh.log.info('JOIN REQUEST',open.json,profile.json);
-      
       // if they're the leader, accept their profile
       if(chat.leader == link)
       {
+        // see if they need our profile yet
+        if(!open.json.last) chat.join(link);
+
         chat.profiles[link.hashname] = profile;
         chat.last[link.hashname] = profile.json.id;
+        console.log("LEADER PROFILED",chat.id,chat.profiles);
 
-        // see if they need our profile yet, otherwise get connected
-        if(!open.json.last) chat.join(link);
-        else chat.connect(link);
+        // this will now connect
+        if(open.json.last) chat.join(link);
+
         return;
       }
 
@@ -243,17 +257,21 @@ exports.mesh = function(mesh, cbMesh)
         return;
       }
 
+      // see if they need our profile yet
+      if(!open.json.last) chat.join(link);
+
       // add new profile
       if(!chat.profiles[link.hashname])
       {
         chat.profiles[link.hashname] = profile;
+        chat.last[link.hashname] = profile.json.id;
+        console.log("PARTICIPANT PROFILED",chat.id,chat.profiles);
         var join = {json:{type:'join',from:link.hashname},body:lib.lob.encode(profile)};
         chat.send(join);
       }
 
-      // see if they need our profile yet, otherwise get connected
-      if(!open.json.last) chat.join(link);
-      else chat.connect(link);
+      // if they have ours, this will get connected now
+      if(open.json.last) chat.join(link);
 
     });
 
@@ -273,6 +291,7 @@ exports.mesh = function(mesh, cbMesh)
     
     var chat = self.chats[open.json.chat];
     if(!chat) return cbOpen('unknown chat');
+    console.log('PROFILED CHECK',chat.id,chat.profiles,link.hashname)
     if(!chat.profiles[link.hashname]) return cbOpen('no profile');
     if(!chat.messages[open.json.last]) return cbOpen('unknown last');
 

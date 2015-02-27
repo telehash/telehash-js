@@ -54,8 +54,7 @@ telehash.load(argv, function(err, mesh){
       rl.prompt();
     }
 
-    if(argv._[0]) rlog('connected');
-    else rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
+    if(!argv._[0]) rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
     rl.prompt();
 
     rl.on('line', function(cmd){
@@ -81,7 +80,8 @@ telehash.load(argv, function(err, mesh){
         chat.join(mesh.link(msg.from));
       }
 
-      if(msg.json.type == 'join') rlog(chat.profiles[msg.json.from].json.text,'just joined');
+      if(msg.json.type == 'connect') rlog(chat.profiles[msg.from].json.text,'connected');
+      if(msg.json.type == 'disconnect') rlog(chat.profiles[msg.from].json.text,'disconnected');
       
       if(msg.from == mesh.hashname) return; // ignore our own messages
       if(msg.json.type == 'chat') rlog(chat.profiles[msg.from].json.text+': '+msg.json.text);

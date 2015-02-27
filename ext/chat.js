@@ -110,6 +110,7 @@ exports.mesh = function(mesh, cbMesh)
       // put in our caches/log
       if(msg.json.type == 'chat' || msg.json.type == 'join')
       {
+        if(chat.messages[msg.json.id] && chat.messages[msg.json.id].json.text == msg.json.text) return mesh.log.debug('ignoring duplicate message');
         chat.messages[msg.json.id] = msg;
         chat.last[from] = msg.json.id;
       // TODO put ordered in chat.log
@@ -130,9 +131,6 @@ exports.mesh = function(mesh, cbMesh)
       mesh.log.debug('added profile',profile.json.id,from);
     }
     
-    // always add ourselves
-    chat.add(mesh.hashname, chat.profile);
-
     // this channel is ready
     chat.connect = function(link, channel, last)
     {
@@ -141,7 +139,8 @@ exports.mesh = function(mesh, cbMesh)
       // see if replacing existing stream
       if(chat.streams[link.hashname])
       {
-        chat.streams[link.hashname].end();
+        // TODO BUGGY
+//        chat.streams[link.hashname].end();
       }else{
         chat.receive(link.hashname, lib.lob.packet({type:'connect'}));
       }
@@ -152,7 +151,7 @@ exports.mesh = function(mesh, cbMesh)
         // make sure is sequential/valid id
         if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
         var next = lib.base32.encode(lib.sip.hash(link.hashname, lib.base32.decode(msg.json.id)));
-        if(next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json,chat.last[link.hashname]);
+        if(msg.json.id != chat.last[link.hashname] && next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json,chat.last[link.hashname]);
         chat.receive(link.hashname, msg);
       });
 
@@ -250,12 +249,17 @@ exports.mesh = function(mesh, cbMesh)
       chat.send(data);
       cbDone();
     };
+
+    // always add ourselves
+    chat.add(mesh.hashname, chat.profile);
   
     // if not the leader, send our profile to them to start
     if(!chat.leading)
     {
       chat.join(chat.leader);
     }else{
+      // leader auto-joins
+      chat.send({json:{type:'join',from:mesh.hashname},body:lib.lob.encode(chat.profile)});
       readyUp();
     }
 

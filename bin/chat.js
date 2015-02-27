@@ -41,13 +41,15 @@ telehash.load(argv, function(err, mesh){
     });
     rl.setPrompt(argv.nick+'> ');
     rl.on('close', function () {
-      // TODO any nice shutdown?
       console.log(); // nice newline
       process.exit(0);
     });
 
+    // clear readline then log
     function rlog()
     {
+      process.stdout.clearLine();
+      process.stdout.cursorTo(0);
       console.log.apply(console, arguments);
       rl.prompt();
     }
@@ -62,31 +64,27 @@ telehash.load(argv, function(err, mesh){
       {
         var list = Object.keys(chat.profiles).map(function(hn){return chat.profiles[hn].json.text});
         if(list.length == 0) list.push('nobody');
-        rlog(list.join(', '));
+        rlog('present:',list.join(', '));
         return;
       }
-      rl.pause();
+
       // send any raw text out to the chat
       chat.outbox.write(cmd);
-      setTimeout(function(){rlog('sent');},1000);    
+      rl.prompt();
     });
 
-    
     // process incoming messages
-    chat.nicks = {};
     chat.inbox.on('data',function(msg){
-//      console.log('MSG',JSON.stringify(msg.json));
-      var nick = (chat.profiles[msg.from]) ? chat.profiles[msg.from].json.text : 'unknown';
-      if(msg.json.type == 'join')
-      {
-        rlog(nick,'just joined');
-      }
+      // profile message is a join request, auto-accept
       if(msg.json.type == 'profile')
       {
-        rlog('accepting',msg.json.text,msg.from);
         chat.join(mesh.link(msg.from));
       }
-      if(msg.from != mesh.hashname && msg.json.type == 'chat') rlog(nick+': '+msg.json.text);
+
+      if(msg.json.type == 'join') rlog(chat.profiles[msg.json.from].json.text,'just joined');
+      
+      if(msg.from == mesh.hashname) return; // ignore our own messages
+      if(msg.json.type == 'chat') rlog(chat.profiles[msg.from].json.text+': '+msg.json.text);
     });
   });
   

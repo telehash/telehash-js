@@ -1,42 +1,43 @@
 {
-   "name": "telehash",
-   "version": "0.3.24",
-   "main":"index.js",
-   "dependencies": {
-     "localstorage-fs": "~0.1.0",
-     "e3x": "git+https://github.com/telehash/e3x-js.git",
-     "lob-enc": "git+https://github.com/telehash/lob-enc.git",
-     "hashname": "git+https://github.com/telehash/hashname.git",
-     "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
-     "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
-     "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
-     "telehash-webrtc": "git+https://github.com/quartzjer/telehash-webrtc.git",
-     "path-extra":"~0.3.0",
-     "optimist": "~0.6.1",
-     "json-stable-stringify": "~1.0.0"
-   },
-   "devDependencies": {
-     "chai": "*",
-     "concat-stream": "~1.4.6",
-     "event-stream": "~3.1.7",
-     "mocha": "*"
-   },
-   "browser": {
-     "fs": "localstorage-fs",
-     "telehash-udp4":false,
-     "telehash-tcp4":false
-   },
-   "bin" : {
-     "router" : "./bin/router.js",
-     "mesh" : "./bin/mesh.js"
-   },
-   "scripts": {
-     "browserify": "browserify browser.js -o bundle.js",
-     "browser": "browserify browser.js -o bundle.js && node test/browser/server.js",
-     "start":"node ./bin/router.js",
-     "router":"node ./bin/router.js",
-     "mesh":"node ./bin/mesh.js",
-     "test": "make test"
+  "name": "telehash",
+  "version": "0.3.24",
+  "main": "index.js",
+  "dependencies": {
+    "e3x": "git+https://github.com/telehash/e3x-js.git",
+    "hashname": "git+https://github.com/telehash/hashname.git",
+    "json-stable-stringify": "~1.0.0",
+    "lob-enc": "git+https://github.com/telehash/lob-enc.git",
+    "localstorage-fs": "~0.1.0",
+    "optimist": "~0.6.1",
+    "path-extra": "~0.3.0",
+    "siphash": "^1.0.1",
+    "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
+    "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
+    "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
+    "telehash-webrtc": "git+https://github.com/quartzjer/telehash-webrtc.git"
+  },
+  "devDependencies": {
+    "chai": "*",
+    "concat-stream": "~1.4.6",
+    "event-stream": "~3.1.7",
+    "mocha": "*"
+  },
+  "browser": {
+    "fs": "localstorage-fs",
+    "telehash-udp4": false,
+    "telehash-tcp4": false
+  },
+  "bin": {
+    "router": "./bin/router.js",
+    "mesh": "./bin/mesh.js"
+  },
+  "scripts": {
+    "browserify": "browserify browser.js -o bundle.js",
+    "browser": "browserify browser.js -o bundle.js && node test/browser/server.js",
+    "start": "node ./bin/router.js",
+    "router": "node ./bin/router.js",
+    "mesh": "node ./bin/mesh.js",
+    "test": "make test"
   },
   "testling": {
     "harness": "mocha-bdd",
@@ -61,10 +62,10 @@
     "url": "https://github.com/telehash/telehash-js.git"
   },
   "licenses": [
-  {
-    "type": "MIT",
-    "url": "https://github.com/telehash/telehash-js/raw/master/LICENSE"
-  }
+    {
+      "type": "MIT",
+      "url": "https://github.com/telehash/telehash-js/raw/master/LICENSE"
+    }
   ],
   "author": {
     "name": "Jeremie Miller",
@@ -73,13 +74,13 @@
   },
   "maintainers": [
     {
-    "name": "Jeremie Miller",
-    "email": "jeremie@jabber.org",
-    "url": "http://jeremie.com/"
+      "name": "Jeremie Miller",
+      "email": "jeremie@jabber.org",
+      "url": "http://jeremie.com/"
     }
   ],
-   "engines": {
-     "node": "0.10.x",
-     "npm":  ">1.2.x"
-   }
+  "engines": {
+    "node": "0.10.x",
+    "npm": ">1.2.x"
+  }
 }

@@ -159,12 +159,13 @@ mesh.stream(function(link, args, cbAccept){
 ````
 
 * **chat** - send and receive one-to-one or group chat messages
+> draft implementation, works but is minimal
 ````js
-// create or join a new chat
+// create or set args.id and args.leader to join a new chat
 mesh.chat(args, profile, function(err, chat){
   chat.inbox; // incoming message stream
   chat.outbox; // stream to send messages
-  chat.roster; // hn->profile
+  chat.profiles; // hn->profile
   chat.messages; // cache/index by message id
   chat.log; // ordered known chat history ["id2", "id1", ...]
   chat.join(link); // leader can use to accept/invite others

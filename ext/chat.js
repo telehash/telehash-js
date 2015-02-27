@@ -96,18 +96,9 @@ exports.mesh = function(mesh, cbMesh)
     }
 
     // internal to cache and event a message
-    chat.receive = function(link, msg)
+    chat.receive = function(from, msg)
     {
-      msg.from = link.hashname;
-
-      // profile messages are just internally tracked
-      if(msg.json.type == 'profile')
-      {
-        chat.profiles[link.hashname] = msg;
-        chat.last[link.hashname] = msg.json.id;
-        chat.messages[msg.json.id] = msg;
-        return;
-      }
+      msg.from = from;
 
       // massage join's attached profile
       if(msg.json.type == 'join')
@@ -120,6 +111,7 @@ exports.mesh = function(mesh, cbMesh)
       if(msg.json.type == 'chat' || msg.json.type == 'join')
       {
         chat.messages[msg.json.id] = msg;
+        chat.last[from] = msg.json.id;
       // TODO put ordered in chat.log
         chat.log.unshift(msg);
       }
@@ -151,7 +143,7 @@ exports.mesh = function(mesh, cbMesh)
       {
         chat.streams[link.hashname].end();
       }else{
-        chat.receive(link, lib.lob.packet({type:'connect'}));
+        chat.receive(link.hashname, lib.lob.packet({type:'connect'}));
       }
 
       var stream = chat.streams[link.hashname] = mesh.streamize(channel, 'lob');
@@ -160,26 +152,28 @@ exports.mesh = function(mesh, cbMesh)
         // make sure is sequential/valid id
         if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
         var next = lib.base32.encode(lib.sip.hash(link.hashname, lib.base32.decode(msg.json.id)));
-        if(next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json);
-        chat.receive(link, msg);
+        if(next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json,chat.last[link.hashname]);
+        chat.receive(link.hashname, msg);
       });
 
       stream.on('end', function(){
         mesh.log.debug('chat stream ended',link.hashname);
         if(chat.streams[link.hashname] == stream)
         {
-          chat.receive(link, lib.lob.packet({type:'disconnect'}));
+          chat.receive(link.hashname, lib.lob.packet({type:'disconnect'}));
           delete chat.streams[link.hashname];
         }
       });
 
       // send any messages since the last they saw
-      var id = chat.last[mesh.hashname];
-      while(id != last.json.id)
+      function sync(id)
       {
+        if(id == last.json.id) return;
+        // bottoms up, send older first
+        sync(lib.base32.encode(lib.sip.hash(mesh.hashname, lib.base32.decode(id))));
         stream.write(chat.messages[id]);
-        id = lib.base32.encode(lib.sip.hash(mesh.hashname, lib.base32.decode(id)));
       }
+      sync(chat.last[mesh.hashname]);
 
       // signal good startup
       readyUp();
@@ -242,7 +236,7 @@ exports.mesh = function(mesh, cbMesh)
       msg = lib.lob.packet(msg.json,msg.body); // consistency
 
       // we receive it first
-      chat.receive(mesh, msg);
+      chat.receive(mesh.hashname, msg);
 
       // deliver to anyone connected
       Object.keys(chat.streams).forEach(function(to){
@@ -320,7 +314,7 @@ exports.mesh = function(mesh, cbMesh)
       if(!chat.invited[link.hashname])
       {
         // event the profile for the app to decide on
-        chat.receive(link, profile);
+        chat.receive(link.hashname, profile);
         return;
       }
 

@@ -77,7 +77,6 @@ describe('telehash/chat', function(){
 
           // initiate chat from A->B
           meshA.chat({json:{}}, function(err, chat){
-            console.log('INVITING',err,(new Error()).stack);
             expect(err).to.not.exist;
             chat.join(linkAB);
             chat.inbox.on('data', function(msg){

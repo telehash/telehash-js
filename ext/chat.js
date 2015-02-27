@@ -27,16 +27,25 @@ exports.mesh = function(mesh, cbMesh)
       profile = args;
       args = {};
     }
-    if(!cbReady) cbReady = function(err){ mesh.log.debug('chat error',err); };
+    
+    function readyUp(err)
+    {
+      if(err) mesh.log.debug('chat error', err);
+      if(!cbReady) return;
+      // I wish node unrolled itself
+      var cb = cbReady;
+      cbReady = false;
+      cb(err, chat);
+    }
 
     // accept uri arg
     if(typeof args == 'string')
     {
       var leader = mesh.link(args);
-      if(!leader || !leader.args.token) return cbReady('bad uri: '+args);
+      if(!leader || !leader.args.token) return readyUp('bad uri: '+args);
       args = {leader:leader,id:leader.args.token};
     }
-    if(typeof args != 'object') return cbReady('bad args');
+    if(typeof args != 'object') return readyUp('bad args');
 
     // generate or load basics for the unique chat id
     var chat = {};
@@ -53,7 +62,6 @@ exports.mesh = function(mesh, cbMesh)
     chat.profiles = {}; // profiles by hashname
     chat.last = {}; // last message id by hashname
     chat.invited = {}; // ACL
-    chat.inviting = {}; // one at a time
     chat.inbox = new streamlib.Readable({objectMode:true});
     chat.inbox._read = function(){}; // all evented
     chat.outbox = new streamlib.Writable({objectMode:true});
@@ -61,12 +69,10 @@ exports.mesh = function(mesh, cbMesh)
     
     // sanitize our profile
     if(typeof profile == 'string') profile = {json:{text:profile}}; // convenient
-    if(!profile.json) profile = {json:profile}; // friendly to make a packet
-    chat.profile = profile;
+    if(!profile.json) profile = {json:profile};
     profile.json.type = 'profile';
     profile.json.id = (chat.leading) ? chat.id : stamp();
-    chat.profiles[mesh.hashname] = profile;
-    chat.last[mesh.hashname] = profile.json.id;
+    chat.profile = lib.lob.packet(profile.json, profile.body);
 
     // internal fail handler
     function fail(err, cbErr)
@@ -76,8 +82,7 @@ exports.mesh = function(mesh, cbMesh)
       chat.err = err;
       // TODO error inbox/outbox
       if(typeof cbErr == 'function') cbErr(err);
-      if(cbReady) cbReady(err);
-      cbReady = false;
+      readyUp(err);
     }
 
     // internal message id generator
@@ -95,7 +100,16 @@ exports.mesh = function(mesh, cbMesh)
     {
       msg.from = link.hashname;
 
-      // massage join
+      // profile messages are just internally tracked
+      if(msg.json.type == 'profile')
+      {
+        chat.profiles[link.hashname] = msg;
+        chat.last[link.hashname] = msg.json.id;
+        chat.messages[msg.json.id] = msg;
+        return;
+      }
+
+      // massage join's attached profile
       if(msg.json.type == 'join')
       {
         msg.join = lib.lob.decode(msg.body);
@@ -109,32 +123,68 @@ exports.mesh = function(mesh, cbMesh)
       // TODO put ordered in chat.log
         chat.log.unshift(msg);
       }
+
       mesh.log.debug('receiving message',msg.from,msg.json);
       chat.inbox.push(msg);
     }
 
+    // internal to add a profile
+    chat.add = function(from, profile)
+    {
+      profile.from = from;
+      chat.profiles[from] = profile;
+      if(!chat.last[from]) chat.last[from] = profile.json.id;
+      chat.messages[profile.json.id] = profile;
+      mesh.log.debug('added profile',profile.json.id,from);
+    }
+    
+    // always add ourselves
+    chat.add(mesh.hashname, chat.profile);
+
     // this channel is ready
-    chat.connect = function(link, channel)
+    chat.connect = function(link, channel, last)
     {
       mesh.log.debug('chat connected',link.hashname);
-      // TODO disconnect old streams?
+
+      // see if replacing existing stream
+      if(chat.streams[link.hashname])
+      {
+        chat.streams[link.hashname].end();
+      }else{
+        chat.receive(link, lib.lob.packet({type:'connect'}));
+      }
+
       var stream = chat.streams[link.hashname] = mesh.streamize(channel, 'lob');
+
       stream.on('data', function(msg){
-        // TODO validate id!
+        // make sure is sequential/valid id
         if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
+        var next = lib.base32.encode(lib.sip.hash(link.hashname, lib.base32.decode(msg.json.id)));
+        if(next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json);
         chat.receive(link, msg);
       });
+
       stream.on('end', function(){
         mesh.log.debug('chat stream ended',link.hashname);
-        if(chat.streams[link.hashname] == stream) delete chat.streams[link.hashname];
+        if(chat.streams[link.hashname] == stream)
+        {
+          chat.receive(link, lib.lob.packet({type:'disconnect'}));
+          delete chat.streams[link.hashname];
+        }
       });
 
-      // signal good startup
-      if(cbReady)
+      // send any messages since the last they saw
+      var id = chat.last[mesh.hashname];
+      while(id != last.json.id)
       {
-        cbReady(undefined, chat);
-        cbReady = false;
+        stream.write(chat.messages[id]);
+        id = lib.base32.encode(lib.sip.hash(mesh.hashname, lib.base32.decode(id)));
       }
+
+      // signal good startup
+      readyUp();
+      
+      return stream;
     }
 
     chat.join = function(link, profile)
@@ -167,8 +217,16 @@ exports.mesh = function(mesh, cbMesh)
       var open = {json:{type:'chat',chat:chat.id,seq:1}};
       open.json.last = chat.last[link.hashname];
       var chan = link.x.channel(open);
+      chan.receiving = function(err, packet, cbMore) {
+        if(packet)
+        {
+          var last = chat.messages[packet.json.last];
+          if(!last || last.from != mesh.hashname) return cbMore('unknown last '+packet.json.last);
+          chat.connect(link, chan, last);
+          cbMore();
+        }
+      }
       chan.send(open);
-      chat.connect(link, chan);
 
     }
 
@@ -204,8 +262,7 @@ exports.mesh = function(mesh, cbMesh)
     {
       chat.join(chat.leader);
     }else{
-      cbReady(undefined, chat);
-      cbReady = false;
+      readyUp();
     }
 
     return chat;
@@ -250,8 +307,8 @@ exports.mesh = function(mesh, cbMesh)
         // see if they need our profile yet
         if(!open.json.profile) chat.join(link, profile.json.id);
 
-        chat.profiles[link.hashname] = profile;
-        chat.last[link.hashname] = profile.json.id;
+        // cache/track the profile
+        chat.add(link.hashname, profile);
 
         // this will now connect
         if(open.json.profile) chat.join(link);
@@ -270,11 +327,10 @@ exports.mesh = function(mesh, cbMesh)
       // see if they need our profile yet
       if(!open.json.profile) chat.join(link, profile.json.id);
 
-      // add new profile
+      // add new profile, send a join message
       if(!chat.profiles[link.hashname])
       {
-        chat.profiles[link.hashname] = profile;
-        chat.last[link.hashname] = profile.json.id;
+        chat.add(link.hashname, profile);
         var join = {json:{type:'join',from:link.hashname},body:lib.lob.encode(profile)};
         chat.send(join);
       }
@@ -301,12 +357,15 @@ exports.mesh = function(mesh, cbMesh)
     var chat = self.chats[open.json.chat];
     if(!chat) return cbOpen('unknown chat');
     if(!chat.profiles[link.hashname]) return cbOpen('no profile');
-//    if(!chat.messages[open.json.last]) return cbOpen('unknown last');
+    var last = chat.messages[open.json.last];
+    if(!last || last.from != mesh.hashname) return cbOpen('unknown last '+open.json.last);
 
     var chan = link.x.channel(open);
     chan.receive(open);
-    chat.connect(link, chan);
-
+    // confirm
+    chan.send({json:{last:chat.last[link.hashname]}});
+    chat.connect(link, chan, last);
+    
   }
 
   cbMesh(undefined, self);

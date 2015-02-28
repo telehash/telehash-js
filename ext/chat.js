@@ -42,8 +42,8 @@ exports.mesh = function(mesh, cbMesh)
     if(typeof args == 'string')
     {
       var leader = mesh.link(args);
-      if(!leader || !leader.args.token) return readyUp('bad uri: '+args);
-      args = {leader:leader,id:leader.args.token};
+      if(!leader || !leader.args.query.id) return readyUp('bad uri: '+args);
+      args = {leader:leader,id:leader.args.query.id};
     }
     if(typeof args != 'object') return readyUp('bad args');
 

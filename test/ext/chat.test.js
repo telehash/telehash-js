@@ -26,7 +26,7 @@ describe('telehash/chat', function(){
   });
 
   it('should siphash', function(){
-    var hash = telehash.sip.hash('fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq','message');
+    var hash = telehash.hashname.siphash('fvifxlr3bsaan2jajo5qqn4au5ldy2ypiweazmuwjtgtg43tirkq','message');
     expect(hash.toString('hex')).to.be.equal('49054fd70340c22d');
   });
 

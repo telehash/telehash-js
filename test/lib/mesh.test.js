@@ -78,7 +78,7 @@ describe('telehash', function(){
 
   it('should create a link from a uri', function(done){
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){
-      var link = mesh.link('link://localhost?1a=apkoh54rkobkeela6d62hblhqd7grqd5dm');
+      var link = mesh.link('link://localhost?cs1a=apkoh54rkobkeela6d62hblhqd7grqd5dm');
       expect(link).to.be.an('object');
       expect(link.hashname).to.be.equal(idB.hashname);
       done();

@@ -89,8 +89,8 @@ exports.mesh = function(mesh, cbMesh)
     function stamp()
     {
       if(!chat.seq) return fail('chat history overflow, please restart');
-      var id = lib.sip.hash(mesh.hashname, chat.secret);
-      for(var i = 0; i < chat.seq; i++) id = lib.sip.hash(id.key,id);
+      var id = lib.hashname.siphash(mesh.hashname, chat.secret);
+      for(var i = 0; i < chat.seq; i++) id = lib.hashname.siphash(id.key,id);
       chat.seq--;
       return lib.base32.encode(id);
     }
@@ -150,7 +150,7 @@ exports.mesh = function(mesh, cbMesh)
       stream.on('data', function(msg){
         // make sure is sequential/valid id
         if(!msg.json.id) return mesh.log.debug('bad message',msg.json);
-        var next = lib.base32.encode(lib.sip.hash(link.hashname, lib.base32.decode(msg.json.id)));
+        var next = lib.base32.encode(lib.hashname.siphash(link.hashname, lib.base32.decode(msg.json.id)));
         if(msg.json.id != chat.last[link.hashname] && next != chat.last[link.hashname]) return mesh.log.warn('unsequenced message',msg.json,chat.last[link.hashname]);
         chat.receive(link.hashname, msg);
       });
@@ -169,7 +169,7 @@ exports.mesh = function(mesh, cbMesh)
       {
         if(id == last.json.id) return;
         // bottoms up, send older first
-        sync(lib.base32.encode(lib.sip.hash(mesh.hashname, lib.base32.decode(id))));
+        sync(lib.base32.encode(lib.hashname.siphash(mesh.hashname, lib.base32.decode(id))));
         stream.write(chat.messages[id]);
       }
       sync(chat.last[mesh.hashname]);

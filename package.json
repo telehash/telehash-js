@@ -10,7 +10,6 @@
     "localstorage-fs": "~0.1.0",
     "optimist": "~0.6.1",
     "path-extra": "~0.3.0",
-    "siphash": "^1.0.1",
     "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
     "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
     "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",

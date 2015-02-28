@@ -54,7 +54,7 @@ telehash.load(argv, function(err, mesh){
       rl.prompt();
     }
 
-    if(!argv._[0]) rlog('invite others with',mesh.uri({protocol:'chat',token:chat.id}));
+    if(!argv._[0]) rlog('invite others with',mesh.uri('chat:///?id='+chat.id));
     rl.prompt();
 
     rl.on('line', function(cmd){

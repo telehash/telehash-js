@@ -43,6 +43,7 @@ A second argument can be passed and will be called after the mesh is fully initi
 th.mesh({id:id}, function(err, mesh){
   if(err) return console.log("mesh failed to initialize",err);
   // use mesh.* now
+  console.log(mesh.uri());
 });
 ```
 

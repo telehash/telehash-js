@@ -182,7 +182,7 @@ describe('telehash', function(){
         var pipe = new telehash.Pipe('test');
         pipe.onSend = function(packet){
           expect(Buffer.isBuffer(packet)).to.be.true;
-          expect(packet.length).to.be.equal(72);
+          expect(packet.length).to.be.above(70);
           console.log('handshakeAB',packet.toString('hex'));
           done();
         };

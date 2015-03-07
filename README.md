@@ -10,7 +10,7 @@ The browser crypto that powers this is only possible thanks to the incredible wo
 
 # Router
 
-Telehash apps usually need one or more mesh routers to assist in establishing p2p links, there are some test ones in [links.json](links.json).  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.link({...})` function (shown below) or stored in your own `links.json`.
+Telehash apps usually need one or more mesh routers to assist in establishing p2p links.  You can run your own router via `npm start`, manually via `node bin/router.js`, or just `router` if you did an `npm install -g`.  The JSON object from the router output can be passed in to the `mesh.link({...})` function (shown below) or stored in your own `links.json` locally.
 
 # Library Interface
 

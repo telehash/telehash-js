@@ -37,9 +37,10 @@ exports.mesh = function(mesh, cbExt)
         Object.keys(mesh.keys).forEach(function(csid){
           if(link.csid && link.csid != csid) return; // if we know the csid, only send that key
           var json = {type:'peer',peer:link.hashname,c:router.x.cid()};
-          var body = lob.encode(hashname.toPacket(mesh.keys,csid));
+          var body = lob.encode(hashname.intermediates(mesh.keys), hashname.key(csid, mesh.keys));
+          var attach = lob.encode({type:'link', csid:csid}, body);
           log.debug('sending peer key to',router.hashname,json,csid);
-          router.x.send({json:json,body:body});
+          router.x.send({json:json,body:attach});
         });
         return;
       }

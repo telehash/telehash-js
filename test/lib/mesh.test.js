@@ -150,7 +150,8 @@ describe('telehash', function(){
         var pipe = new telehash.Pipe('test');
         pipe.path = {type:'test'};
         pipe.onSend = function(){};
-        mesh.receive(lob.decode(new Buffer('00011a02228b5eebab016d725049a4b5f71344e8b60a3037156420ebab916f128333b5d72abf804cc37b9978b12278c8aac65905301deee657c9d8b00f2a5e372b1c222213a94c82','hex')),pipe);
+        // is handshakeAB fixture
+        mesh.receive(lob.decode(new Buffer('00011a020ea23f253918cb89e67b20d4f9413cad3ac85c1f04e65df6681c3867fe986aed9f6603603a1635f4d6afdb0441f9b58f4b94017eeebb608c7ad8df613c60d770b1919b4ce132e851c4a3130f68fdb9e38c11b128','hex')),pipe);
       });
     });
   });

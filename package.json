@@ -31,8 +31,8 @@
     "mesh": "./bin/mesh.js"
   },
   "scripts": {
-    "browserify": "browserify browser.js -o bundle.js",
-    "browser": "browserify browser.js -o bundle.js && node test/browser/server.js",
+    "browserify": "browserify index.js -o bundle.js",
+    "browser": "browserify index.js -o bundle.js && node test/browser/server.js",
     "start": "node ./bin/router.js",
     "router": "node ./bin/router.js",
     "mesh": "node ./bin/mesh.js",

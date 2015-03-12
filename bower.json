@@ -1,0 +1,24 @@
+{
+  "name": "telehash",
+  "main": "bundle.js",
+  "version": "0.3.26",
+  "homepage": "https://github.com/telehash/telehash-js",
+  "authors": [
+    "Jeremie Miller <jeremie@jabber.org>"
+  ],
+  "description": "A full telehash implementation for browsers",
+  "keywords": [
+    "telehash",
+    "p2p",
+    "end-to-end",
+    "crypto"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}

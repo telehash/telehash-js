@@ -8,6 +8,10 @@ var argv = require('optimist')
   .boolean('v').describe('v', 'verbose')
   .argv;
 
+// pass in args to http transport for heroku web defaults
+argv.http = {};
+if(process.env.PORT) argv.http.port;
+
 repl.start(argv, function(mesh){
   mesh.router(true);
   mesh.discover(true);

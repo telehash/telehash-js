@@ -47,19 +47,19 @@ exports.mesh = function(mesh, cbExt)
         data = JSON.stringify(data);
         enc = 'json';
       }
-      // chunk it
+      // fragment it
       while(data.length)
       {
-        var chunk = data.slice(0,1000);
+        var frag = data.slice(0,1000);
         data = data.slice(1000);
-        var packet = {json:{},body:chunk};
+        var packet = {json:{},body:frag};
         // last packet gets continuation callback
         if(!data.length)
         {
           if(enc != 'binary') packet.json.enc = enc;
           packet.callback = cbWrite;
         }else{
-          packet.json.chunk = true;
+          packet.json.frag = true;
         }
         chan.send(packet);
       }
@@ -78,14 +78,14 @@ exports.mesh = function(mesh, cbExt)
       if(packet.body.length || data.length)
       {
         data = Buffer.concat([data,packet.body]);
-        if(!packet.json.chunk)
+        if(!packet.json.frag)
         {
           var body = data;
           data = new Buffer(0);
           if(packet.json.enc == 'json') try{
             body = JSON.parse(body)
           }catch(E){
-            mesh.log.warn('stream json chunk parse error',E,body.toString());
+            mesh.log.warn('stream json frag parse error',E,body.toString());
             err = E;
           }
           if(packet.json.enc == 'lob')
@@ -93,7 +93,7 @@ exports.mesh = function(mesh, cbExt)
             var packet = mesh.lib.lob.decode(body);
             if(!packet)
             {
-              mesh.log.warn('stream lob chunk decode error',body.toString('hex'));
+              mesh.log.warn('stream lob frag decode error',body.toString('hex'));
               err = 'lob decode failed';
             }else{
               body = packet;

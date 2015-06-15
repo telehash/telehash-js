@@ -130,7 +130,6 @@ exports.mesh = function(mesh, cbMesh)
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
-        console.log("thtp req", req.headers)
         var opt = {host:to.hostname,port:to.port,headers:req.headers,method:req.headers[":method"],path:req.headers[":path"]};
         req.pipe(httplib.request(opt, function(pres){
           pres.pipe(res);

@@ -14,7 +14,7 @@ exports.mesh = function(mesh, cbExt)
     mesh.log.debug('adding onStream handler',typeof onStream);
     ext.onStream = onStream;
   }
-  
+
   // takes any channel and returns a Duplex stream, oneshot is thtp style (one packet/channel)
   mesh.streamize = function(chan, encoding)
   {
@@ -25,7 +25,7 @@ exports.mesh = function(mesh, cbExt)
       return false;
     }
 
-    var stream = new Duplex({allowHalfOpen:false, objectMode:true});
+    var stream = new Duplex({allowHalfOpen:true, objectMode:true});
     stream.on('finish',function(){
       chan.send({json:{end:true}});
     });
@@ -99,7 +99,7 @@ exports.mesh = function(mesh, cbExt)
               body = packet;
             }
           }
-          
+
           if(!err && !stream.push(body)) more = cbMore;
         }
       }
@@ -123,7 +123,7 @@ exports.mesh = function(mesh, cbExt)
       return mesh.streamize(channel);
     });
   }
-  
+
   ext.link = function(link, cbLink)
   {
     // create a new stream to this link
@@ -139,6 +139,6 @@ exports.mesh = function(mesh, cbExt)
 
     cbLink();
   }
-  
+
   cbExt(undefined, ext);
 }

@@ -25,6 +25,7 @@ exports.mesh = function(mesh, cbExt)
       return false;
     }
 
+    //TODO: rigorously test our stream implimentation, specifically so we can fix this allowHalfOpen hack
     var stream = new Duplex({allowHalfOpen:true, objectMode:true});
     stream.on('finish',function(){
       chan.send({json:{end:true}});

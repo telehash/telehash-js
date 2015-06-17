@@ -130,6 +130,7 @@ exports.mesh = function(mesh, cbMesh)
   }
 
   // start accepting incoming thtp requests
+  // TODO: fix re: stream api for piping
   var proxy = false;
   mesh.proxy = function(options)
   {

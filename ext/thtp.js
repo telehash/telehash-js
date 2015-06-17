@@ -1,11 +1,20 @@
 var urllib = require('url');
 var httplib = require('http');
+var http_proxy = require("http-proxy");
 var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
 
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
 exports.name = 'thtp';
+
+function sanitizeHeaders(headers){
+  console.log("presanitize", headers)
+  delete headers[":method"]
+  delete headers[":path"]
+
+  return headers;
+}
 
 exports.mesh = function(mesh, cbMesh)
 {
@@ -22,6 +31,7 @@ exports.mesh = function(mesh, cbMesh)
       if(typeof req.headers == 'object') Object.keys(req.headers).forEach(function(header){
         json[header.toLowerCase()] = req.headers[header];
       });
+      json['if-modified-since'] = new Date(0)
       json[':method'] = (req.method || 'GET').toUpperCase();
       // convenience pattern
       if(req.url)
@@ -52,11 +62,11 @@ exports.mesh = function(mesh, cbMesh)
         sdecode.headers = packet.json;
 
         // direct response two ways depending on args
-        if(typeof res == 'object')
+        if(typeof res === 'object')
         {
           res.writeHead(sdecode.statusCode, packet.json);
           sdecode.pipe(res);
-        }else if(typeof res == 'function'){
+        }else if(typeof res === 'function'){
           res(sdecode); // handler must set up stream piping
         }else{
           return cbStream('no result handler');
@@ -126,13 +136,33 @@ exports.mesh = function(mesh, cbMesh)
     // provide a url to directly proxy to
     if(typeof options == 'string')
     {
-      proxy = httplib.createServer();
+      proxy = httplib.createServer()
+      var rproxy = http_proxy.createProxyServer()
+
       var to = urllib.parse(options);
-      if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
+      if(to.hostname == '0.0.0.0' || to.hostname == "localhost") to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
-        var opt = {host:to.hostname,port:to.port,headers:req.headers,method:req.headers[":method"],path:req.headers[":path"]};
+        var opt = {
+            host: to.hostname,
+            port: to.port,
+            method: req.headers[":method"],
+            path: req.headers[":path"],
+            headers: sanitizeHeaders(req.headers)
+          };
+
         req.pipe(httplib.request(opt, function(pres){
-          pres.pipe(res);
+          res.writeHead(pres.statusCode, null,pres.headers)
+          var tally = 0
+          var ddata = new Buffer(0)
+          pres.on('data',function(data){
+            tally += data.length;
+            ddata = Buffer.concat([ddata, data])
+
+          })
+          .on("end",function(){
+            res.write(ddata)
+            res.end()
+          })
         }));
       });
     }else{

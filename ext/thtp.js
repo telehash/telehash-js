@@ -1,6 +1,5 @@
 var urllib = require('url');
 var httplib = require('http');
-var http_proxy = require("http-proxy");
 var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
@@ -137,8 +136,7 @@ exports.mesh = function(mesh, cbMesh)
     // provide a url to directly proxy to
     if(typeof options == 'string')
     {
-      proxy = httplib.createServer()
-      var rproxy = http_proxy.createProxyServer()
+      proxy = httplib.createServer();
 
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0' || to.hostname == "localhost") to.hostname = '127.0.0.1';

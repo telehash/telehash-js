@@ -13,9 +13,9 @@ function ChanStream(chan, encoding){
     return false;
   }
 
+  var allowHalfOpen = (chan.type === "thtp") ? true : false;
 
-  Duplex.call(this,{allowHalfOpen:false, objectMode:true})
-  console.log("util.")
+  Duplex.call(this,{allowHalfOpen: allowHalfOpen, objectMode:true})
   this.on('finish',function(){
     chan.send({json:{end:true}});
   });
@@ -116,7 +116,7 @@ function chan_to_stream (stream){
     }
 
     //the packet has been read by stream consumer, so get the next one
-    if(!stream._getNextPacket && stream)
+    if(!stream._getNextPacket)
       getNextPacket();
 
     //close the stream if this is the last packet

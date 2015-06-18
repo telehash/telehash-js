@@ -19,7 +19,7 @@
     "chai": "*",
     "concat-stream": "~1.4.6",
     "event-stream": "~3.1.7",
-    "mocha": "*",
+    "mocha": "*"
   },
   "browser": {
     "fs": "localstorage-fs",

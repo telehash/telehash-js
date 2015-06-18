@@ -3,9 +3,16 @@ var httplib = require('http');
 var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
+var util = require("util")
 
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
 exports.name = 'thtp';
+
+function sanitizeheaders(headers){
+  delete headers[":path"]
+  delete headers[":method"]
+  return headers;
+}
 
 exports.mesh = function(mesh, cbMesh)
 {
@@ -32,7 +39,7 @@ exports.mesh = function(mesh, cbMesh)
         json[':path'] = (req.path || '/');
       }
       var packet = lob.encode(json, false);
-      
+
       // create the channel request
       var open = {json:{type:'thtp'}};
       open.json.seq = 1; // always reliable
@@ -41,6 +48,8 @@ exports.mesh = function(mesh, cbMesh)
 
       // create a stream to encode the http->thtp
       var sencode = mesh.streamize(channel);
+
+
 
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
@@ -66,8 +75,10 @@ exports.mesh = function(mesh, cbMesh)
         mesh.log.error('got thtp error',err);
       });
 
+
       // any response is decoded
       sencode.pipe(sdecode);
+
 
       // finish sending the open
       channel.send(open);
@@ -77,10 +88,10 @@ exports.mesh = function(mesh, cbMesh)
 
       // auto-pipe in any request body
       if(typeof req.pipe == 'function') req.pipe(sencode);
-      
+
       return sencode;
     }
-    
+
     // create a new request just like http://nodejs.org/api/http.html#http_http_request_options_callback
     link.request = function(options, cbRequest)
     {
@@ -97,6 +108,7 @@ exports.mesh = function(mesh, cbMesh)
         cbRequest = false;
       });
 
+
       // friendly
       if(options.method.toUpperCase() == 'GET') proxy.end();
       return proxy;
@@ -112,13 +124,13 @@ exports.mesh = function(mesh, cbMesh)
     if(!hashname.isHashname(req.hostname)) return cbRequest('invalid hashname',req.hostname);
     return mesh.link(req.hostname).request(req, cbRequest);
   }
-  
+
   var mPaths = {};
   mesh.match = function(path, cbMatch)
   {
     mPaths[path] = cbMatch;
   }
-    
+
   // start accepting incoming thtp requests
   var proxy = false;
   mesh.proxy = function(options)
@@ -130,9 +142,9 @@ exports.mesh = function(mesh, cbMesh)
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
-        var opt = {host:to.hostname,port:to.port,headers:req.headers,method:req.method,path:req.path};
+        var opt = {host:to.hostname,port:to.port,method:req.headers[":method"],path:req.headers[":path"],headers:sanitizeheaders(req.headers)};
         req.pipe(httplib.request(opt, function(pres){
-          pres.pipe(res);
+          pres.pipe(res)
         }));
       });
     }else{
@@ -180,7 +192,7 @@ exports.mesh = function(mesh, cbMesh)
         if(headers) Object.keys(headers).forEach(function(header){
           json[header.toLowerCase()] = headers[header];
         });
-        
+
         // send it
         res.push(lob.encode(json, false));
         return res;
@@ -191,7 +203,15 @@ exports.mesh = function(mesh, cbMesh)
       {
         if(!res.statusCode) res.writeHead(200);
         res.push(data);
+        cbTransform()
       }
+
+      res._flush = function(cb){
+        cb()
+      }
+
+
+
 
       // see if it's an internal path
       var match;
@@ -206,10 +226,10 @@ exports.mesh = function(mesh, cbMesh)
 
       // otherwise show the bouncer our fake id
       else if(proxy) proxy.emit('request', req, res);
-      
+
       // otherwise error
       else res.writeHead(500,'not supported').end();
-      
+
       cbStream();
     }));
 

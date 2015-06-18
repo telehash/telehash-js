@@ -33,11 +33,11 @@ describe('telehash/stream', function(){
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
     expect(meshB).to.exist;
-    
+
     // pair them
     meshA.mesh(meshB);
     var linkAB = meshA.link(meshB.hashname);
-    
+
     // accept and concat stream
     meshB.stream(function(link, req, accept){
       expect(link).to.exist;
@@ -47,7 +47,7 @@ describe('telehash/stream', function(){
         done();
       }));
     })
-    
+
     // send stream
     fs.createReadStream(__filename).pipe(linkAB.stream()).on('error',done);
 
@@ -67,10 +67,10 @@ describe('telehash/stream', function(){
       var streamBA = accept();
       streamBA.pipe(streamBA); // mirror it back
     });
-    
+
     // pair them
     meshA.mesh(meshB);
-    
+
     // send stream
     var linkAB = meshA.link(meshB.hashname);
     var streamAB = linkAB.stream();
@@ -92,15 +92,16 @@ describe('telehash/stream', function(){
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
     expect(meshB).to.exist;
-    
+
     // pair them
     meshA.mesh(meshB);
     var linkAB = meshA.link(meshB.hashname);
-    
+
     // accept and concat stream
     meshB.stream(function(link, req, accept){
       expect(link).to.exist;
       accept().pipe(es.writeArray(function(err,items){
+        console.log("\n\n\nitems",items,"\n\n\nnnnn")
         expect(err).to.not.exist;
         expect(items).to.exist;
         expect(items.length).to.be.equal(4);
@@ -111,7 +112,7 @@ describe('telehash/stream', function(){
       }));
     })
     var streamAB = linkAB.stream();
-    
+
     // stream objects
     es.readArray([1,2,true,{all:42}]).pipe(streamAB).on('error',done);
 
@@ -123,11 +124,11 @@ describe('telehash/stream', function(){
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
     expect(meshB).to.exist;
-    
+
     // pair them
     meshA.mesh(meshB);
     var linkAB = meshA.link(meshB.hashname);
-    
+
     // accept and concat stream
     meshB.stream(function(link, req, accept){
       expect(link).to.exist;
@@ -142,7 +143,7 @@ describe('telehash/stream', function(){
       }));
     })
     var streamAB = linkAB.stream(undefined, 'lob');
-    
+
     // stream a packet
     var packet = meshA.lib.lob.packet({"foo":true},new Buffer(42));
     streamAB.on('error',done);
@@ -150,5 +151,5 @@ describe('telehash/stream', function(){
     streamAB.end();
 
   });
-  
+
 });

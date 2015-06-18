@@ -1,5 +1,6 @@
-var Duplex = require('stream').Duplex;
+
 var lob = require('lob-enc');
+var ChannelStream = require("./stream.class.js")
 
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/stream.md
 exports.name = 'stream';
@@ -14,101 +15,12 @@ exports.mesh = function(mesh, cbExt)
     mesh.log.debug('adding onStream handler',typeof onStream);
     ext.onStream = onStream;
   }
-  
+
+
   // takes any channel and returns a Duplex stream, oneshot is thtp style (one packet/channel)
   mesh.streamize = function(chan, encoding)
   {
-    if(!encoding) encoding = 'binary';
-    if(typeof chan != 'object' || !chan.isChannel)
-    {
-      mesh.log.warn('invalid channel passed to streamize');
-      return false;
-    }
-
-    var stream = new Duplex({allowHalfOpen:false, objectMode:true});
-    stream.on('finish',function(){
-      chan.send({json:{end:true}});
-    });
-
-    stream.on('error',function(err){
-      if(err == chan.err) return; // ignore our own generated errors
-      mesh.log.debug('streamized error',err);
-      chan.send({json:{err:err.toString()}});
-    });
-
-    stream._write = function(data,enc,cbWrite)
-    {
-      if(chan.state == 'gone') return cbWrite('closed');
-      // switch to our default encoding syntax
-      enc = encoding;
-      // dynamically detect object streams and change encoding
-      if(!Buffer.isBuffer(data) && typeof data != 'string')
-      {
-        data = JSON.stringify(data);
-        enc = 'json';
-      }
-      // fragment it
-      while(data.length)
-      {
-        var frag = data.slice(0,1000);
-        data = data.slice(1000);
-        var packet = {json:{},body:frag};
-        // last packet gets continuation callback
-        if(!data.length)
-        {
-          if(enc != 'binary') packet.json.enc = enc;
-          packet.callback = cbWrite;
-        }else{
-          packet.json.frag = true;
-        }
-        chan.send(packet);
-      }
-    }
-
-    // handle backpressure flag from the pipe.push()
-    var more = false;
-    stream._read = function(size){
-      if(more) more();
-      more = false;
-    };
-
-    var data = new Buffer(0);
-    chan.receiving = function(err, packet, cbMore) {
-      // was a wait writing, let it through
-      if(packet.body.length || data.length)
-      {
-        data = Buffer.concat([data,packet.body]);
-        if(!packet.json.frag)
-        {
-          var body = data;
-          data = new Buffer(0);
-          if(packet.json.enc == 'json') try{
-            body = JSON.parse(body)
-          }catch(E){
-            mesh.log.warn('stream json frag parse error',E,body.toString());
-            err = E;
-          }
-          if(packet.json.enc == 'lob')
-          {
-            var packet = mesh.lib.lob.decode(body);
-            if(!packet)
-            {
-              mesh.log.warn('stream lob frag decode error',body.toString('hex'));
-              err = 'lob decode failed';
-            }else{
-              body = packet;
-            }
-          }
-          
-          if(!err && !stream.push(body)) more = cbMore;
-        }
-      }
-      if(err) return stream.emit('error',err);
-      if(packet.json.end) stream.push(null);
-      if(!more) cbMore();
-    }
-
-    return stream;
+    return new ChannelStream(chan, encoding);
   }
 
   // new incoming stream open request
@@ -123,7 +35,7 @@ exports.mesh = function(mesh, cbExt)
       return mesh.streamize(channel);
     });
   }
-  
+
   ext.link = function(link, cbLink)
   {
     // create a new stream to this link
@@ -139,6 +51,6 @@ exports.mesh = function(mesh, cbExt)
 
     cbLink();
   }
-  
+
   cbExt(undefined, ext);
 }

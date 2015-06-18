@@ -5,6 +5,7 @@ var telehash = require('../../lib/mesh.js');
 var lob = require('lob-enc');
 var stream = require('../../ext/stream.js');
 var thtp = require('../../ext/thtp.js');
+var fs = require("fs")
 
 describe('telehash/thtp', function(){
   var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};
@@ -40,11 +41,11 @@ describe('telehash/thtp', function(){
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
     expect(meshB).to.exist;
-    
+
     // pair them
     meshA.mesh(meshB);
     var linkAB = meshA.link(meshB.hashname);
-    
+
     // dummy proxy
     var proxy = {emit:function(on, req, res){
       expect(on).to.be.equal('request');
@@ -57,7 +58,7 @@ describe('telehash/thtp', function(){
       }));
     }};
     meshB.proxy(proxy);
-    
+
     // send request
     linkAB.request({method:'post',path:'/'}, function(err){
       expect(err).to.not.exist;
@@ -71,18 +72,18 @@ describe('telehash/thtp', function(){
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
     expect(meshB).to.exist;
-    
+
     // pair them
     meshA.mesh(meshB);
     var linkAB = meshA.link(meshB.hashname);
-    
+
     // dummy proxy
     var proxy = httplib.createServer(function(req, res){
       expect(req.url).to.be.equal('/test');
       res.end('test');
     });
     meshB.proxy(proxy);
-    
+
     // send request and gather response
     linkAB.request('/test', function(err, res){
       expect(err).to.not.exist;
@@ -92,5 +93,123 @@ describe('telehash/thtp', function(){
       }));
     });
   });
+
+  it('should handle piping to response', function(done){
+//    telehash.log({debug:console.log});
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
+    expect(meshB).to.exist;
+
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+    var ch = 0
+    // dummy proxy
+    var proxy = httplib.createServer(function(req, res){
+      expect(req.url).to.be.equal('/test');
+      var fss =
+      fs
+      .createReadStream(__dirname + "/thtp.test.js");
+      fss.pipe(res)
+      fss.on('end',function(){
+        res.end(  )
+      })
+    });
+    meshB.proxy(proxy);
+
+    // send request and gather response
+    linkAB.request('/test', function(err, res){
+      expect(err).to.not.exist;
+      res.pipe(concat(function(body){
+        fs
+        .createReadStream(__dirname + "/thtp.test.js")
+        .pipe(concat(function(comp){
+          expect(body.toString()).to.be.equal(comp.toString())
+          done()
+        }));
+      }))
+    });
+  });
+
+  it("should proxy to a url", function(done){
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
+    expect(meshB).to.exist;
+
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+
+
+    // dummy proxy
+    var proxy = httplib.createServer(function(req, res){
+      expect(req.url).to.be.equal('/test');
+      res.end('test')
+    })
+    proxy.listen(9876);
+
+    meshB.proxy("http://localhost:9876");
+    setTimeout(function(){
+
+      linkAB.request("http://localhost:9876/test", function(err, res){
+        expect(err).to.not.exist;
+        res.pipe(concat(function(body){
+          expect(body.toString()).to.be.equal('test');
+          done();
+        }));
+      })
+    },100)
+    // send request and gather response
+
+  })
+
+  it("should handle large response bodies", function(done){
+    this.timeout(100000)
+    var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
+    expect(meshA).to.exist;
+    var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
+    expect(meshB).to.exist;
+
+    // pair them
+    meshA.mesh(meshB);
+    var linkAB = meshA.link(meshB.hashname);
+
+    var ch = 0;
+
+    // dummy proxy
+    var proxy = httplib.createServer(function(req, res){
+      expect(req.url).to.be.equal('/test');
+      var fss =
+      fs
+      .createReadStream(__dirname + "/../browser/bundle.js")
+      .pipe(concat(function(body){
+        ch = body.length
+        var fss =
+        fs
+        .createReadStream(__dirname + "/../browser/bundle.js");
+        fss
+        .pipe(res)
+        fss.on('end',function(){
+          res.end(  )
+        })
+      }))
+
+    }).listen(8765);
+    meshB.proxy("http://localhost:8765");
+
+    // send request and gather response
+    linkAB.request("http://localhost:8765/test", function(err, res){
+      expect(err).to.not.exist;
+      res.pipe(concat(function(body){
+        expect(body.length).to.be.equal(ch);
+        done();
+      }));
+    });
+  })
+
+
+
 
 });

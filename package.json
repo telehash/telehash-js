@@ -17,8 +17,12 @@
   },
   "devDependencies": {
     "chai": "*",
+    "chext": "0.0.1",
     "concat-stream": "~1.4.6",
     "event-stream": "~3.1.7",
+    "gulp": "^3.9.0",
+    "gulp-mocha": "^2.1.2",
+    "gulp-watch": "^4.2.4",
     "mocha": "*"
   },
   "browser": {

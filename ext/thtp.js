@@ -151,6 +151,7 @@ exports.mesh = function(mesh, cbMesh)
       // local http server given as argument
       proxy = options;
     }
+    mesh._proxy = proxy;
   }
 
   // handler for incoming thtp channels
@@ -225,7 +226,7 @@ exports.mesh = function(mesh, cbMesh)
       if(match) mPaths[match](req, res);
 
       // otherwise show the bouncer our fake id
-      else if(proxy) proxy.emit('request', req, res);
+      else if(mesh._proxy) mesh._proxy.emit('request', req, res);
 
       // otherwise error
       else res.writeHead(500,'not supported').end();

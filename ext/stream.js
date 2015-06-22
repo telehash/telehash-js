@@ -16,7 +16,6 @@ exports.mesh = function(mesh, cbExt)
     ext.onStream = onStream;
   }
 
-
   // takes any channel and returns a Duplex stream, oneshot is thtp style (one packet/channel)
   mesh.streamize = function(chan, encoding)
   {

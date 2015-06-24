@@ -24,7 +24,7 @@ exports.mesh = function(mesh, cbExt)
       link.addPath(path,pong);
     });
   }
-  
+
   ext.link = function(link, cbLink)
   {
     // util to force a path sync
@@ -53,7 +53,7 @@ exports.mesh = function(mesh, cbExt)
     }
 
     // auto-ping on first status
-    link.onStatus.push(link.ping);
+    link.on('status',link.ping);
 
     cbLink();
   }

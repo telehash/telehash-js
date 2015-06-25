@@ -12,7 +12,7 @@ exports.mesh = function(mesh, cbExt)
   var pipes = [];
   var peer = {};
   peer.open = {};
-  
+
   // actually create/return the pipe
   function piper(to, cbPiper)
   {
@@ -24,13 +24,13 @@ exports.mesh = function(mesh, cbExt)
     pipe.path = {type:'peer',hn:to};
 
     // handle any peer delivery through the router
-    pipe.onSend = function(packet, link, cbSend)
+    function peer_send(packet, link, cbSend)
     {
       var router = mesh.index[to];
       if(!router) return cbSend('cannot peer to an unknown router: '+pipe.to);
       if(!router.x) return cbSend('cannot peer yet via this router: '+pipe.to);
       if(!link) return cbSend('requires link');
-      
+
       // no packet means try to send our keys
       if(!packet)
       {
@@ -44,7 +44,7 @@ exports.mesh = function(mesh, cbExt)
         });
         return;
       }
-      
+
       // if it's an encrypted channel packet, pass through direct to router
       if(packet.head.length == 0) return router.x.sending(packet);
 
@@ -55,6 +55,11 @@ exports.mesh = function(mesh, cbExt)
       router.x.send({json:json,body:body});
       cbSend();
     }
+
+
+    pipe.on('send', function(context,a){
+      peer_send.call(context,a[0], a[1], a[2])
+    })
 
     cbPiper(pipe);
   }
@@ -94,7 +99,7 @@ exports.mesh = function(mesh, cbExt)
     log.debug('sending connect to',to.hashname,json,open.body);
     to.x.send({json:json,body:open.body});
   }
-  
+
   // handle incoming connect requests
   peer.open.connect = function(args, open, cbOpen){
     var via = this;

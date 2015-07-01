@@ -57,8 +57,8 @@ exports.mesh = function(mesh, cbExt)
     }
 
 
-    pipe.on('send', function(context,a){
-      peer_send.call(context,a[0], a[1], a[2])
+    pipe.on('send', function(context,a1, a2, a3, a4){
+      peer_send.call(context,a1,a2,a3,a4)
     })
 
     cbPiper(pipe);

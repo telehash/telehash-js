@@ -2,7 +2,8 @@
 var gulp = require('gulp');
 var mocha = require('gulp-mocha');
 var watch = require('gulp-watch')
-var chext = require("chext")
+var chext = require("chext");
+var jsdoc = require("gulp-jsdoc");
 
 var unitTests = [ 'test/index.test.js'
                 , 'test/ext/box.test.js'
@@ -38,4 +39,14 @@ gulp.task('dev', ['mocha'], function() {
   })
 
   gulp.watch(unitTests.concat(srcFiles), ["mocha"])
+})
+
+gulp.task('doc', function(){
+  gulp.src(["./lib/*.js", "./ext/*.js"])
+  .pipe(jsdoc('./doc'))
+})
+
+gulp.task('doc-watch', function(){
+
+  gulp.watch(srcFiles, ["doc"])
 })

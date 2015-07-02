@@ -1,6 +1,6 @@
 var expect = require('chai').expect;
 var lob = require('lob-enc');
-var Pipe = require('../../lib/pipe.js').Pipe;
+var Pipe = require('../../lib/pipe.class.js');
 
 describe('pipe', function(){
 

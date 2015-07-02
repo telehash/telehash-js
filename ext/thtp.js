@@ -21,7 +21,12 @@ exports.mesh = function(mesh, cbMesh)
   ext.link = function(link, cbLink)
   {
 
-    // proxy an existing node http request and send to a result
+    /** proxy an existing node http request and response pair to this link over thtp.
+     * @memberOf TLink
+     * @param {httpIncomingMessage} request - typically generated from node's http server
+     * @param {httpResponseObject} response - typically generated from node's http server
+     * @return {ChannelStream} proxied response
+     */
     link.proxy = function(req, res)
     {
       // create the thtp request json
@@ -92,7 +97,13 @@ exports.mesh = function(mesh, cbMesh)
       return sencode;
     }
 
-    // create a new request just like http://nodejs.org/api/http.html#http_http_request_options_callback
+
+    /** create a thtp request just like http://nodejs.org/api/http.html#http_http_request_options_callback
+     * @memberOf TLink
+     * @param {object} options - see node docs
+     * @param {function} callback - see node docs
+     * @return {ChannelStream} http style response stream
+     */
     link.request = function(options, cbRequest)
     {
       // allow string url as the only arg
@@ -117,7 +128,12 @@ exports.mesh = function(mesh, cbMesh)
     cbLink();
   }
 
-  // accept a request to a url where the hashname is the hostname, calls link.request
+  /** make a thtp GET request to a url where the hashname is the hostname
+   * @memberOf Mesh
+   * @param {string} req - url: http://[hashname]/[path]
+   * @param {function} callback - see node docs
+   * @return {ChannelStream} http style response stream
+   */
   mesh.request = function(req, cbRequest)
   {
     if(typeof req == 'string') req = urllib.parse(req);
@@ -133,6 +149,10 @@ exports.mesh = function(mesh, cbMesh)
 
   // start accepting incoming thtp requests
   var proxy = false;
+  /** begin accepting incoming thtp requests, either to proxy to a remote http server, or directly into a local server
+   * @memberOf Mesh
+   * @param {httpServer|string} options - either a httpserver or a url denoting the host and port to proxy to.
+   */
   mesh.proxy = function(options)
   {
     // provide a url to directly proxy to

@@ -27,7 +27,10 @@ exports.mesh = function(mesh, cbExt)
 
   ext.link = function(link, cbLink)
   {
-    // util to force a path sync
+    /** force a path sync to confirm connectivity and record latency for paths
+     * @memberOf TLink
+     * @param {function} done - called when/if the first 'pong' is received, receives status and latency as arguments
+     */
     link.ping = function(done)
     {
       if(typeof done != 'function') done = function(){};

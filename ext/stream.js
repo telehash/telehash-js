@@ -9,14 +9,22 @@ exports.mesh = function(mesh, cbExt)
 {
   var ext = {open:{}};
 
-  // incoming stream requests go here
+  /** attach an incoming stream handler to the mesh
+   * @memberOf Mesh
+   * @param {function} onStream - handler for incoming streams
+   */
   mesh.stream = function(onStream)
   {
     mesh.log.debug('adding onStream handler',typeof onStream);
     ext.onStream = onStream;
   }
 
-  // takes any channel and returns a Duplex stream, oneshot is thtp style (one packet/channel)
+  /** takes any channel and returns a Duplex stream,
+   * @memberOf Mesh
+   * @param {Channel} channel - the channel to streamify
+   * @param {string} encoding - 'binary' or 'json'
+   * @return {ChannelStream}
+   */
   mesh.streamize = function(chan, encoding)
   {
     return new ChannelStream(chan, encoding);
@@ -37,7 +45,12 @@ exports.mesh = function(mesh, cbExt)
 
   ext.link = function(link, cbLink)
   {
-    // create a new stream to this link
+    /** create a new stream to this link, and send the first packet
+     * @memberOf TLink
+     * @param {Buffer|object=} packet - binary/json packet body
+     * @param {string} encoding - 'binary' or 'json'
+     * @return {ChannelStream}
+     */
     link.stream = function(packet, encoding)
     {
       var open = {json:{type:'stream'},body:packet};

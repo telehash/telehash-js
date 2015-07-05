@@ -1,5 +1,5 @@
 var expect = require('chai').expect;
-var urilib = require('../../lib/uri.js');
+var urilib = require('../../lib/util/uri.js');
 
 describe('URI', function(){
 

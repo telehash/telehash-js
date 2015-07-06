@@ -3,7 +3,8 @@ var httplib = require('http');
 var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
-var util = require("util")
+var util = require("util");
+var THTP = require('./thtp.class')
 
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
 exports.name = 'thtp';
@@ -162,8 +163,13 @@ exports.mesh = function(mesh, cbMesh)
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
+        console.log("got request")
         var opt = {host:to.hostname,port:to.port,method:req.headers[":method"],path:req.headers[":path"],headers:sanitizeheaders(req.headers)};
+        req.on('end',function(){
+          console.log("req is ending")
+        })
         req.pipe(httplib.request(opt, function(pres){
+          console.log("got response")
           pres.pipe(res)
         }));
       });
@@ -189,9 +195,12 @@ exports.mesh = function(mesh, cbMesh)
       req.headers['x-hashname'] = link.hashname; // for any http handler visibility
       req.hashname = link.hashname;
 
+      var Req = new THTP.Request.toHTTP(packet, link, req)
+
       // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
       var res = new streamlib.Transform();
       res.pipe(req); // any output goes back
+      console.log("REQ", Req)
 
       // write out the header bytes first
       res.writeHead = function(statusCode, reasonPhrase, headers)
@@ -246,7 +255,10 @@ exports.mesh = function(mesh, cbMesh)
       if(match) mPaths[match](req, res);
 
       // otherwise show the bouncer our fake id
-      else if(mesh._proxy) mesh._proxy.emit('request', req, res);
+      else if(mesh._proxy){
+        console.log("emit proxy")
+        mesh._proxy.emit('request', Req, res);
+      }
 
       // otherwise error
       else res.writeHead(500,'not supported').end();

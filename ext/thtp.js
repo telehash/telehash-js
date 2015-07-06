@@ -60,17 +60,21 @@ exports.mesh = function(mesh, cbMesh)
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
+        console.log("sdecode")
         sdecode.statusCode = parseInt(packet.json[':status'])||500;
         sdecode.reasonPhrase = packet.json[':reason']||'';
         delete packet.json[':status'];
         delete packet.json[':reason'];
         sdecode.headers = packet.json;
+        //console.log(packet.json)
 
         // direct response two ways depending on args
         if(typeof res == 'object')
         {
+          console.log("sdecode.statusCode", sdecode.statusCode, packet.json)
           res.writeHead(sdecode.statusCode, packet.json);
           sdecode.pipe(res);
+          console.log("pipe sdecode->res")
         }else if(typeof res == 'function'){
           res(sdecode); // handler must set up stream piping
         }else{
@@ -79,11 +83,15 @@ exports.mesh = function(mesh, cbMesh)
         cbStream();
       }).on('error', function(err){
         mesh.log.error('got thtp error',err);
-      });
+      })
 
 
       // any response is decoded
       sencode.pipe(sdecode);
+      sencode.on('end',function(){
+        console.log("sencode end")
+      })
+
 
 
       // finish sending the open
@@ -163,13 +171,8 @@ exports.mesh = function(mesh, cbMesh)
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
       proxy.on('request', function(req, res){
-        console.log("got request")
         var opt = {host:to.hostname,port:to.port,method:req.headers[":method"],path:req.headers[":path"],headers:sanitizeheaders(req.headers)};
-        req.on('end',function(){
-          console.log("req is ending")
-        })
         req.pipe(httplib.request(opt, function(pres){
-          console.log("got response")
           pres.pipe(res)
         }));
       });
@@ -188,58 +191,10 @@ exports.mesh = function(mesh, cbMesh)
     var req = mesh.streamize(channel);
     req.pipe(lob.stream(function(packet, cbStream){
 
-      // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
-      req.method = packet.json[':method'];
-      req.url = packet.json[':path'];
-      req.headers = packet.json;
-      req.headers['x-hashname'] = link.hashname; // for any http handler visibility
-      req.hashname = link.hashname;
-
       var Req = new THTP.Request.toHTTP(packet, link, req)
 
       // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
-      var res = new streamlib.Transform();
-      res.pipe(req); // any output goes back
-      console.log("REQ", Req)
-
-      // write out the header bytes first
-      res.writeHead = function(statusCode, reasonPhrase, headers)
-      {
-        // don't double!
-        if(res.statusCode) return mesh.log.warn('double call to thtp writeHead',(new Error()).stack);
-        // be friendly
-        if(!headers && typeof reasonPhrase == 'object')
-        {
-          headers = reasonPhrase;
-          reasonPhrase = false;
-        }
-        res.statusCode = parseInt(statusCode)||500;
-
-        // construct the thtp response
-        var json = {};
-        json[':status'] = res.statusCode;
-        if(reasonPhrase) json[':reason'] = reasonPhrase;
-        if(headers) Object.keys(headers).forEach(function(header){
-          json[header.toLowerCase()] = headers[header];
-        });
-
-        // send it
-        res.push(lob.encode(json, false));
-        return res;
-      }
-
-      // just ensure headers are written before sending data
-      res._transform = function(data,enc,cbTransform)
-      {
-        if(!res.statusCode) res.writeHead(200);
-        res.push(data);
-        cbTransform()
-      }
-
-      res._flush = function(cb){
-        cb()
-      }
-
+      var res = new THTP.Response.fromHTTP(Req, link, req);
 
 
 
@@ -256,7 +211,6 @@ exports.mesh = function(mesh, cbMesh)
 
       // otherwise show the bouncer our fake id
       else if(mesh._proxy){
-        console.log("emit proxy")
         mesh._proxy.emit('request', Req, res);
       }
 

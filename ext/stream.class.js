@@ -17,14 +17,23 @@ function ChanStream(chan, encoding){
 
   Duplex.call(this,{allowHalfOpen: allowHalfOpen, objectMode:true})
   this.on('finish',function(){
+    console.log("finish")
     chan.send({json:{end:true}});
   });
 
   this.on('error',function(err){
     if(err == chan.err) return; // ignore our own generated errors
-    mesh.log.debug('streamized error',err);
+    console.log('streamized error',err);
     chan.send({json:{err:err.toString()}});
   });
+  var stream = this
+
+  this.on('pipe', function(from){
+    from.on('end',function(){
+      console.log("srteam from pipe end")
+      stream.end()
+    })
+  })
 
 
   chan.receiving = chan_to_stream(this);

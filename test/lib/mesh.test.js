@@ -26,6 +26,7 @@ describe('telehash', function(){
   });
 
   it('should generate', function(done){
+    this.timeout(6000)
     telehash.generate(function(err, id){
       expect(err).to.not.exist;
       expect(id).to.be.an('object');

@@ -6,7 +6,6 @@ var http = require('http')
 var util = require('util')
 var lob = require("lob-enc")
 var ChannelStream = require("./stream.class")
-var response = require("express/lib/response.js")
 
 var THTP = {
  Request  : {

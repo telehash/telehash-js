@@ -190,16 +190,14 @@ describe('telehash/thtp', function(){
       fs
       .createReadStream(__dirname + "/thtp.test.js")
       .pipe(concat(function(body){
-        ch = body.length
+        ch = body.byteLength
         var fss =
         fs
         .createReadStream(__dirname + "/thtp.test.js");
-        fss
-        .pipe(res)
-        fss.on('end',function(){
-          res.end(  )
-        })
-      }))
+        fss.pipe(res)
+      })).on('error',function(er){
+        console.log("readstream error", er)
+      })
 
     }).listen(8765);
     meshB.proxy("http://localhost:8765");

@@ -88,9 +88,6 @@ exports.mesh = function(mesh, cbMesh)
 
       // any response is decoded
       sencode.pipe(sdecode);
-      sencode.on('end',function(){
-        console.log("sencode end")
-      })
 
 
 

@@ -14,7 +14,7 @@ var THTP = {
    toHTTP   : THTP_Request_toHTTP
  },
  Response : {
-   fromHTTP : THTP_Response_fromHTTP,
+   fromHTTP : THTP_Response_fromHTTP
    //toHTTP   : THTP_Response_toHTTP
  }
 }
@@ -37,6 +37,9 @@ function THTP_Request_toHTTP(packet,link, stream){
 
   this.connection = {
     remoteAddress : link.hashname
+    , cork : function(){
+      //noop
+    }
   }
 
   this.on = stream.on.bind(stream)
@@ -49,7 +52,13 @@ function THTP_Response_fromHTTP(req, link, stream){
   http.ServerResponse.call(this, req)
   this.connection = {
     remoteAddress : link.hashname,
-    _httpMessage : this
+    _httpMessage : this,
+    cork : function(){
+      //console.log('res cork')
+    }
+    , uncork : function(){
+      //console.log("uncork")
+    }
   }
 
   var head = false
@@ -62,11 +71,12 @@ function THTP_Response_fromHTTP(req, link, stream){
     })
   })
 
-  this.on('finish',function(end){
-    console.log("res finishe")
-    stream.end()
-  })
+  this.end = function(data, enc, callback){
+    if (!head)
+      this.writeHead(200);
 
+    stream.end(data)
+  }
 
 
   this.writeHead = function(statusCode, reasonPhrase, headers)
@@ -81,21 +91,16 @@ function THTP_Response_fromHTTP(req, link, stream){
     // be friendly
     if(!headers && typeof reasonPhrase == 'object')
     {
-      console.log("head")
       headers = reasonPhrase;
       reasonPhrase = false;
     } else if (!headers ){
-      //console.log("headers", this)
       headers = this._headers
     }
-    this.statusCode = parseInt(statusCode) || 500
-    //console.log(this.statusCode)
-    // construct the thtp response
+    this.statusCode = parseInt(statusCode) || 500;
     var json = {};
     json[':status'] = this.statusCode;
     if(reasonPhrase) json[':reason'] = reasonPhrase;
     if(headers) Object.keys(headers).forEach(function(header){
-      console.log("header["+header+"] : " + headers[header]  )
       json[header.toLowerCase()] = headers[header];
     });
 

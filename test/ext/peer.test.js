@@ -30,7 +30,7 @@ describe('telehash/peer', function(){
   });
 
   it('should create a link through a peer', function(done){
-    telehash.log({debug:function(){}});
+    //telehash.log({debug:function(){}});
     telehash.mesh({id:idA,extensions:{peer:peer}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{peer:peer}},function(err, meshB){
@@ -41,7 +41,7 @@ describe('telehash/peer', function(){
           // connect both to B
           meshA.mesh(meshB);
           meshC.mesh(meshB);
-          
+
           // let C trust A but not know more
           expect(meshC.link(meshA.hashname)).to.exist;
 

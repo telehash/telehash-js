@@ -204,7 +204,7 @@ describe('telehash', function(){
   });
 
   it('should create a full link', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{}},function(err, meshB){

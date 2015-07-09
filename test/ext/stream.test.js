@@ -28,7 +28,7 @@ describe('telehash/stream', function(){
   });
 
   it('should stream itself between two', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
@@ -54,7 +54,7 @@ describe('telehash/stream', function(){
   });
 
   it('should stream bidi', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
 
     var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
     expect(meshA).to.exist;
@@ -87,7 +87,7 @@ describe('telehash/stream', function(){
   });
 
   it('should stream objects', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});
@@ -119,7 +119,7 @@ describe('telehash/stream', function(){
   });
 
   it('should stream packets', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     var meshA = telehash.mesh({id:idA,extensions:{stream:stream}});
     expect(meshA).to.exist;
     var meshB = telehash.mesh({id:idB,extensions:{stream:stream}});

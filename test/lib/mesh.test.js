@@ -33,7 +33,6 @@ describe('telehash', function(){
       expect(id).to.be.an('object');
       expect(id.hashname).to.be.a('string');
       expect(id.hashname.length).to.be.equal(52);
-      console.log('idA',JSON.stringify(id));
       done();
     });
   });

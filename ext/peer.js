@@ -1,14 +1,14 @@
 var hashname = require('hashname');
 var lob = require('lob-enc');
 var crypto = require('crypto');
-var handshakelib = require('../lib/util/handshake')
+var handshakelib = require('../lib/util/handshake');
+var log = require("../lib/util/log")("Peer");
 
 // handle type:peer paths to create peer channels, https://github.com/telehash/telehash.org/blob/v3/v3/channels/peer.md
 exports.name = 'peer';
 
 exports.mesh = function(mesh, cbExt)
 {
-  var log = mesh.log;
   var Pipe = mesh.lib.Pipe;
   var pipes = [];
   var peer = {};

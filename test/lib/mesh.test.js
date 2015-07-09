@@ -13,7 +13,7 @@ describe('telehash', function(){
   it('should support adding extensions', function(){
     expect(telehash.add({name:'test'})).to.be.true;
   });
-
+  /*
   it('should support logging', function(done){
     telehash.log({debug:function(msg){
       expect(msg).to.exist;
@@ -24,6 +24,7 @@ describe('telehash', function(){
     // just run something that logs
     telehash.generate(function(err, secrets){});
   });
+  */
 
   it('should generate', function(done){
     this.timeout(6000)

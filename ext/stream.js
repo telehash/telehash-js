@@ -1,4 +1,4 @@
-
+var log = require("../lib/util/log")("Stream[extension]")
 var lob = require('lob-enc');
 var ChannelStream = require("./stream.class.js")
 

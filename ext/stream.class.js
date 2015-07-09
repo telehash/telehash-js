@@ -1,6 +1,7 @@
 var Duplex = require('stream').Duplex;
 var util = require("util");
 var lob = require('lob-enc');
+var log = require("../lib/util/log")("Stream[Class]")
 
 module.exports = ChannelStream
 
@@ -17,7 +18,7 @@ function ChannelStream(chan, encoding){
   if(!encoding) encoding = 'binary';
   if(typeof chan != 'object' || !chan.isChannel)
   {
-    mesh.log.warn('invalid channel passed to streamize');
+    log.warn('invalid channel passed to streamize');
     return false;
   }
 
@@ -25,20 +26,17 @@ function ChannelStream(chan, encoding){
 
   Duplex.call(this,{allowHalfOpen: allowHalfOpen, objectMode:true})
   this.on('finish',function(){
-    console.log("finish")
     chan.send({json:{end:true}});
   });
 
   this.on('error',function(err){
     if(err == chan.err) return; // ignore our own generated errors
-    console.log('streamized error',err);
     chan.send({json:{err:err.toString()}});
   });
   var stream = this
 
   this.on('pipe', function(from){
     from.on('end',function(){
-      console.log("srteam from pipe end")
       stream.end()
     })
   })
@@ -109,7 +107,7 @@ function chan_to_stream (stream){
         if(packet.json.enc == 'json') try{
           body = JSON.parse(body)
         }catch(E){
-          console.log('stream json frag parse error',E,body.toString());
+          low.warn('stream json frag parse error',E,body.toString());
           err = E;
         }
         if(packet.json.enc == 'lob')
@@ -117,7 +115,7 @@ function chan_to_stream (stream){
           var packet = lob.decode(body);
           if(!packet)
           {
-            mesh.log.warn('stream lob frag decode error',body.toString('hex'));
+            log.warn('stream lob frag decode error',body.toString('hex'));
             err = 'lob decode failed';
           }else{
             body = packet;

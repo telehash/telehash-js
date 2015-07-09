@@ -2,7 +2,7 @@ var fs = require('fs');
 
 // we just wrap the shared code
 var telehash = global.telehash = module.exports = require('./lib/mesh.js');
-var log = telehash.log();
+
 
 // node specific extensions
 module.exports.add(require('telehash-udp4'));
@@ -78,7 +78,7 @@ module.exports.load = function(args, cbMesh)
 
     return;
   }
-  
+
   // default passthrough
   return loaded();
 }

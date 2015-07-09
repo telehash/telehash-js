@@ -1,3 +1,5 @@
+
+var log = require("../lib/util/log")("Path")
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/path.md
 exports.name = 'path';
 
@@ -44,14 +46,14 @@ exports.mesh = function(mesh, cbExt)
         // process any responses
         if(packet)
         {
-          mesh.log.debug('path response, TODO get public udp paths',packet.json);
+          log.debug('path response, TODO get public udp paths',packet.json);
         }
         // only callback once w/ status and latency
         if(done) done(err, Date.now() - start);
         done = false;
         cbChan();
       }
-      mesh.log.debug('sending path ping to',link.hashname,json.paths);
+      log.debug('sending path ping to',link.hashname,json.paths);
       channel.send({json:json});
     }
 

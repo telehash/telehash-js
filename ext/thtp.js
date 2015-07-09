@@ -60,21 +60,17 @@ exports.mesh = function(mesh, cbMesh)
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
-        console.log("sdecode")
+
         sdecode.statusCode = parseInt(packet.json[':status'])||500;
         sdecode.reasonPhrase = packet.json[':reason']||'';
         delete packet.json[':status'];
         delete packet.json[':reason'];
         sdecode.headers = packet.json;
-        //console.log(packet.json)
-
         // direct response two ways depending on args
         if(typeof res == 'object')
         {
-          console.log("sdecode.statusCode", sdecode.statusCode, packet.json)
           res.writeHead(sdecode.statusCode, packet.json);
           sdecode.pipe(res);
-          console.log("pipe sdecode->res")
         }else if(typeof res == 'function'){
           res(sdecode); // handler must set up stream piping
         }else{
@@ -82,7 +78,7 @@ exports.mesh = function(mesh, cbMesh)
         }
         cbStream();
       }).on('error', function(err){
-        mesh.log.error('got thtp error',err);
+        log.error('got thtp error',err);
       })
 
 

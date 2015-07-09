@@ -1,6 +1,6 @@
 var crypto = require('crypto');
 var streamlib = require('stream');
-var log = require("../lib/util/log")
+var log = require("../lib/util/log")("Chat")
 
 // implements https://github.com/telehash/telehash.org/blob/master/v3/channels/chat.md
 exports.name = 'chat';

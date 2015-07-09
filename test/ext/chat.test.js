@@ -39,7 +39,7 @@ describe('telehash/chat', function(){
         expect(chat).to.be.a('object');
         expect(chat.id).to.be.a('string');
         expect(chat.profiles).to.be.a('object');
-        expect(chat.profiles[mesh.hashname]).to.be.a('object');
+        expect(Buffer.isBuffer(chat.profiles[mesh.hashname])).to.be.equal(true);
         expect(chat.profiles[mesh.hashname].json.id).to.be.equal(chat.id);
         done();
       });

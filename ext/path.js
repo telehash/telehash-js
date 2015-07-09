@@ -24,10 +24,13 @@ exports.mesh = function(mesh, cbExt)
       link.addPath(path,pong);
     });
   }
-  
+
   ext.link = function(link, cbLink)
   {
-    // util to force a path sync
+    /** force a path sync to confirm connectivity and record latency for paths
+     * @memberOf TLink
+     * @param {function} done - called when/if the first 'pong' is received, receives status and latency as arguments
+     */
     link.ping = function(done)
     {
       if(typeof done != 'function') done = function(){};
@@ -53,7 +56,7 @@ exports.mesh = function(mesh, cbExt)
     }
 
     // auto-ping on first status
-    link.onStatus.push(link.ping);
+    link.on('status',link.ping);
 
     cbLink();
   }

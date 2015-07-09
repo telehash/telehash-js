@@ -47,7 +47,7 @@ describe('telehash/chat', function(){
   });
 
   it('should establish a 1:1 chat', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
@@ -83,7 +83,7 @@ describe('telehash/chat', function(){
               console.log('CHAT JOIN',msg.json);
               expect(msg.json.type).to.exist;
             });
-            
+
           });
         });
         var linkBA = meshB.link({keys:idA.keys});
@@ -94,7 +94,7 @@ describe('telehash/chat', function(){
   });
 
   it('should echo messages', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
@@ -137,7 +137,7 @@ describe('telehash/chat', function(){
               }
               if(msg.from == meshB.hashname && msg.json.text == 'echo') done();
             });
-            
+
           });
         });
         var linkBA = meshB.link({keys:idA.keys});

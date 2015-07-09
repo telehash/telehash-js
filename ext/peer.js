@@ -1,6 +1,7 @@
 var hashname = require('hashname');
 var lob = require('lob-enc');
 var crypto = require('crypto');
+var handshakelib = require('../lib/util/handshake')
 
 // handle type:peer paths to create peer channels, https://github.com/telehash/telehash.org/blob/v3/v3/channels/peer.md
 exports.name = 'peer';
@@ -118,7 +119,7 @@ exports.mesh = function(mesh, cbExt)
         mesh.receive(attached, args.pipe);
       }else{
         // otherwise try processing it as an un-encrypted handshake
-        mesh.handshake(open.json.peer||via.hashname, attached, pipe);
+        handshakelib.collect(mesh,open.json.peer||via.hashname, attached, pipe);
       }
       cbOpen();
     });

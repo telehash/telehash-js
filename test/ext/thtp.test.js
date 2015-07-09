@@ -80,9 +80,7 @@ describe('telehash/thtp', function(){
     // dummy proxy
     var proxy = httplib.createServer(function(req, res){
       expect(req.url).to.be.equal('/test');
-      console.log("res.end", res.end, res.output)
       res.end('test');
-      console.log('res.output', res.output.length, res.connection._httpMessage == res)
     });
     meshB.proxy(proxy);
 

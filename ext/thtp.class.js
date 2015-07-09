@@ -5,6 +5,7 @@
 var http = require('http')
 var util = require('util')
 var lob = require("lob-enc")
+var stream = require('stream')
 var ChannelStream = require("./stream.class")
 
 var THTP = {
@@ -20,9 +21,12 @@ var THTP = {
 
 module.exports = THTP;
 
+var RequestSuper = (http.IncomingMessage) || stream.Readable;
+var ResponseSuper = (http.ServerResponse) || stream.Writable;
 
-util.inherits(THTP_Request_toHTTP, http.IncomingMessage);
-util.inherits(THTP_Response_fromHTTP, http.ServerResponse);
+
+util.inherits(THTP_Request_toHTTP, RequestSuper);
+util.inherits(THTP_Response_fromHTTP, ResponseSuper);
 
 function THTP_Request_toHTTP(packet,link, stream){
   // mimic http://nodejs.org/api/http.html#http_http_incomingmessage

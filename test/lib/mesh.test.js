@@ -162,7 +162,11 @@ describe('telehash', function(){
       cbExt(undefined,{pipe:function(link,path,cbPipe){
         expect(link.hashname).to.be.equal(idB.hashname);
         expect(path).to.be.equal(ptest);
-        cbPipe(new telehash.Pipe('test'));
+        var pipe = new telehash.Pipe('test')
+        pipe.on('send',function(){
+          //console.log("pipe.send fired")
+        })
+        cbPipe(pipe);
       }});
     }};
     telehash.mesh({id:idA,extensions:{}},function(err, mesh){

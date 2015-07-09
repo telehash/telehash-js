@@ -188,12 +188,12 @@ describe('telehash/thtp', function(){
       expect(req.url).to.be.equal('/test');
       var fss =
       fs
-      .createReadStream(__dirname + "/../browser/bundle.js")
+      .createReadStream(__dirname + "/thtp.test.js")
       .pipe(concat(function(body){
         ch = body.length
         var fss =
         fs
-        .createReadStream(__dirname + "/../browser/bundle.js");
+        .createReadStream(__dirname + "/thtp.test.js");
         fss
         .pipe(res)
         fss.on('end',function(){

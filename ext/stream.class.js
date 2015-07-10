@@ -1,7 +1,7 @@
 var Duplex = require('stream').Duplex;
 var util = require("util");
 var lob = require('lob-enc');
-var log = require("../lib/util/log")("Stream[Class]")
+var log = require("../lib/util/log")("Stream")
 
 module.exports = ChannelStream
 

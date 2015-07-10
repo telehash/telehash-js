@@ -39,15 +39,10 @@ describe('telehash-js', function(){
         expect(err).to.not.exist;
         var linkBA = meshB.link({keys:idA.keys,paths:meshA.paths()});
         expect(linkAB).to.exist;
-        console.log("status triggered")
         linkBA.on('status',function(err){
-          console.log("status event")
-        })
-        linkBA.status(function(err){
-          console.log("status triggered")
           expect(err).to.not.exist;
           done();
-        });
+        })
       });
     });
   });

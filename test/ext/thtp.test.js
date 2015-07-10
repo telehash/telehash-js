@@ -88,7 +88,6 @@ describe('telehash/thtp', function(){
     linkAB.request('/test', function(err, res){
       expect(err).to.not.exist;
       res.pipe(concat(function(body){
-        console.log("got res body")
         expect(body.toString()).to.be.equal('test');
         done();
       }));

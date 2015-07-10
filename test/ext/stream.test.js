@@ -101,7 +101,7 @@ describe('telehash/stream', function(){
     meshB.stream(function(link, req, accept){
       expect(link).to.exist;
       accept().pipe(es.writeArray(function(err,items){
-        console.log("\n\n\nitems",items,"\n\n\nnnnn")
+        //console.log("\n\n\nitems",items,"\n\n\nnnnn")
         expect(err).to.not.exist;
         expect(items).to.exist;
         expect(items.length).to.be.equal(4);

@@ -67,7 +67,7 @@ describe('telehash/chat', function(){
 
           // they're linked, set up invite handler on B
           meshB.invited(function(link, profile){
-            console.log('INVITED',profile.json);
+            //console.log('INVITED',profile.json);
             // auto-accept it
             meshB.chat({leader:link,id:profile.json.id},{json:{}},function(err){
               expect(err).to.not.exist;
@@ -80,7 +80,7 @@ describe('telehash/chat', function(){
             expect(err).to.not.exist;
             chat.join(linkAB);
             chat.inbox.on('data', function(msg){
-              console.log('CHAT JOIN',msg.json);
+              //console.log('CHAT JOIN',msg.json);
               expect(msg.json.type).to.exist;
             });
 
@@ -114,12 +114,12 @@ describe('telehash/chat', function(){
 
           // they're linked, set up invite handler on B
           meshB.invited(function(link, profile){
-            console.log('INVITED',profile.json);
+            //console.log('INVITED',profile.json);
             // auto-accept it
             meshB.chat({leader:link,id:profile.json.id},'B B',function(err, chat){
               expect(err).to.not.exist;
               chat.inbox.on('data', function(msg){
-                console.log('ECHOB',msg.json);
+                //console.log('ECHOB',msg.json);
                 if(msg.from == meshA.hashname && msg.json.type == 'chat') chat.send(msg.json.text);
               });
             });
@@ -130,7 +130,7 @@ describe('telehash/chat', function(){
             expect(err).to.not.exist;
             chat.join(linkAB);
             chat.inbox.on('data', function(msg){
-              console.log('ECHOA',msg.from,msg.json);
+              // /console.log('ECHOA',msg.from,msg.json);
               if(msg.json.from == meshB.hashname && msg.json.type == 'join')
               {
                 chat.outbox.write('echo');

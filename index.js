@@ -1,4 +1,5 @@
 var fs = require('fs');
+var log = require("./lib/util/log.js")("index")
 
 // we just wrap the shared code
 var telehash = global.telehash = module.exports = require('./lib/mesh.js');

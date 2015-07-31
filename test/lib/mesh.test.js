@@ -13,7 +13,7 @@ describe('telehash', function(){
   it('should support adding extensions', function(){
     expect(telehash.add({name:'test'})).to.be.true;
   });
-
+  /*
   it('should support logging', function(done){
     telehash.log({debug:function(msg){
       expect(msg).to.exist;
@@ -24,14 +24,15 @@ describe('telehash', function(){
     // just run something that logs
     telehash.generate(function(err, secrets){});
   });
+  */
 
   it('should generate', function(done){
+    this.timeout(6000)
     telehash.generate(function(err, id){
       expect(err).to.not.exist;
       expect(id).to.be.an('object');
       expect(id.hashname).to.be.a('string');
       expect(id.hashname.length).to.be.equal(52);
-      console.log('idA',JSON.stringify(id));
       done();
     });
   });
@@ -203,7 +204,7 @@ describe('telehash', function(){
   });
 
   it('should create a full link', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{}},function(err, meshB){

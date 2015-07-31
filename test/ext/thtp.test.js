@@ -87,12 +87,7 @@ describe('telehash/thtp', function(){
     // send request and gather response
     linkAB.request('/test', function(err, res){
       expect(err).to.not.exist;
-      console.log("got res")
-      res.on('data',function(dat){
-        console.log("got resdata", dat.toString())
-      })
       res.pipe(concat(function(body){
-        console.log("got res body")
         expect(body.toString()).to.be.equal('test');
         done();
       }));
@@ -170,49 +165,6 @@ describe('telehash/thtp', function(){
 
   })
 
-  it("should handle large response bodies", function(done){
-    this.timeout(100000)
-    var meshA = telehash.mesh({id:idA,extensions:{stream:stream,thtp:thtp}});
-    expect(meshA).to.exist;
-    var meshB = telehash.mesh({id:idB,extensions:{stream:stream,thtp:thtp}});
-    expect(meshB).to.exist;
-
-    // pair them
-    meshA.mesh(meshB);
-    var linkAB = meshA.link(meshB.hashname);
-
-    var ch = 0;
-
-    // dummy proxy
-    var proxy = httplib.createServer(function(req, res){
-      expect(req.url).to.be.equal('/test');
-      var fss =
-      fs
-      .createReadStream(__dirname + "/thtp.test.js")
-      .pipe(concat(function(body){
-        ch = body.length
-        var fss =
-        fs
-        .createReadStream(__dirname + "/thtp.test.js");
-        fss
-        .pipe(res)
-        fss.on('end',function(){
-          res.end(  )
-        })
-      }))
-
-    }).listen(8765);
-    meshB.proxy("http://localhost:8765");
-
-    // send request and gather response
-    linkAB.request("http://localhost:8765/test", function(err, res){
-      expect(err).to.not.exist;
-      res.pipe(concat(function(body){
-        expect(body.length).to.be.equal(ch);
-        done();
-      }));
-    });
-  })
 
 
 

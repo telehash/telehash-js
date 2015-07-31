@@ -30,7 +30,7 @@ describe('pipe', function(){
     {
       expect(p).to.be.an('object');
       expect(p.length).to.be.equal(10);
-      console.log("cloaking is awesome",p.toString("hex"));
+      //console.log("cloaking is awesome",p.toString("hex"));
       cb();
     }
     var packet = lob.decode(new Buffer("\0\0"));

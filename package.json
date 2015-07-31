@@ -1,29 +1,32 @@
 {
   "name": "telehash",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "main": "index.js",
   "dependencies": {
-    "e3x": "git+https://github.com/telehash/e3x-js.git",
-    "hashname": "git+https://github.com/telehash/hashname.git",
+    "debug": "^2.2.0",
+    "e3x": "^0.1.28",
+    "hashname": "^0.3.1",
     "json-stable-stringify": "~1.0.0",
-    "lob-enc": "git+https://github.com/telehash/lob-enc.git",
+    "lob-enc": "0.0.17",
     "localstorage-fs": "~0.1.0",
     "optimist": "~0.6.1",
     "path-extra": "~0.3.0",
-    "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
-    "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
-    "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
-    "telehash-webrtc": "git+https://github.com/quartzjer/telehash-webrtc.git"
+    "telehash-http": "^0.1.0",
+    "telehash-tcp4": "0.0.4",
+    "telehash-udp4": "0.0.14",
+    "telehash-webrtc": "0.0.8"
   },
   "devDependencies": {
     "chai": "*",
     "chext": "0.0.1",
     "concat-stream": "~1.4.6",
     "event-stream": "~3.1.7",
+    "glob": "^5.0.13",
     "gulp": "^3.9.0",
     "gulp-mocha": "^2.1.2",
     "gulp-watch": "^4.2.4",
-    "mocha": "*"
+    "mocha": "*",
+    "plato": "^1.5.0"
   },
   "browser": {
     "fs": "localstorage-fs",

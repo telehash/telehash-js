@@ -4,14 +4,14 @@ var streamlib = require('stream');
 var lob = require('lob-enc');
 var hashname = require('hashname');
 var util = require("util");
-var THTP = require('./thtp.class')
+var THTP = require('./thtp.class');
 
 // implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
 exports.name = 'thtp';
 
 function sanitizeheaders(headers){
-  delete headers[":path"]
-  delete headers[":method"]
+  delete headers[":path"];
+  delete headers[":method"];
   return headers;
 }
 
@@ -60,21 +60,17 @@ exports.mesh = function(mesh, cbMesh)
       // create a stream to decode the thtp->http
       var sdecode = lob.stream(function(packet, cbStream){
         // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
-        console.log("sdecode")
+
         sdecode.statusCode = parseInt(packet.json[':status'])||500;
         sdecode.reasonPhrase = packet.json[':reason']||'';
         delete packet.json[':status'];
         delete packet.json[':reason'];
         sdecode.headers = packet.json;
-        //console.log(packet.json)
-
         // direct response two ways depending on args
         if(typeof res == 'object')
         {
-          console.log("sdecode.statusCode", sdecode.statusCode, packet.json)
           res.writeHead(sdecode.statusCode, packet.json);
           sdecode.pipe(res);
-          console.log("pipe sdecode->res")
         }else if(typeof res == 'function'){
           res(sdecode); // handler must set up stream piping
         }else{
@@ -82,7 +78,7 @@ exports.mesh = function(mesh, cbMesh)
         }
         cbStream();
       }).on('error', function(err){
-        mesh.log.error('got thtp error',err);
+        log.error('got thtp error',err);
       })
 
 
@@ -113,21 +109,27 @@ exports.mesh = function(mesh, cbMesh)
     link.request = function(options, cbRequest)
     {
       // allow string url as the only arg
-      if(typeof options == 'string') options = urllib.parse(options);
-      if(!options.method) options.method = 'GET';
+      if(typeof options == 'string')
+        options = urllib.parse(options);
+
+      options.method = options.method || "GET";
+
       // TODO, handle friendly body/json options like the request module?
       var proxy = link.proxy(options, function(response){
-        if(cbRequest) cbRequest(undefined, response);
-        cbRequest = false;
-      });
-      proxy.on('error', function(err){
-        if(cbRequest) cbRequest(err);
+        if(cbRequest)
+          cbRequest(undefined, response);
         cbRequest = false;
       });
 
+      proxy.on('error', function(err){
+        if(cbRequest)
+          cbRequest(err);
+        cbRequest = false;
+      });
 
       // friendly
-      if(options.method.toUpperCase() == 'GET') proxy.end();
+      if(options.method.toUpperCase() == 'GET')
+        proxy.end();
       return proxy;
     }
 
@@ -142,8 +144,10 @@ exports.mesh = function(mesh, cbMesh)
    */
   mesh.request = function(req, cbRequest)
   {
-    if(typeof req == 'string') req = urllib.parse(req);
-    if(!hashname.isHashname(req.hostname)) return cbRequest('invalid hashname',req.hostname);
+    if(typeof req == 'string')
+      req = urllib.parse(req);
+    if(!hashname.isHashname(req.hostname))
+      return cbRequest('invalid hashname',req.hostname);
     return mesh.link(req.hostname).request(req, cbRequest);
   }
 
@@ -153,8 +157,6 @@ exports.mesh = function(mesh, cbMesh)
     mPaths[path] = cbMatch;
   }
 
-  // start accepting incoming thtp requests
-  var proxy = false;
   /** begin accepting incoming thtp requests, either to proxy to a remote http server, or directly into a local server
    * @memberOf Mesh
    * @param {httpServer|string} options - either a httpserver or a url denoting the host and port to proxy to.
@@ -164,10 +166,10 @@ exports.mesh = function(mesh, cbMesh)
     // provide a url to directly proxy to
     if(typeof options == 'string')
     {
-      proxy = httplib.createServer();
+      mesh._proxy = httplib.createServer();
       var to = urllib.parse(options);
       if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
-      proxy.on('request', function(req, res){
+      mesh._proxy.on('request', function(req, res){
         var opt = {host:to.hostname,port:to.port,method:req.headers[":method"],path:req.headers[":path"],headers:sanitizeheaders(req.headers)};
         req.pipe(httplib.request(opt, function(pres){
           pres.pipe(res)
@@ -175,9 +177,8 @@ exports.mesh = function(mesh, cbMesh)
       });
     }else{
       // local http server given as argument
-      proxy = options;
+      mesh._proxy = options;
     }
-    mesh._proxy = proxy;
   }
 
   // handler for incoming thtp channels
@@ -185,34 +186,26 @@ exports.mesh = function(mesh, cbMesh)
     var link = this;
     var channel = link.x.channel(open);
     // pipe the channel into a decoder, then handle it
-    var req = mesh.streamize(channel);
-    req.pipe(lob.stream(function(packet, cbStream){
+    var thtp_stream = mesh.streamize(channel);
+    thtp_stream.pipe(lob.stream(function(packet, cbStream){
 
-      var Req = new THTP.Request.toHTTP(packet, link, req)
-
-      // now mimic http://nodejs.org/api/http.html#http_class_http_serverresponse
-      var res = new THTP.Response.fromHTTP(Req, link, req);
-
-
+      var req = new THTP.Request.toHTTP(packet, link, thtp_stream);
+      var res = new THTP.Response.fromHTTP(req, link, thtp_stream);
 
       // see if it's an internal path
       var match;
       Object.keys(mPaths).forEach(function(path){
-        if(req.url.indexOf(path) != 0) return;
-        if(match && match.length > path) return; // prefer longest match
-        match = path;
+        if(!match && (match.length <= path) && (req.url.indexOf(path) === 0))
+          match = path;
       });
 
       // internal handler
-      if(match) mPaths[match](req, res);
-
-      // otherwise show the bouncer our fake id
-      else if(mesh._proxy){
-        mesh._proxy.emit('request', Req, res);
-      }
-
-      // otherwise error
-      else res.writeHead(500,'not supported').end();
+      if(match)
+        mPaths[match](req, res);
+      else if(mesh._proxy) // otherwise show the bouncer our fake id
+        mesh._proxy.emit('request', req, res);
+      else // otherwise error
+        res.writeHead(500,'not supported').end();
 
       cbStream();
     }));

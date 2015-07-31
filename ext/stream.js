@@ -33,6 +33,7 @@ exports.mesh = function(mesh, cbExt)
   // new incoming stream open request
   ext.open.stream = function(args, open, cbOpen){
     var link = this;
+    log.debug("got new incoming stream")
     if(typeof ext.onStream != 'function') return cbOpen('no stream');
     // pass any attached request packet as options, and a method to accept
     ext.onStream(link, lob.decode(open.body), function accept(err){

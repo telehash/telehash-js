@@ -5,16 +5,16 @@
   "dependencies": {
     "debug": "^2.2.0",
     "e3x": "^0.1.28",
-    "hashname": "git+https://github.com/telehash/hashname.git",
+    "hashname": "^0.3.1",
     "json-stable-stringify": "~1.0.0",
-    "lob-enc": "git+https://github.com/telehash/lob-enc.git",
+    "lob-enc": "0.0.17",
     "localstorage-fs": "~0.1.0",
     "optimist": "~0.6.1",
     "path-extra": "~0.3.0",
-    "telehash-http": "git+https://github.com/quartzjer/telehash-http.git",
-    "telehash-tcp4": "git+https://github.com/quartzjer/telehash-tcp4.git",
-    "telehash-udp4": "git+https://github.com/quartzjer/telehash-udp4.git",
-    "telehash-webrtc": "git+https://github.com/quartzjer/telehash-webrtc.git"
+    "telehash-http": "^0.1.0",
+    "telehash-tcp4": "0.0.4",
+    "telehash-udp4": "0.0.14",
+    "telehash-webrtc": "0.0.8"
   },
   "devDependencies": {
     "chai": "*",

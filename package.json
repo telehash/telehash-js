@@ -4,7 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "debug": "^2.2.0",
-    "e3x": "git+https://github.com/telehash/e3x-js.git",
+    "e3x": "^0.1.28",
     "hashname": "git+https://github.com/telehash/hashname.git",
     "json-stable-stringify": "~1.0.0",
     "lob-enc": "git+https://github.com/telehash/lob-enc.git",

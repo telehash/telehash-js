@@ -1,6 +1,6 @@
 {
   "name": "telehash",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "main": "index.js",
   "dependencies": {
     "debug": "^2.2.0",

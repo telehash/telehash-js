@@ -22,7 +22,7 @@ To create a new hashname:
 var th = require("telehash");
 th.generate(function(err, endpoint){
   if(err) return console.log("endpoint generation failed",err);
-  // endpoint contains a `keys:{}`, `secrets:{}`, and `hashname:"..."` 
+  // endpoint contains a `keys:{}`, `secrets:{}`, and `hashname:"..."`
 });
 ```
 
@@ -190,7 +190,7 @@ Using an interface like:
 ````
 var ext = require('ext');
 ext.name; // unique string name for debugging
-telehash.add(ext); // just does telehash.extensions[ext.name] = ext; 
+telehash.add(ext); // just does telehash.extensions[ext.name] = ext;
 mesh.extend(ext,cb); // or per mesh, auto-run for all .extensions
 // calls:
 if(ext.mesh) ext.mesh(mesh, cb(err));
@@ -229,4 +229,22 @@ tpx.mesh(mesh,function(err, tp){
 });
 ````
 
+##Debugging
 
+Telehash-js uses the 'debug' module for debug statements. to enable debugging of a particular code portion, set the DEBUG
+environment variable to a comma seperated list of module names.
+
+````
+~$ DEBUG=Link,Mesh node router.js
+````
+
+Available debug labels:
+-Link, class for mesh to mesh communication over best available connection
+-Pipe, class wrapper for single connections
+-Mesh, class for Telehash mesh nodes
+-Peer, peer routing channels
+-Path, path iscovery channels
+-Stream, streaming channels
+-Hanshake, incoming handshake processing
+-Receive, incoming packet processing
+-

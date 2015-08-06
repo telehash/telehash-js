@@ -39,7 +39,7 @@ describe('telehash/chat', function(){
         expect(chat).to.be.a('object');
         expect(chat.id).to.be.a('string');
         expect(chat.profiles).to.be.a('object');
-        expect(chat.profiles[mesh.hashname]).to.be.a('object');
+        expect(Buffer.isBuffer(chat.profiles[mesh.hashname])).to.be.equal(true);
         expect(chat.profiles[mesh.hashname].json.id).to.be.equal(chat.id);
         done();
       });
@@ -47,7 +47,7 @@ describe('telehash/chat', function(){
   });
 
   it('should establish a 1:1 chat', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
@@ -67,7 +67,7 @@ describe('telehash/chat', function(){
 
           // they're linked, set up invite handler on B
           meshB.invited(function(link, profile){
-            console.log('INVITED',profile.json);
+            //console.log('INVITED',profile.json);
             // auto-accept it
             meshB.chat({leader:link,id:profile.json.id},{json:{}},function(err){
               expect(err).to.not.exist;
@@ -80,10 +80,10 @@ describe('telehash/chat', function(){
             expect(err).to.not.exist;
             chat.join(linkAB);
             chat.inbox.on('data', function(msg){
-              console.log('CHAT JOIN',msg.json);
+              //console.log('CHAT JOIN',msg.json);
               expect(msg.json.type).to.exist;
             });
-            
+
           });
         });
         var linkBA = meshB.link({keys:idA.keys});
@@ -94,7 +94,7 @@ describe('telehash/chat', function(){
   });
 
   it('should echo messages', function(done){
-    telehash.log({debug:console.log});
+    //telehash.log({debug:console.log});
     telehash.mesh({id:idA,extensions:{chat:chat,stream:stream}},function(err, meshA){
       expect(err).to.not.exist;
       telehash.mesh({id:idB,extensions:{chat:chat,stream:stream}},function(err, meshB){
@@ -114,12 +114,12 @@ describe('telehash/chat', function(){
 
           // they're linked, set up invite handler on B
           meshB.invited(function(link, profile){
-            console.log('INVITED',profile.json);
+            //console.log('INVITED',profile.json);
             // auto-accept it
             meshB.chat({leader:link,id:profile.json.id},'B B',function(err, chat){
               expect(err).to.not.exist;
               chat.inbox.on('data', function(msg){
-                console.log('ECHOB',msg.json);
+                //console.log('ECHOB',msg.json);
                 if(msg.from == meshA.hashname && msg.json.type == 'chat') chat.send(msg.json.text);
               });
             });
@@ -130,14 +130,14 @@ describe('telehash/chat', function(){
             expect(err).to.not.exist;
             chat.join(linkAB);
             chat.inbox.on('data', function(msg){
-              console.log('ECHOA',msg.from,msg.json);
+              // /console.log('ECHOA',msg.from,msg.json);
               if(msg.json.from == meshB.hashname && msg.json.type == 'join')
               {
                 chat.outbox.write('echo');
               }
               if(msg.from == meshB.hashname && msg.json.text == 'echo') done();
             });
-            
+
           });
         });
         var linkBA = meshB.link({keys:idA.keys});

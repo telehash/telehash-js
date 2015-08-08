@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: ext/thtp.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: ext/thtp.js</h1>
+
+    
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>var urllib = require('url');
+var httplib = require('http');
+var streamlib = require('stream');
+var lob = require('lob-enc');
+var hashname = require('hashname');
+var util = require("util");
+var THTP = require('./thtp.class');
+
+// implements https://github.com/telehash/telehash.org/blob/v3/v3/channels/thtp.md
+exports.name = 'thtp';
+
+function sanitizeheaders(headers){
+  delete headers[":path"];
+  delete headers[":method"];
+  return headers;
+}
+
+exports.mesh = function(mesh, cbMesh)
+{
+  var ext = {open:{}};
+
+  ext.link = function(link, cbLink)
+  {
+
+    /** proxy an existing node http request and response pair to this link over thtp.
+     * @memberOf TLink
+     * @param {httpIncomingMessage} request - typically generated from node's http server
+     * @param {httpResponseObject} response - typically generated from node's http server
+     * @return {ChannelStream} proxied response
+     */
+    link.proxy = function(req, res)
+    {
+      // create the thtp request json
+      var json = {};
+      if(typeof req.headers == 'object') Object.keys(req.headers).forEach(function(header){
+        json[header.toLowerCase()] = req.headers[header];
+      });
+      json[':method'] = (req.method || 'GET').toUpperCase();
+      // convenience pattern
+      if(req.url)
+      {
+        var url = urllib.parse(req.url);
+        json[':path'] = url.path;
+      }else{
+        json[':path'] = (req.path || '/');
+      }
+      var packet = lob.encode(json, false);
+
+      // create the channel request
+      var open = {json:{type:'thtp'}};
+      open.json.seq = 1; // always reliable
+      open.body = packet.slice(0,1000); // send as much of the headers as we can
+      var channel = link.x.channel(open);
+
+      // create a stream to encode the http->thtp
+      var sencode = mesh.streamize(channel);
+
+
+
+      // create a stream to decode the thtp->http
+      var sdecode = lob.stream(function(packet, cbStream){
+        // mimic http://nodejs.org/api/http.html#http_http_incomingmessage
+
+        sdecode.statusCode = parseInt(packet.json[':status'])||500;
+        sdecode.reasonPhrase = packet.json[':reason']||'';
+        delete packet.json[':status'];
+        delete packet.json[':reason'];
+        sdecode.headers = packet.json;
+        // direct response two ways depending on args
+        if(typeof res == 'object')
+        {
+          res.writeHead(sdecode.statusCode, packet.json);
+          sdecode.pipe(res);
+        }else if(typeof res == 'function'){
+          res(sdecode); // handler must set up stream piping
+        }else{
+          return cbStream('no result handler');
+        }
+        cbStream();
+      }).on('error', function(err){
+        log.error('got thtp error',err);
+      })
+
+
+      // any response is decoded
+      sencode.pipe(sdecode);
+
+
+
+      // finish sending the open
+      channel.send(open);
+
+      // if more header data, send it too
+      if(packet.length > 1000) sencode.write(packet.slice(1000));
+
+      // auto-pipe in any request body
+      if(typeof req.pipe == 'function') req.pipe(sencode);
+
+      return sencode;
+    }
+
+
+    /** create a thtp request just like http://nodejs.org/api/http.html#http_http_request_options_callback
+     * @memberOf TLink
+     * @param {object} options - see node docs
+     * @param {function} callback - see node docs
+     * @return {ChannelStream} http style response stream
+     */
+    link.request = function(options, cbRequest)
+    {
+      // allow string url as the only arg
+      if(typeof options == 'string')
+        options = urllib.parse(options);
+
+      options.method = options.method || "GET";
+
+      // TODO, handle friendly body/json options like the request module?
+      var proxy = link.proxy(options, function(response){
+        if(cbRequest)
+          cbRequest(undefined, response);
+        cbRequest = false;
+      });
+
+      proxy.on('error', function(err){
+        if(cbRequest)
+          cbRequest(err);
+        cbRequest = false;
+      });
+
+      // friendly
+      if(options.method.toUpperCase() == 'GET')
+        proxy.end();
+      return proxy;
+    }
+
+    cbLink();
+  }
+
+  /** make a thtp GET request to a url where the hashname is the hostname
+   * @memberOf Mesh
+   * @param {string} req - url: http://[hashname]/[path]
+   * @param {function} callback - see node docs
+   * @return {ChannelStream} http style response stream
+   */
+  mesh.request = function(req, cbRequest)
+  {
+    if(typeof req == 'string')
+      req = urllib.parse(req);
+    if(!hashname.isHashname(req.hostname))
+      return cbRequest('invalid hashname',req.hostname);
+    return mesh.link(req.hostname).request(req, cbRequest);
+  }
+
+  var mPaths = {};
+  mesh.match = function(path, cbMatch)
+  {
+    mPaths[path] = cbMatch;
+  }
+
+  /** begin accepting incoming thtp requests, either to proxy to a remote http server, or directly into a local server
+   * @memberOf Mesh
+   * @param {httpServer|string} options - either a httpserver or a url denoting the host and port to proxy to.
+   */
+  mesh.proxy = function(options)
+  {
+    // provide a url to directly proxy to
+    if(typeof options == 'string')
+    {
+      mesh._proxy = httplib.createServer();
+      var to = urllib.parse(options);
+      if(to.hostname == '0.0.0.0') to.hostname = '127.0.0.1';
+      mesh._proxy.on('request', function(req, res){
+        var opt = {host:to.hostname,port:to.port,method:req.headers[":method"],path:req.headers[":path"],headers:sanitizeheaders(req.headers)};
+        req.pipe(httplib.request(opt, function(pres){
+          pres.pipe(res)
+        }));
+      });
+    }else{
+      // local http server given as argument
+      mesh._proxy = options;
+    }
+  }
+
+  // handler for incoming thtp channels
+  ext.open.thtp = function(args, open, cbOpen){
+    var link = this;
+    var channel = link.x.channel(open);
+    // pipe the channel into a decoder, then handle it
+    var thtp_stream = mesh.streamize(channel);
+    thtp_stream.pipe(lob.stream(function(packet, cbStream){
+
+      var req = new THTP.Request.toHTTP(packet, link, thtp_stream);
+      var res = new THTP.Response.fromHTTP(req, link, thtp_stream);
+
+      // see if it's an internal path
+      var match;
+      Object.keys(mPaths).forEach(function(path){
+        if(!match &amp;&amp; (match.length &lt;= path) &amp;&amp; (req.url.indexOf(path) === 0))
+          match = path;
+      });
+
+      // internal handler
+      if(match)
+        mPaths[match](req, res);
+      else if(mesh._proxy) // otherwise show the bouncer our fake id
+        mesh._proxy.emit('request', req, res);
+      else // otherwise error
+        res.writeHead(500,'not supported').end();
+
+      cbStream();
+    }));
+
+    channel.receive(open); // actually opens it and handles any body in the stream
+    cbOpen();
+  }
+
+  cbMesh(undefined, ext);
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Index</a></h2><h3>Classes</h3><ul><li><a href="ChannelStream.html">ChannelStream</a></li><li><a href="Mesh.html">Mesh</a></li><li><a href="Pipe.html">Pipe</a></li><li><a href="TLink.html">TLink</a></li></ul><h3>Events</h3><ul><li><a href="Pipe.html#event:keepalive">keepalive</a></li></ul>
+</nav>
+
+<br clear="both">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.3.0-alpha5</a> on Sat Aug 08 2015 17:33:47 GMT-0600 (MDT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

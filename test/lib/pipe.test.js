@@ -28,7 +28,7 @@ describe('pipe', function(){
     pipe.cloaked = true;
     pipe.onSend = function(p, cb)
     {
-      expect(p).to.be.an('object');
+      expect(Buffer.isBuffer(p)).to.be.true;
       expect(p.length).to.be.equal(10);
       //console.log("cloaking is awesome",p.toString("hex"));
       cb();

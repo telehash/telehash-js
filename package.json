@@ -1,10 +1,10 @@
 {
   "name": "telehash",
-  "version": "0.3.31",
+  "version": "0.4.0",
   "main": "index.js",
   "dependencies": {
     "debug": "^2.2.0",
-    "e3x": "0.2.0",
+    "e3x": "0.2.2",
     "hashname": "^0.3.1",
     "json-stable-stringify": "~1.0.0",
     "lob-enc": "0.0.17",

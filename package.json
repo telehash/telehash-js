@@ -33,6 +33,7 @@
     "fs": "localstorage-fs",
     "telehash-udp4": false,
     "telehash-tcp4": false,
+    "net":"chrome-net",
     "./test/thtp.test.js":"./test/thtp.browser.test.js"
   },
   "bin": {

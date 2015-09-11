@@ -37,6 +37,9 @@ exports.mesh = function(mesh, cbMesh)
 {
   var ext = {open:{}};
 
+	function cbPolicy (){
+		return false;
+	}
 
   ext.link = function(link, cbLink)
   {
@@ -81,24 +84,66 @@ exports.mesh = function(mesh, cbMesh)
     //
     link.server = function(args, cbAccept, cbServer)
     {
-      link._cbAccept = cbAccept;
-      link._cbServer = cbServer;
+      link.sock._cbAccept = cbAccept;
+      link.sock._cbServer = cbServer || function default_bind_accept(){
+				return true;
+			};
+			console.log("server (bind) called")
+			var open = {
+				json:{
+					type:'sock',
+					sock: "bind",
+					dst:{
+						port: args.port
+					}
+				}
+			};
+
+			if (args.type.toUpperCase() === "TCP"){
+				open.json.seq = 1; // always reliable
+				var channel = link.x.channel(open);
+				var stream = mesh.streamize(channel,"binary")
+				channel.send(open);
+
+			} else if (args.type.toUpperCase === "UDP") {
+				console.log("UDP")
+				var channel = link.x.channel(open);
+				chan.receive = cbMessage;
+				channel.send(open)
+				return;
+			}
+
+
       // udp messages, fire cbAccept, cbServer returns a message method
       // if no cbServer, no bind request, is just default accept
     }
 
+		function linkPolicy (){
+			return undefined;
+		}
     // just like mesh.sock for incoming requests on this link only
-    link.sock = function(cbPolicy)
+    link.sock = function(cbP)
     {
-
+			linkPolicy = cbP || function(){
+				return true;
+			}
     }
+
+		link.sock._policy = function(json){
+			return (
+				((linkPolicy(json) ||  ((linkPolicy(json) === undefined) && (cbPolicy(json)))) && !link.sock_bound[json.dst.port])
+			);
+		}
 
     cbLink();
   }
 
   // process any incoming connect/bind requests
-  mesh.sock = function(cbPolicy)
+  mesh.sock = function(cbP)
   {
+		cbPolicy = cbP || function (){
+			return true;
+		};
   }
 
 
@@ -114,7 +159,7 @@ exports.mesh = function(mesh, cbMesh)
 
     var socket;
 
-    if ((type === "connect" ) && dst &&  dst.port){
+    if ((type === "connect" ) && dst &&  dst.port && link.sock._policy(open.json)){
       //simple stream piping proxy
       socket = new net.Socket();
       console.log("incoming connect")
@@ -124,7 +169,7 @@ exports.mesh = function(mesh, cbMesh)
         socket.pipe(stream).pipe(socket)
         cbOpen(null, stream);
       })
-    } else if (type === "bind" && !(src && src.ip)){
+    } else if (type === "bind" && !(src && src.ip) && (link.sock._policy(open.json))){
       var port = dst.port || 0
       var server = net.createServer(function(c) {
         // create 'accept' open
@@ -140,7 +185,7 @@ exports.mesh = function(mesh, cbMesh)
               ip: address.address
             }
           }
-        }
+        };
 
         accept.json.seq = 1; // always reliable
         var accept_chan = link.x.channel(accept);
@@ -148,19 +193,27 @@ exports.mesh = function(mesh, cbMesh)
         accept_chan.send(accept);
         c.pipe(stream).pipe(c);
       });
+			link.sock_bound[dst.port] = true;
       server.listen(port, function(err) { //'listening' listener
         if (err) return cbOpen(err);
-
         var port = server.address().port;
         // let 'em know we're bound
         channel.send({json:{dst:{ip: getExternalIp(),port : port }}});
 
       });
     } else if (type === "accept"){
-      var accept_channel = link.x.channel(open);
-      var stream = mesh.streamize(accept_channel);
-      if (link._cbAccept)
-        link._cbAccept(open.json.src, stream);
+      if (link.sock._cbAccept)
+        link.sock._cbAccept(open.json, function accept_cb(err){
+					if (err)
+						return null;
+
+
+					var accept_channel = link.x.channel(open);
+					var stream = mesh.streamize(accept_channel);
+					accept_channel.receive(open);
+					return stream;
+
+				});
       else
         cbOpen("no accept handler");
     } else {

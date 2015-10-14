@@ -39,23 +39,26 @@ describe('telehash/peer', function(){
           expect(err).to.not.exist;
 
           // connect both to B
-          meshA.mesh(meshB);
-          meshC.mesh(meshB);
+          Promise.all([meshA.mesh(meshB), meshC.mesh(meshB)])
+                .then(function(){
+                  console.log("MESHED")
+                  // let C trust A but not know more
+                  expect(meshC.link(meshA.hashname)).to.exist;
 
-          // let C trust A but not know more
-          expect(meshC.link(meshA.hashname)).to.exist;
+                  // create a link from A->C with the peer path
+                  var args = {hashname:meshC.hashname, paths:[]};
+                  args.paths.push({type:'peer',hn:meshB.hashname});
+                  var link = meshA.link(args);
+                  expect(link).to.exist;
 
-          // create a link from A->C with the peer path
-          var args = {hashname:meshC.hashname, paths:[]};
-          args.paths.push({type:'peer',hn:meshB.hashname});
-          var link = meshA.link(args);
-          expect(link).to.exist;
+                  // it should go online
+                  link.status(function(err){
+                    expect(err).to.not.exist;
+                    done();
+                  });
+                });
 
-          // it should go online
-          link.status(function(err){
-            expect(err).to.not.exist;
-            done();
-          });
+
         });
       });
     });

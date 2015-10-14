@@ -2,7 +2,7 @@ var expect = require('chai').expect;
 var telehash = require('..');
 // telehash.log({debug:console.log});
 
-var numberOfExtensions = (global.localStorage) ? 6 : 9;
+var numberOfExtensions = (global.localStorage) ? 7 : 10;
 describe('telehash-js', function(){
 
   var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};

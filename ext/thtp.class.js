@@ -71,11 +71,7 @@ function THTP_Response_fromHTTP(req, link, stream){
     if (!head)
       this.writeHead(200);
 
-    console.log()
-    if (data)
-      stream.end(data, enc, callback);
-    else
-      stream.end();
+    stream.end(data)
   };
 
 

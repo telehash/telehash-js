@@ -85,8 +85,7 @@ describe('telehash/thtp', function(){
     meshB.proxy(proxy);
 
     // send request and gather response
-    linkAB.request('/test', function(err, res){
-      expect(err).to.not.exist;
+    linkAB.request('/test', function(res){
       res.pipe(concat(function(body){
         expect(body.toString()).to.be.equal('test');
         done();
@@ -119,8 +118,7 @@ describe('telehash/thtp', function(){
     meshB.proxy(proxy);
 
     // send request and gather response
-    linkAB.request('/test', function(err, res){
-      expect(err).to.not.exist;
+    linkAB.request('/test', function(res){
       res.pipe(concat(function(body){
         fs
         .createReadStream(__dirname + "/thtp.test.js")
@@ -153,8 +151,7 @@ describe('telehash/thtp', function(){
     meshB.proxy("http://localhost:9876");
     setTimeout(function(){
 
-      linkAB.request("http://localhost:9876/test", function(err, res){
-        expect(err).to.not.exist;
+      linkAB.request("http://localhost:9876/test", function( res){
         res.pipe(concat(function(body){
           expect(body.toString()).to.be.equal('test');
           done();

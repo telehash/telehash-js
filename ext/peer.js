@@ -91,7 +91,7 @@ exports.mesh = function(mesh, cbExt)
     if(attached && attached.head.length == 1)
     {
       var token = crypto.createHash('sha256').update(attached.body.slice(0,16)).digest().slice(0,16).toString('hex');
-      log.debug('setting route for',token,args.pipe.path);
+      log.debug('setting route for',token,args.pipe);
       mesh.routes[token] = args.pipe;
     }
 

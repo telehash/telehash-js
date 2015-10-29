@@ -117,7 +117,7 @@ exports.mesh = function(mesh, cbMesh)
       // TODO, handle friendly body/json options like the request module?
       var proxy = link.proxy(options, function(response){
         if(cbRequest)
-          cbRequest(undefined, response);
+          cbRequest(response);
         cbRequest = false;
       });
 
@@ -203,7 +203,9 @@ exports.mesh = function(mesh, cbMesh)
       if(match)
         mPaths[match](req, res);
       else if(mesh._proxy) // otherwise show the bouncer our fake id
+      {
         mesh._proxy.emit('request', req, res);
+      }
       else // otherwise error
         res.writeHead(500,'not supported').end();
 

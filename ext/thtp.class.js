@@ -71,13 +71,18 @@ function THTP_Response_fromHTTP(req, link, stream){
     if (!head)
       this.writeHead(200);
 
-    stream.end(data);
+    console.log()
+    if (data)
+      stream.end(data, enc, callback);
+    else
+      stream.end();
   };
 
 
   this.writeHead = function THTP_writeHead(statusCode, reasonPhrase, headers)
   {
     // don't double!
+    this._header = ""
     if(head){
       //console.log('double call to thtp writeHead',this.statusCode,(new Error()).stack)
       return this;
@@ -85,8 +90,7 @@ function THTP_Response_fromHTTP(req, link, stream){
 
     head = true;
     // be friendly
-    if(!headers && typeof reasonPhrase == 'object')
-    {
+    if(!headers && typeof reasonPhrase == 'object'){
       headers = reasonPhrase;
       reasonPhrase = false;
     } else if (!headers ){
@@ -102,7 +106,7 @@ function THTP_Response_fromHTTP(req, link, stream){
         json[header.toLowerCase()] = headers[header];
       });
 
-    stream.write(lob.encode(json, false));
+    stream.write(lob.encode(json,false));
     return this;
   };
 }

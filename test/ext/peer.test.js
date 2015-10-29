@@ -2,6 +2,7 @@ var expect = require('chai').expect;
 var telehash = require('../../lib/mesh.js');
 var lob = require('lob-enc');
 var peer = require('../../ext/peer.js');
+var stream = require("../../ext/stream.js")
 
 describe('telehash/peer', function(){
   var idA = {"keys":{"1a":"akndnx5kbansip6xphxymwckpqkjj26fcm"},"secrets":{"1a":"ksxslm5mmtymnbph7nvxergb7oy3r35u"},"hashname":"5uegloufcyvnf34jausszmsabbfbcrg6fyxpcqzhddqxeefuapvq"};
@@ -62,6 +63,53 @@ describe('telehash/peer', function(){
         });
       });
     });
-  });
+  })
+
+  it('should create a bridge through a peer', function(done){
+    //telehash.log({debug:function(){}});
+    telehash.mesh({id:idA,extensions:{peer:peer, stream:stream}},function(err, meshA){
+      expect(err).to.not.exist;
+      telehash.mesh({id:idB,extensions:{peer:peer, stream:stream}},function(err, meshB){
+        expect(err).to.not.exist;
+        telehash.mesh({id:idC,extensions:{peer:peer, stream:stream}},function(err, meshC){
+          expect(err).to.not.exist;
+
+          // connect both to B
+          Promise.all([meshA.mesh(meshB), meshC.mesh(meshB)])
+                .then(function(){
+                  // let C trust A but not know more
+                  expect(meshC.link(meshA.hashname)).to.exist;
+
+                  meshC.stream(function(link,open,accept){
+                    var stream = accept();
+                    stream.on("data",function(data){
+                      if (data.toString() == "accept")
+                        done()
+                    })
+                  })
+                  // create a link from A->C with the peer path
+                  var args = {hashname:meshC.hashname, paths:[]};
+                  args.paths.push({type:'peer',hn:meshB.hashname});
+                  var link = meshA.link(args);
+                  expect(link).to.exist;
+
+                  // it should go online
+                  console.log("LINK?")
+                  link.status(function(err){
+                    expect(err).to.not.exist;
+
+                    var str = link.stream()
+                    str.write("accept")
+
+                  });
+                }).catch(function(err){
+                  console.log("Er?", err.stack)
+                });
+
+
+        });
+      });
+    });
+  })
 
 });

@@ -54,11 +54,13 @@ exports.mesh = function(mesh, cbExt)
      */
     link.stream = function(packet, encoding)
     {
+      log.debug("stream?")
       var open = {json:{type:'stream'},body:packet};
       open.json.seq = 1; // always reliable
       var channel = link.x.channel(open);
       var stream = mesh.streamize(channel, encoding);
       channel.send(open);
+      log.debug("Constructed outgoing stream")
       return stream;
     }
 

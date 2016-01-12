@@ -62,6 +62,7 @@ ChannelStream.prototype._read = function(size){
 
 ChannelStream.prototype._write = function(data,enc,cbWrite)
 {
+  cbWrite = cbWrite || function(){};
   if(this._chan.state == 'gone') return cbWrite('closed');
   // switch to our default encoding syntax
   // dynamically detect object streams and change encoding

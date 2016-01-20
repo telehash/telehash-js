@@ -1,6 +1,6 @@
 {
   "name": "telehash",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "main": "index.js",
   "dependencies": {
     "chrome-net": "^3.0.1",
@@ -13,7 +13,7 @@
     "optimist": "~0.6.1",
     "path-extra": "~0.3.0",
     "telehash-http": "^0.1.0",
-    "telehash-tcp4": "0.0.7",
+    "telehash-tcp4": "0.0.8",
     "telehash-udp4": "0.0.14",
     "telehash-webrtc": "0.0.8"
   },

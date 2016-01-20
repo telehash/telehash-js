@@ -21,6 +21,7 @@ th.load({id:"client."+ Date.now() +".json"}, function (e,mesh) {
       chan.write("Hello?");
       var i = 0;
       setInterval(function () {
+        console.log("writing to stream")
         chan.write(mesh.hashname.substr(0,8) + ": Test #"+(++i));
       }, 5e3);
       chan.on('data', function (d) {

@@ -6,10 +6,10 @@ var telehash = global.telehash = module.exports = require('./lib/mesh.js');
 
 
 // node specific extensions
-module.exports.add(require('telehash-udp4'));
-module.exports.add(require('telehash-http'));
+//module.exports.add(require('telehash-udp4'));
+//module.exports.add(require('telehash-http'));
 module.exports.add(require('telehash-tcp4'));
-module.exports.add(require('telehash-webrtc'));
+//module.exports.add(require('telehash-webrtc'));
 
 // attach our package+version to be helpful
 module.exports.package = require('./package.json');

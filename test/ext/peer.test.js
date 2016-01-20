@@ -66,6 +66,7 @@ describe('telehash/peer', function(){
   })
 
   it('should create a bridge through a peer', function(done){
+	this.timeout(5000)
     //telehash.log({debug:function(){}});
     telehash.mesh({id:idA,extensions:{peer:peer, stream:stream}},function(err, meshA){
       expect(err).to.not.exist;

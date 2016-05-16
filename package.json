@@ -5,7 +5,7 @@
   "dependencies": {
     "chrome-net": "^3.0.1",
     "debug": "^2.2.0",
-    "e3x": "0.2.2",
+    "e3x": "^0.2.3",
     "hashname": "^0.3.1",
     "json-stable-stringify": "~1.0.0",
     "lob-enc": "0.0.17",
